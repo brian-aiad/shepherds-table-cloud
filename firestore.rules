@@ -1,0 +1,70 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* Users */
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    /* Org memberships */
+    // Allow reads so the app can discover the user's orgs/locations.
+    match /orgUsers/{orgUserId} {
+      allow read:  if request.auth != null;
+      allow write: if isAdminOfAnyOrg(); // keep tight in prod if you want
+    }
+
+    /* Organizations */
+    match /organizations/{orgId} {
+      allow read:  if request.auth != null;          // UNBLOCK boot
+      allow write: if isAdminOfOrg(orgId);
+    }
+
+    /* Locations */
+    match /locations/{locationId} {
+      allow read:  if request.auth != null;          // UNBLOCK boot
+      allow write: if isAdminOfOrg(getResourceOrgId());
+    }
+
+    /* Clients */
+    match /clients/{clientId} {
+      allow read:  if request.auth != null;
+      allow write: if isAdminOfOrg(getResourceOrgId());
+    }
+
+    /* Visits */
+    match /visits/{visitId} {
+      allow read:  if request.auth != null;
+      allow write: if isAdminOfOrg(getResourceOrgId());
+    }
+
+    /* USDA monthly markers */
+    match /usda_first/{markerId} {
+      allow read:  if request.auth != null;
+      allow write: if isAdminOfOrg(getResourceOrgId());
+    }
+
+    /* Catch-all */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    /* -------- Helpers -------- */
+    function getResourceOrgId() {
+      return (request.resource.data.orgId != null)
+        ? request.resource.data.orgId
+        : resource.data.orgId;
+    }
+
+    // Admin check assumes orgUsers doc id format: `${uid}_${orgId}`
+    function isAdminOfOrg(orgId) {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/orgUsers/$(request.auth.uid + "_" + orgId)).data.role == "admin";
+    }
+
+    function isAdminOfAnyOrg() {
+      return request.auth != null;
+    }
+  }
+}

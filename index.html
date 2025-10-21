@@ -2,12 +2,98 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>shepherds-table-cloud</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#e11d48" />
+    <meta
+      name="description"
+      content="Shepherds Table Cloud — A multi-organization food bank platform for managing clients, visits, and USDA reporting."
+    />
+
+    <title>Shepherds Table Cloud</title>
+
+    <!-- Favicon & App Icon -->
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Brand palette + pre-app styles -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --brand-50: #fff1f2;
+        --brand-100: #ffe4e6;
+        --brand-200: #fecdd3;
+        --brand-300: #fda4af;
+        --brand-400: #fb7185;
+        --brand-500: #e11d48;
+        --brand-600: #c01436;
+        --brand-700: #9d0f2b;
+        --brand-800: #7f0c22;
+        --brand-900: #5f091a;
+        --surface-100: #f9fafb;
+        --text-primary: #111827;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: var(--surface-100);
+        color: var(--text-primary);
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      #root {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      /* Loader before React mounts */
+      body:not(.app-ready) #root::before {
+        content: "";
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: var(--surface-100);
+        background-image: url("/logo.png");
+        background-repeat: no-repeat;
+        background-position: center 40%;
+        background-size: 80px;
+        color: var(--brand-700);
+        font-weight: 600;
+        font-size: 1rem;
+        animation: fadein 1.5s ease-in-out infinite alternate;
+      }
+
+      @keyframes fadein {
+        0% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0.5;
+        }
+      }
+    </style>
   </head>
+
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Vite Entry -->
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
