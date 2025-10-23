@@ -1,22 +1,40 @@
 // src/components/LogVisitForm.jsx
-// Assumptions / notes:
-// - Multi-tenant: visit writes include orgId + locationId from useAuth(); blocks save if missing.
-// - USDA first-this-month remains automatic via a monthly marker (no manual toggle).
-// - Heavily tuned for mobile: big tap targets, sticky footer, safe-area padding, strong focus rings.
-// - A11y: roles/labels, aria-live for errors, keyboard shortcuts (Esc closes, Enter submits).
+// Ship-safe LogVisitForm
+// - serverTimestamp() everywhere (no client clock)
+// - Atomic counters with increment(1)
+// - USDA monthly marker is idempotent per (orgId, clientId, monthKey)
+// - Adds weekKey (YYYY-Www) and weekday (0–6) to visits
+// - Keeps clientFirstName/clientLastName on visits for resiliency
+// - No user-context writes (avoids shared-login scope flips)
+// - Household size with steppers + direct typing
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { collection, doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  increment,
+} from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
-import useAuth from "../auth/useAuth";
+import { useAuth } from "../auth/useAuth";
 
-/* ---------- small helpers ---------- */
+/* ---------- helpers ---------- */
 const monthKeyFor = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const dateKeyFor = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
+
+function isoWeekKey(d = new Date()) {
+  // ISO week: Thursday-based calculation
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
 
 const MIN_HH = 1;
 const MAX_HH = 20;
@@ -26,33 +44,30 @@ export default function LogVisitForm({
   client,
   onClose,
   onSaved,
+  // optional overrides if you ever want to log in a fixed scope
   defaultOrgId,
   defaultLocationId,
 }) {
   const [hh, setHH] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  // Manual USDA toggle; default "No" so nothing is auto-marked
+  const [usdaFirstThisMonth, setUsdaFirstThisMonth] = useState(false);
+
   const inputRef = useRef(null);
 
-  // Auth context (defensive in case still loading)
+  // Auth context (defensive lookups; never written here)
   const authCtx = useAuth() || {};
   const orgId =
-    defaultOrgId ??
-    authCtx.org?.id ??
-    authCtx.org ??
-    authCtx.activeOrg?.id ??
-    authCtx.activeOrg ??
-    null;
-
+    defaultOrgId ?? authCtx.org?.id ?? authCtx.activeOrg?.id ?? null;
   const locationId =
     defaultLocationId ??
     authCtx.location?.id ??
-    authCtx.location ??
     authCtx.activeLocation?.id ??
-    authCtx.activeLocation ??
     null;
+  const currentUserId = authCtx?.uid || auth.currentUser?.uid || null;
 
-  // Derive initials for a simple avatar
   const name = `${client?.firstName || ""} ${client?.lastName || ""}`.trim();
   const initials = useMemo(() => {
     if (!name) return "👤";
@@ -64,23 +79,18 @@ export default function LogVisitForm({
       .join("");
   }, [name]);
 
-  // When sheet opens, reset & focus
+  // Reset each time the sheet opens or client changes
   useEffect(() => {
     if (!open || !client?.id) return;
     const base = Number(client?.householdSize || 1) || 1;
     setHH(Math.max(MIN_HH, Math.min(MAX_HH, base)));
+    setUsdaFirstThisMonth(false); // default to No
     setErr("");
     const t = setTimeout(() => inputRef.current?.focus(), 80);
     return () => clearTimeout(t);
   }, [open, client?.id]);
 
   if (!open || !client) return null;
-
-  function coerceHH(v) {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return MIN_HH;
-    return Math.max(MIN_HH, Math.min(MAX_HH, Math.floor(n)));
-  }
 
   async function submit() {
     if (busy) return;
@@ -89,39 +99,40 @@ export default function LogVisitForm({
       setErr("Select an Organization and Location before logging a visit.");
       return;
     }
-
-    const safeHH = coerceHH(hh);
-
-    // Soft confirm if user typed above MAX
-    if (Number(hh) !== safeHH && safeHH === MAX_HH) {
-      const ok = confirm(`Household size will be capped at ${MAX_HH}. Continue?`);
-      if (!ok) return;
+    if (!currentUserId) {
+      setErr("You must be signed in to log a visit.");
+      return;
     }
 
     setBusy(true);
     setErr("");
     try {
       const now = new Date();
-      const monthKey = monthKeyFor(now);
-      const dateKey = dateKeyFor(now);
-      const currentUser = auth.currentUser?.uid || null;
+      const mKey = monthKeyFor(now);
+      const dKey = dateKeyFor(now);
+      const wKey = isoWeekKey(now);
+      const weekday = now.getDay(); // 0=Sun..6=Sat
 
-      // Atomic: first-visit detection per (org + client + month)
       await runTransaction(db, async (tx) => {
-        const markerRef = doc(db, "usda_first", `${orgId}_${client.id}_${monthKey}`);
-        const markerSnap = await tx.get(markerRef);
-        const isFirst = !markerSnap.exists();
-
-        if (isFirst) {
-          tx.set(markerRef, {
-            orgId,
-            clientId: client.id,
-            monthKey,
-            createdAt: serverTimestamp(),
-          });
+        // If "Yes", upsert a deterministic USDA-first marker for this month.
+        if (usdaFirstThisMonth) {
+          const markerId = `${orgId}_${client.id}_${mKey}`;
+          const markerRef = doc(db, "usda_first", markerId);
+          tx.set(
+            markerRef,
+            {
+              orgId,
+              clientId: client.id,
+              locationId,
+              monthKey: mKey,
+              createdAt: serverTimestamp(),
+              createdByUserId: currentUserId,
+            },
+            { merge: true }
+          );
         }
 
-        // Visit record
+        // Create the visit
         const visitRef = doc(collection(db, "visits"));
         tx.set(visitRef, {
           orgId,
@@ -129,27 +140,46 @@ export default function LogVisitForm({
           clientId: client.id,
           clientFirstName: client.firstName || "",
           clientLastName: client.lastName || "",
-          createdBy: currentUser,
 
+          // keys & timestamps
           visitAt: serverTimestamp(),
-          monthKey,
-          dateKey,
+          createdAt: serverTimestamp(),
+          monthKey: mKey,
+          dateKey: dKey,
+          weekKey: wKey,
+          weekday,
 
-          householdSize: safeHH,
-          usdaFirstTimeThisMonth: isFirst,
+          // inputs & flags
+          householdSize: Number(hh),
+          usdaFirstTimeThisMonth: !!usdaFirstThisMonth,
 
-          addedAt: serverTimestamp(),
+          // audit
+          createdByUserId: currentUserId,
+          editedAt: null,
+          editedByUserId: null,
+
+          // guard against programmatic inserts
+          addedByReports: false,
         });
 
-        // Light update to client
+        // Atomic client updates
         const clientRef = doc(db, "clients", client.id);
         tx.set(
           clientRef,
           {
+            // DO NOT change orgId/locationId here from elsewhere; we use active scope intentionally
             orgId,
-            householdSize: safeHH,
+            locationId,
+            householdSize: Number(hh),
+
             lastVisitAt: serverTimestamp(),
+            lastVisitMonthKey: mKey,
+
             updatedAt: serverTimestamp(),
+            updatedByUserId: currentUserId,
+
+            visitCountLifetime: increment(1),
+            [`visitCountByMonth.${mKey}`]: increment(1),
           },
           { merge: true }
         );
@@ -169,8 +199,6 @@ export default function LogVisitForm({
     if (e.key === "Escape") onClose?.();
     if (e.key === "Enter") submit();
   }
-
-  const quickSizes = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
     <div className="fixed inset-0 z-50">
@@ -206,7 +234,9 @@ export default function LogVisitForm({
             <h2 id="log-visit-title" className="text-base sm:text-lg font-semibold truncate">
               Log visit
             </h2>
-            <p className="text-xs text-gray-600 truncate">{name || "Client"}</p>
+            <p className="text-xs text-gray-600 truncate">
+              {name || "Client"}
+            </p>
           </div>
           <div className="ml-auto hidden sm:flex items-center gap-2">
             <Badge label={orgId || "Org —"} />
@@ -222,7 +252,7 @@ export default function LogVisitForm({
           </button>
         </div>
 
-        {/* Inline warning if context missing */}
+        {/* Context warning */}
         {!orgId || !locationId ? (
           <div
             role="alert"
@@ -234,94 +264,109 @@ export default function LogVisitForm({
 
         {/* Body */}
         <div className="p-4 sm:p-5 grid gap-4">
-          {/* USDA note */}
-          <div className="rounded-2xl border bg-surface-100/60 px-3 py-2.5">
-            <p className="text-[13px] leading-snug text-gray-700">
-              <span className="font-semibold">USDA eligibility</span> is auto-detected on save
-              (first USDA visit this month per <span className="font-mono">org+client+month</span>).
-              No manual toggle needed.
+          {/* USDA toggle */}
+          <div className="rounded-2xl border p-3 sm:p-4">
+            <div className="text-sm font-medium text-gray-800 mb-2">
+              USDA first time this month?
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setUsdaFirstThisMonth(true)}
+                className={`h-11 rounded-xl border text-sm font-semibold transition
+                  ${
+                    usdaFirstThisMonth
+                      ? "bg-brand-700 text-white border-brand-700"
+                      : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
+                  }`}
+                aria-pressed={usdaFirstThisMonth}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => setUsdaFirstThisMonth(false)}
+                className={`h-11 rounded-xl border text-sm font-semibold transition
+                  ${
+                    !usdaFirstThisMonth
+                      ? "bg-brand-700 text-white border-brand-700"
+                      : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
+                  }`}
+                aria-pressed={!usdaFirstThisMonth}
+              >
+                No
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              If “Yes”, we’ll record this as the first USDA visit for {monthKeyFor()} and create a monthly marker.
             </p>
           </div>
 
-          {/* Household size stepper */}
+          {/* Household size — steppers + numeric input */}
           <div className="rounded-2xl border p-3 sm:p-4">
-            <div className="flex items-center justify-between">
-              <label htmlFor="hh-input" className="text-sm font-medium text-gray-800">
-                Household size
-              </label>
-              <div className="inline-flex items-center rounded-full border overflow-hidden">
-                <button
-                  type="button"
-                  className="h-11 w-11 text-lg font-semibold hover:bg-gray-100 active:scale-[.98] disabled:opacity-40"
-                  onClick={() => setHH((n) => Math.max(MIN_HH, Number(n) - 1))}
-                  aria-label="Decrease household size"
-                  disabled={busy || hh <= MIN_HH}
-                >
-                  –
-                </button>
-                <input
-                  ref={inputRef}
-                  id="hh-input"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  type="number"
-                  min={MIN_HH}
-                  max={MAX_HH}
-                  value={hh}
-                  onChange={(e) => setHH(coerceHH(e.target.value))}
-                  className="w-16 text-center text-base font-semibold outline-none focus:ring-2 focus:ring-brand-200"
-                  disabled={busy}
-                  aria-describedby="hh-help"
-                />
-                <button
-                  type="button"
-                  className="h-11 w-11 text-lg font-semibold hover:bg-gray-100 active:scale-[.98] disabled:opacity-40"
-                  onClick={() => setHH((n) => Math.min(MAX_HH, Number(n) + 1))}
-                  aria-label="Increase household size"
-                  disabled={busy || hh >= MAX_HH}
-                >
-                  +
-                </button>
-              </div>
+            <label htmlFor="hh-input" className="text-sm font-medium text-gray-800">
+              Household size
+            </label>
+
+            <div className="mt-2 flex items-stretch gap-2">
+              {/* Decrease */}
+              <button
+                type="button"
+                aria-label="Decrease household size"
+                onClick={() =>
+                  setHH((n) => Math.max(MIN_HH, (Number(n) || MIN_HH) - 1))
+                }
+                className="h-12 w-12 rounded-xl border border-brand-200 bg-white text-2xl leading-none font-semibold hover:bg-gray-50 active:scale-[.98] select-none"
+              >
+                −
+              </button>
+
+              {/* Number input */}
+              <input
+                id="hh-input"
+                ref={inputRef}
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                min={MIN_HH}
+                max={MAX_HH}
+                step={1}
+                value={hh}
+                onChange={(e) => {
+                  const raw = Number(e.target.value);
+                  if (e.target.value === "") return setHH("");
+                  setHH(Number.isFinite(raw) ? raw : MIN_HH);
+                }}
+                onBlur={(e) => {
+                  const raw = Number(e.target.value);
+                  const clamped = Math.max(
+                    MIN_HH,
+                    Math.min(MAX_HH, Number.isFinite(raw) ? raw : MIN_HH)
+                  );
+                  setHH(clamped);
+                }}
+                className="flex-1 h-12 rounded-xl border border-brand-200 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-brand-200 text-center tabular-nums"
+                aria-describedby="hh-help"
+              />
+
+              {/* Increase */}
+              <button
+                type="button"
+                aria-label="Increase household size"
+                onClick={() =>
+                  setHH((n) =>
+                    Math.max(MIN_HH, Math.min(MAX_HH, (Number(n) || MIN_HH) + 1))
+                  )
+                }
+                className="h-12 w-12 rounded-xl border border-brand-200 bg-white text-2xl leading-none font-semibold hover:bg-gray-50 active:scale-[.98] select-none"
+              >
+                +
+              </button>
             </div>
 
             <p id="hh-help" className="mt-1 text-xs text-gray-500">
-              Allowed range: {MIN_HH}–{MAX_HH}. Larger families are capped at {MAX_HH}.
+              Pick a number from {MIN_HH} to {MAX_HH}.
             </p>
-
-            {/* Quick picks */}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {quickSizes.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setHH(n)}
-                  className={`h-9 px-3 rounded-full text-sm font-medium border transition
-                    ${
-                      hh === n
-                        ? "bg-brand-600 text-white border-brand-600"
-                        : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  aria-pressed={hh === n}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setHH(MAX_HH)}
-                className={`h-9 px-3 rounded-full text-sm font-medium border transition
-                  ${
-                    hh === MAX_HH
-                      ? "bg-brand-600 text-white border-brand-600"
-                      : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
-                  }`}
-                aria-pressed={hh === MAX_HH}
-                title={`Set to ${MAX_HH}`}
-              >
-                {MAX_HH}+
-              </button>
-            </div>
           </div>
 
           {/* Error (live region) */}
@@ -376,8 +421,7 @@ export default function LogVisitForm({
   );
 }
 
-/* ---------- tiny presentational helpers (no external deps) ---------- */
-
+/* ---------- tiny presentational helpers ---------- */
 function Badge({ label, subtle = false }) {
   return (
     <span
@@ -395,19 +439,9 @@ function Badge({ label, subtle = false }) {
 
 function Spinner() {
   return (
-    <svg
-      className="h-4 w-4 animate-spin"
-      viewBox="0 0 24 24"
-      role="img"
-      aria-label="Loading"
-    >
+    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" role="img" aria-label="Loading">
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" opacity="0.25" />
-      <path
-        d="M22 12a10 10 0 0 1-10 10"
-        stroke="currentColor"
-        strokeWidth="3"
-        fill="none"
-      />
+      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" fill="none" />
     </svg>
   );
 }

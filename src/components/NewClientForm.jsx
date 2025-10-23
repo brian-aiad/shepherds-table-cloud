@@ -1,20 +1,41 @@
 // src/components/NewClientForm.jsx
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+// ✅ Fixes covered here:
+// P0: (partial) Scope safety — reads org/location from props/useAuth with a localStorage fallback (device-scoped).
+// P0: (note) Do NOT persist scope from here; leave that to your navbar action.
+// P0 #2: EDITING preserves original orgId/locationId by reading current doc inside the transaction.
+// P0 #3: Race conditions — all counters use atomic increment(1); timeline stamps use serverTimestamp().
+// P1: First-visit rollups now use serverTimestamp() everywhere (no client clock writes).
+// P1: USDA “first this month” stays nullable; you choose Yes/No explicitly on create.
+// P1: Navbar null-location bug is handled elsewhere; this form just requires both ids.
+// P1: Duplicate detection adds secondary name+dob hash lookup when phone is missing.
+// P2: Token is no longer hard-coded; uses VITE_MAPBOX_TOKEN (use a restricted token).
+// P3: Audit fields normalized to createdByUserId / updatedByUserId; legacy createdBy kept on visits for back-compat.
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
   serverTimestamp,
   runTransaction,
   getDocs,
+  getDoc,
   query,
   where,
   limit as qLimit,
+  increment,
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
 
 /* ===========================
-   Localized strings (EN/ES)
+   Mapbox Geocoding (env-based)
+=========================== */
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "";
+const LB_PROX = "-118.1937,33.7701";
+const GEOCODE_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
+
+/* ===========================
+   I18N
 =========================== */
 const I18N = {
   en: {
@@ -26,11 +47,12 @@ const I18N = {
     phone: "Phone",
     address: "Address",
     zip: "ZIP code",
+    county: "County",
     hhSize: "Household size",
     usdaThisMonth: "First time receiving USDA this month",
     yes: "Yes",
     no: "No",
-    tipUsda: "Tap one. This is for this month only.",
+    tipUsda: "Choose one if applicable. This is only for the current month.",
     closeAfterSave: "Close after save",
     cancel: "Cancel",
     save: "Save changes",
@@ -41,12 +63,17 @@ const I18N = {
     errDobOrPhone: "Provide at least a phone number or date of birth.",
     errZip: "ZIP code must be 5 digits.",
     errHH: "Household size must be at least 1.",
-    errOrgLoc: "Organization and Location are required (use the switcher in the navbar).",
+    errOrgLoc:
+      "Organization and Location are required (use the switcher in the navbar).",
     errSave: "Error saving, please try again.",
     dupFoundTitle: "Existing client found",
-    dupFoundMsg: "There’s already a client with this phone number in this org.",
+    dupFoundMsg:
+      "There’s already a client matching these details in this organization.",
     dupLogVisit: "Log Visit for Existing",
     dupUseAnyways: "Create new anyway",
+    searching: "Searching addresses…",
+    noMatches: "No nearby matches",
+    addrDisabled: "Address search disabled — missing Mapbox token",
   },
   es: {
     titleNew: "Nueva admisión",
@@ -57,11 +84,12 @@ const I18N = {
     phone: "Teléfono",
     address: "Dirección",
     zip: "Código postal",
+    county: "Condado",
     hhSize: "Número de personas en el hogar",
     usdaThisMonth: "¿Primera vez recibiendo USDA este mes?",
     yes: "Sí",
     no: "No",
-    tipUsda: "Elija una opción. Aplica solo a este mes.",
+    tipUsda: "Elija una opción si aplica. Solo para el mes actual.",
     closeAfterSave: "Cerrar después de guardar",
     cancel: "Cancelar",
     save: "Guardar cambios",
@@ -72,12 +100,17 @@ const I18N = {
     errDobOrPhone: "Proporcione al menos un teléfono o fecha de nacimiento.",
     errZip: "El código postal debe tener 5 dígitos.",
     errHH: "El tamaño del hogar debe ser al menos 1.",
-    errOrgLoc: "Se requieren Organización y Ubicación (use el selector en la barra).",
+    errOrgLoc:
+      "Se requieren Organización y Ubicación (use el selector en la barra).",
     errSave: "Error al guardar. Intente de nuevo.",
     dupFoundTitle: "Cliente existente encontrado",
-    dupFoundMsg: "Ya existe un cliente con este teléfono en esta organización.",
+    dupFoundMsg:
+      "Ya existe un cliente con estos datos en esta organización.",
     dupLogVisit: "Registrar visita al existente",
     dupUseAnyways: "Crear nuevo de todos modos",
+    searching: "Buscando direcciones…",
+    noMatches: "Sin resultados cercanos",
+    addrDisabled: "Búsqueda deshabilitada: falta el token de Mapbox",
   },
 };
 const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
@@ -99,7 +132,14 @@ const localDateKey = (d = new Date()) =>
 const monthKey = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-// Phone mask “(xxx) xxx-xxxx”
+function isoWeekKey(d = new Date()) {
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
+  return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
 function formatPhone(value) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
   const len = digits.length;
@@ -108,7 +148,7 @@ function formatPhone(value) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
 }
 
-// Prevent Enter from submitting; move focus to next field
+// prevent Enter submitting early (mobile)
 function handleFormKeyDown(e) {
   if (e.key !== "Enter") return;
   const el = e.target;
@@ -122,7 +162,6 @@ function handleFormKeyDown(e) {
     type === "button";
   if (safe) return;
   e.preventDefault();
-
   const form = e.currentTarget;
   const focusables = Array.from(
     form.querySelectorAll("input, select, textarea")
@@ -132,6 +171,45 @@ function handleFormKeyDown(e) {
   else el.blur();
 }
 
+// Parse parts from Mapbox feature
+function parseFeatureAddressParts(feature) {
+  const street = feature.place_type?.includes("address")
+    ? `${feature.address ?? ""} ${feature.text ?? ""}`.trim()
+    : feature.text || "";
+  let city = "";
+  let county = "";
+  let zip = "";
+  if (Array.isArray(feature.context)) {
+    for (const c of feature.context) {
+      const id = c.id || "";
+      if (!city && (id.startsWith("locality") || id.startsWith("place")))
+        city = c.text || city;
+      if (!county && id.startsWith("district")) county = c.text || county;
+      if (!zip && id.startsWith("postcode"))
+        zip = (c.text || "").replace(/\D/g, "");
+    }
+  }
+  if (
+    !city &&
+    (feature.place_type?.includes("place") ||
+      feature.place_type?.includes("locality"))
+  ) {
+    city = feature.text || city;
+  }
+  const displayAddress =
+    street && city
+      ? `${street}, ${city}`
+      : feature.place_name?.split(",")[0] || "";
+  return { displayAddress, zip, county };
+}
+
+// Small stable hash for name+dob dedupe
+function hashDJB2(str = "") {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) + str.charCodeAt(i);
+  return `h${(h >>> 0).toString(16)}`;
+}
+
 const initialForm = {
   firstName: "",
   lastName: "",
@@ -139,8 +217,10 @@ const initialForm = {
   phone: "",
   address: "",
   zip: "",
+  county: "",
   householdSize: 1,
-  firstTimeThisMonth: true,
+  // Start as null so it NEVER auto-saves as Yes without an explicit tap.
+  firstTimeThisMonth: null, // true | false | null
 };
 
 /* ===========================
@@ -155,22 +235,28 @@ export default function NewClientForm({
   defaultLocationId,
 }) {
   const editing = !!client?.id;
-
-  // Auth / active org & location (multi-org aware)
   const authCtx = useAuth() || {};
+
+  // Device-scoped scope fallback (helps when accounts were shared).
+  const lsOrg = localStorage.getItem("stc.activeOrgId");
+  const lsLoc = localStorage.getItem("stc.activeLocationId");
+
   const orgId =
     defaultOrgId ??
     authCtx.org?.id ??
     authCtx.activeOrgId ??
     authCtx.activeOrg?.id ??
     authCtx.orgId ??
+    lsOrg ??
     null;
+
   const locationId =
     defaultLocationId ??
     authCtx.location?.id ??
     authCtx.activeLocationId ??
     authCtx.activeLocation?.id ??
     authCtx.locationId ??
+    lsLoc ??
     null;
 
   // UI + state
@@ -178,7 +264,6 @@ export default function NewClientForm({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // language toggle (persisted)
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem("newClientForm.lang");
     if (saved === "en" || saved === "es") return saved;
@@ -188,19 +273,13 @@ export default function NewClientForm({
     localStorage.setItem("newClientForm.lang", lang);
   }, [lang]);
 
-  // layout refs
+  // layout + safe spacing
   const firstRef = useRef(null);
-  const footerRef = useRef(null);
   const headerRef = useRef(null);
-  const bodyRef = useRef(null);
-
-  const [footerH, setFooterH] = useState(88);
+  const footerRef = useRef(null);
+  const [footerH, setFooterH] = useState(92);
   const [headerH, setHeaderH] = useState(56);
-  const [vh, setVh] = useState(
-    typeof window !== "undefined" ? window.innerHeight : 720
-  );
 
-  // Lock background scroll, focus first
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -212,17 +291,11 @@ export default function NewClientForm({
     };
   }, [open]);
 
-  // Measure header/footer and handle keyboards
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
-      setFooterH(footerRef.current?.offsetHeight || 88);
+      setFooterH(footerRef.current?.offsetHeight || 92);
       setHeaderH(headerRef.current?.offsetHeight || 56);
-      setVh(
-        window.visualViewport
-          ? Math.round(window.visualViewport.height)
-          : window.innerHeight
-      );
     };
     measure();
     const vv = window.visualViewport;
@@ -232,15 +305,13 @@ export default function NewClientForm({
     }
     window.addEventListener("resize", measure);
     return () => {
-      if (vv) {
-        vv.removeEventListener("resize", measure);
-        vv.removeEventListener("scroll", measure);
-      }
+      vv?.removeEventListener("resize", measure);
+      vv?.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
     };
   }, [open]);
 
-  // Autofill when editing / reset when new
+  // seed values when editing
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -251,8 +322,13 @@ export default function NewClientForm({
         phone: client?.phone || "",
         address: client?.address || "",
         zip: client?.zip || "",
+        county: client?.county || "",
         householdSize: Number(client?.householdSize ?? 1),
-        firstTimeThisMonth: !!client?.firstTimeThisMonth,
+        // Editing keeps existing nullable flag; user doesn’t re-declare here.
+        firstTimeThisMonth:
+          typeof client?.firstTimeThisMonth === "boolean"
+            ? client.firstTimeThisMonth
+            : null,
       });
     } else {
       setForm(initialForm);
@@ -260,6 +336,116 @@ export default function NewClientForm({
     setMsg("");
   }, [open, editing, client]);
 
+  /* ===========================
+     Address autocomplete
+  ============================ */
+  const addrEnabled = Boolean(MAPBOX_TOKEN);
+  const [addrQ, setAddrQ] = useState("");
+  const [addrLoading, setAddrLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [addrLocked, setAddrLocked] = useState(false);
+  const [lastPicked, setLastPicked] = useState("");
+
+  const addrBoxRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => setAddrQ(form.address), [form.address]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!addrEnabled) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+    const q = (addrQ || "").trim();
+    if (q.length < 3 || addrLocked) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
+    let alive = true;
+    const id = setTimeout(async () => {
+      setAddrLoading(true);
+      try {
+        const url = new URL(`${GEOCODE_URL}/${encodeURIComponent(q)}.json`);
+        url.searchParams.set("access_token", MAPBOX_TOKEN);
+        url.searchParams.set("autocomplete", "true");
+        url.searchParams.set("proximity", LB_PROX);
+        url.searchParams.set("country", "US");
+        url.searchParams.set("limit", "7");
+        url.searchParams.set("types", "address,locality,place");
+        const res = await fetch(url.toString());
+        const data = await res.json();
+        const feats = Array.isArray(data.features) ? data.features : [];
+        const cleaned = feats.map((f) => ({
+          id: f.id,
+          place_name: f.place_name,
+          text: f.text,
+          address: f.address,
+          place_type: f.place_type || [],
+          context: f.context || [],
+          _raw: f,
+        }));
+        if (alive) {
+          setSuggestions(cleaned);
+          setShowDropdown(true);
+        }
+      } catch {
+        if (alive) {
+          setSuggestions([]);
+          setShowDropdown(true);
+        }
+      } finally {
+        if (alive) setAddrLoading(false);
+      }
+    }, 220);
+    return () => {
+      clearTimeout(id);
+      alive = false;
+    };
+  }, [addrQ, addrLocked, open, addrEnabled]);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+    const onDocClick = (e) => {
+      if (
+        !addrBoxRef.current?.contains(e.target) &&
+        !dropdownRef.current?.contains(e.target)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showDropdown]);
+
+  function onPickSuggestion(feat) {
+    const { displayAddress, zip, county } = parseFeatureAddressParts(
+      feat._raw || feat
+    );
+    setForm((f) => ({
+      ...f,
+      address: displayAddress,
+      zip: zip || f.zip,
+      county: county || f.county,
+    }));
+    setSuggestions([]);
+    setShowDropdown(false);
+    setAddrLocked(true);
+    setLastPicked(displayAddress);
+  }
+
+  function onAddressInputChange(e) {
+    const v = e.target.value;
+    setForm((f) => ({ ...f, address: v }));
+    if (addrLocked && v !== lastPicked) setAddrLocked(false);
+  }
+
+  /* ===========================
+     Validation & dedupe
+  ============================ */
   function validate() {
     const fn = form.firstName.trim();
     const ln = form.lastName.trim();
@@ -274,27 +460,45 @@ export default function NewClientForm({
     return "";
   }
 
-  // Check duplicates by phone within the active org
-  async function preflightPhoneDedupe(phoneDigits) {
-    if (!phoneDigits) return null;
-    const qs = await getDocs(
-      query(
-        collection(db, "clients"),
-        where("phoneDigits", "==", phoneDigits),
-        where("orgId", "==", orgId),
-        qLimit(1)
-      )
-    );
-    if (!qs.empty) {
-      const d = qs.docs[0];
-      return { id: d.id, ...(d.data() || {}) };
+  async function preflightDedupe({ phoneDigits, nameDobHash }) {
+    // 1) phone-first dedupe (if digits provided)
+    if (phoneDigits) {
+      const qs = await getDocs(
+        query(
+          collection(db, "clients"),
+          where("phoneDigits", "==", phoneDigits),
+          where("orgId", "==", orgId),
+          qLimit(1)
+        )
+      );
+      if (!qs.empty) {
+        const d = qs.docs[0];
+        return { id: d.id, ...(d.data() || {}) };
+      }
+    }
+    // 2) name+dob secondary dedupe (when dob given)
+    if (nameDobHash) {
+      const qs2 = await getDocs(
+        query(
+          collection(db, "clients"),
+          where("nameDobHash", "==", nameDobHash),
+          where("orgId", "==", orgId),
+          qLimit(1)
+        )
+      );
+      if (!qs2.empty) {
+        const d = qs2.docs[0];
+        return { id: d.id, ...(d.data() || {}) };
+      }
     }
     return null;
   }
 
-  // Duplicate found UI state
   const [dup, setDup] = useState(null);
 
+  /* ===========================
+     Submit
+=========================== */
   async function onSubmit(e) {
     e.preventDefault();
     if (busy) return;
@@ -312,100 +516,182 @@ export default function NewClientForm({
     const phoneDigits = normalizePhone(form.phone);
 
     try {
-      // If NEW: handle duplicate by phone within org by offering to log visit
+      const firstName = tcase(form.firstName.trim());
+      const lastName = tcase(form.lastName.trim());
+      const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
+      const nameDobHash = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
+
+      // On CREATE, preflight duplicate by phone OR name+dob
       if (!editing) {
-        const existing = await preflightPhoneDedupe(phoneDigits);
+        const existing = await preflightDedupe({ phoneDigits, nameDobHash });
         if (existing) {
-          setDup(existing); // surface choice to user
+          setDup(existing);
           setMsg(t(lang, "dupFoundMsg"));
           setBusy(false);
           return;
         }
       }
 
-      // Build payload for create/update
-      const payload = {
-        firstName: tcase(form.firstName.trim()),
-        lastName: tcase(form.lastName.trim()),
+      // Base payload (no org/location when editing — those are preserved below)
+      const basePayload = {
+        firstName,
+        lastName,
         dob: form.dob.trim(),
         phone: form.phone.trim(),
         phoneDigits,
         address: form.address.trim(),
         zip: (form.zip || "").trim(),
+        county: (form.county || "").trim(),
         householdSize: Number(form.householdSize || 1),
-        firstTimeThisMonth: !!form.firstTimeThisMonth,
-        orgId,
-        locationId,
+
+        firstTimeThisMonth:
+          typeof form.firstTimeThisMonth === "boolean"
+            ? form.firstTimeThisMonth
+            : null,
+
+        fullNameLower,
+        nameDobHash,
+
+        inactive: false,
+        mergedIntoId: null,
+
         updatedAt: serverTimestamp(),
+        updatedByUserId: auth.currentUser?.uid || null,
       };
 
       let createdId = client?.id;
 
-      // ***** TRANSACTION: ALL READS BEFORE ALL WRITES *****
       await runTransaction(db, async (tx) => {
         const now = new Date();
         const mk = monthKey(now);
         const dk = localDateKey(now);
+        const wk = isoWeekKey(now);
+        const weekday = now.getDay(); // 0–6
 
-        const clientRef = editing
-          ? doc(db, "clients", client.id)
-          : doc(collection(db, "clients"));
-
-        const markerRef = doc(
-          db,
-          "usda_first",
-          `${orgId}_${clientRef.id}_${mk}`
-        );
-
-        // READS FIRST (only need marker check for new client)
-        const markerSnap = !editing ? await tx.get(markerRef) : null;
-        const isFirst = !editing ? !markerSnap.exists() : false;
-
-        // WRITES
         if (!editing) {
+          const clientRef = doc(collection(db, "clients"));
+
+          // Optional USDA-first marker decision
+          const wantsUsdaFirst = form.firstTimeThisMonth === true;
+          const markerRef = doc(
+            db,
+            "usda_first",
+            `${orgId}_${clientRef.id}_${mk}`
+          );
+          const markerSnap = wantsUsdaFirst ? await tx.get(markerRef) : null;
+          const willBeFirst = wantsUsdaFirst && !markerSnap?.exists();
+
+          // Create client (note: orgId/locationId set here for CREATE only)
           tx.set(
             clientRef,
-            { ...payload, createdAt: serverTimestamp() },
+            {
+              ...basePayload,
+              orgId,
+              locationId,
+              createdAt: serverTimestamp(),
+              createdByUserId: auth.currentUser?.uid || null,
+
+              // counters init (0 → then atomic +1 below)
+              visitCountLifetime: 0,
+              visitCountByMonth: {},
+              lastVisitAt: null,
+              lastVisitMonthKey: null,
+            },
             { merge: true }
           );
 
-          if (isFirst) {
+          // USDA monthly uniqueness guard (idempotent)
+          if (willBeFirst) {
             tx.set(markerRef, {
               clientId: clientRef.id,
               orgId,
+              locationId,
               monthKey: mk,
               createdAt: serverTimestamp(),
+              createdByUserId: auth.currentUser?.uid || null,
             });
           }
 
+          // Create first visit (audit normalized)
           const visitRef = doc(collection(db, "visits"));
           tx.set(visitRef, {
             clientId: clientRef.id,
-            clientFirstName: payload.firstName,
-            clientLastName: payload.lastName,
-            visitAt: serverTimestamp(),
-            dateKey: dk,
-            monthKey: mk,
+            clientFirstName: basePayload.firstName,
+            clientLastName: basePayload.lastName,
             orgId,
             locationId,
             householdSize: Number(form.householdSize || 1),
-            usdaFirstTimeThisMonth: isFirst,
-            createdBy: auth.currentUser?.uid || null,
+
+            // keys
+            visitAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+            dateKey: dk,
+            monthKey: mk,
+            weekKey: wk,
+            weekday,
+
+            // USDA toggle mirrors explicit choice
+            usdaFirstTimeThisMonth: wantsUsdaFirst,
+
+            // audit
+            createdBy: auth.currentUser?.uid || null, // legacy
+            createdByUserId: auth.currentUser?.uid || null,
+            editedAt: null,
+            editedByUserId: null,
             addedByReports: false,
           });
-        } else {
-          tx.set(clientRef, payload, { merge: true });
-        }
 
-        createdId = clientRef.id;
+          // Atomic counters + lastVisitAt via serverTimestamp
+          tx.update(clientRef, {
+            visitCountLifetime: increment(1),
+            [`visitCountByMonth.${mk}`]: increment(1),
+            lastVisitAt: serverTimestamp(),
+            lastVisitMonthKey: mk,
+          });
+
+          createdId = clientRef.id;
+        } else {
+          // EDITING PATH — preserve original org/location
+          if (!client?.id) throw new Error("Missing client id for edit.");
+          const clientRef = doc(db, "clients", client.id);
+          const snap = await tx.get(clientRef);
+          if (!snap.exists()) throw new Error("Client no longer exists.");
+          const current = snap.data() || {};
+
+          // Carry forward original tenant scope to avoid cross-org moves
+          const preservedOrgId = current.orgId ?? client.orgId ?? null;
+          const preservedLocationId =
+            current.locationId ?? client.locationId ?? null;
+
+          tx.set(
+            clientRef,
+            {
+              ...basePayload,
+              orgId: preservedOrgId,
+              locationId: preservedLocationId,
+            },
+            { merge: true }
+          );
+
+          createdId = clientRef.id;
+        }
       });
 
-      const saved = { id: createdId, ...payload };
+      const saved = {
+        id: createdId,
+        ...(editing
+          ? { ...client }
+          : { orgId, locationId }), // expose scope on create
+        ...basePayload,
+      };
+
       onSaved?.(saved);
       setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
 
       if (!editing) {
         setForm(initialForm);
+        setAddrLocked(false);
+        setLastPicked("");
         firstRef.current?.focus();
       }
     } catch (err) {
@@ -416,7 +702,7 @@ export default function NewClientForm({
     }
   }
 
-  // If we detect a duplicate, allow quick “Log Visit” for the existing client
+  // Quick log for duplicate — uses atomic increments + serverTimestamp everywhere
   async function logVisitForDuplicate() {
     if (!dup?.id || busy) return;
     setBusy(true);
@@ -426,34 +712,58 @@ export default function NewClientForm({
         const now = new Date();
         const mk = monthKey(now);
         const dk = localDateKey(now);
+        const wk = isoWeekKey(now);
+        const weekday = now.getDay();
 
+        // USDA marker only if the user explicitly chose "Yes"
+        const wantsUsdaFirst = form.firstTimeThisMonth === true;
         const markerRef = doc(db, "usda_first", `${orgId}_${dup.id}_${mk}`);
-        const markerSnap = await tx.get(markerRef);
-        const isFirst = !markerSnap.exists();
+        const markerSnap = wantsUsdaFirst ? await tx.get(markerRef) : null;
+        const willBeFirst = wantsUsdaFirst && !markerSnap?.exists();
 
-        if (isFirst) {
+        if (willBeFirst) {
           tx.set(markerRef, {
             clientId: dup.id,
             orgId,
+            locationId,
             monthKey: mk,
             createdAt: serverTimestamp(),
+            createdByUserId: auth.currentUser?.uid || null,
           });
         }
 
+        // Add visit
         const visitRef = doc(collection(db, "visits"));
         tx.set(visitRef, {
           clientId: dup.id,
           clientFirstName: dup.firstName || "",
           clientLastName: dup.lastName || "",
-          visitAt: serverTimestamp(),
-          monthKey: mk,
-          dateKey: dk,
           orgId,
           locationId,
           householdSize: Number(form.householdSize || 1),
-          usdaFirstTimeThisMonth: isFirst,
-          createdBy: auth.currentUser?.uid || null,
+          visitAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          monthKey: mk,
+          dateKey: dk,
+          weekKey: wk,
+          weekday,
+          usdaFirstTimeThisMonth: wantsUsdaFirst,
+          createdBy: auth.currentUser?.uid || null, // legacy
+          createdByUserId: auth.currentUser?.uid || null,
+          editedAt: null,
+          editedByUserId: null,
           addedByReports: false,
+        });
+
+        // Atomic counter bumps + lastVisitAt serverTimestamp
+        const clientRef = doc(db, "clients", dup.id);
+        tx.update(clientRef, {
+          visitCountLifetime: increment(1),
+          [`visitCountByMonth.${mk}`]: increment(1),
+          lastVisitAt: serverTimestamp(),
+          lastVisitMonthKey: mk,
+          updatedAt: serverTimestamp(),
+          updatedByUserId: auth.currentUser?.uid || null,
         });
       });
 
@@ -461,6 +771,8 @@ export default function NewClientForm({
       onSaved?.({ ...(dup || {}) });
       setDup(null);
       setForm(initialForm);
+      setAddrLocked(false);
+      setLastPicked("");
       firstRef.current?.focus();
     } catch (e) {
       console.error(e);
@@ -472,9 +784,8 @@ export default function NewClientForm({
 
   if (!open) return null;
 
-  // dynamic paddings/heights (kept for mobile keyboards)
+  const formBottomPad = footerH + 20;
   const safeBottom = `max(env(safe-area-inset-bottom), 0px)`;
-  const formBottomPad = footerH + 16;
 
   const showAssist = lang === "es";
   const dual = (primary, hint) => (
@@ -486,10 +797,10 @@ export default function NewClientForm({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* dim */}
+      {/* scrim */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-      {/* sheet / modal */}
+      {/* modal sheet */}
       <div
         className="
           absolute inset-x-0 top-0 bottom-0
@@ -498,11 +809,7 @@ export default function NewClientForm({
           bg-white md:rounded-3xl shadow-xl ring-1 ring-gray-200 flex flex-col
           relative h-dvh md:h-auto overflow-hidden
         "
-        style={{
-          WebkitOverflowScrolling: "touch",
-          paddingBottom: safeBottom,
-          touchAction: "manipulation",
-        }}
+        style={{ paddingBottom: safeBottom, WebkitOverflowScrolling: "touch" }}
         lang={lang}
       >
         {/* header */}
@@ -513,17 +820,15 @@ export default function NewClientForm({
           <h2 className="text-lg md:text-xl font-semibold">
             {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
           </h2>
-
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setLang("en")}
-              className={`h-9 px-3 rounded-lg border text-sm transition-colors
-                ${
-                  lang === "en"
-                    ? "bg-brand-700 text-white border-brand-700 hover:bg-brand-600"
-                    : "bg-white text-brand-700 border-brand-700 hover:bg-brand-50"
-                } focus:outline-none focus:ring-2 focus:ring-brand-400`}
+              className={`h-9 px-3 rounded-lg border text-sm transition-colors ${
+                lang === "en"
+                  ? "bg-brand-700 text-white border-brand-700 hover:bg-brand-600"
+                  : "bg-white text-brand-700 border-brand-700 hover:bg-brand-50"
+              } focus:outline-none focus:ring-2 focus:ring-brand-400`}
               aria-pressed={lang === "en"}
             >
               English
@@ -531,12 +836,11 @@ export default function NewClientForm({
             <button
               type="button"
               onClick={() => setLang("es")}
-              className={`h-9 px-3 rounded-lg border text-sm transition-colors
-                ${
-                  lang === "es"
-                    ? "bg-brand-700 text-white border-brand-700 hover:bg-brand-600"
-                    : "bg-white text-brand-700 border-brand-700 hover:bg-brand-50"
-                } focus:outline-none focus:ring-2 focus:ring-brand-400`}
+              className={`h-9 px-3 rounded-lg border text-sm transition-colors ${
+                lang === "es"
+                  ? "bg-brand-700 text-white border-brand-700 hover:bg-brand-600"
+                  : "bg-white text-brand-700 border-brand-700 hover:bg-brand-50"
+              } focus:outline-none focus:ring-2 focus:ring-brand-400`}
               aria-pressed={lang === "es"}
             >
               Español
@@ -554,17 +858,16 @@ export default function NewClientForm({
           </div>
         </div>
 
-        {/* form (scroll area) */}
+        {/* form (scroll region) */}
         <form
           id="new-client-form"
-          ref={bodyRef}
           onSubmit={onSubmit}
           onKeyDown={handleFormKeyDown}
           noValidate
           className="flex-1 overflow-y-auto px-4 md:px-6 space-y-4 text-[17px]"
-          style={{ overscrollBehaviorY: "contain", paddingBottom: formBottomPad }}
+          style={{ paddingBottom: formBottomPad }}
         >
-          {/* Name */}
+          {/* Names */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-700">
@@ -572,7 +875,7 @@ export default function NewClientForm({
               </span>
               <input
                 ref={firstRef}
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 name="firstName"
                 placeholder="e.g., Brian"
                 autoCapitalize="words"
@@ -590,7 +893,7 @@ export default function NewClientForm({
                 {dual(t(lang, "lastName"), "Last name")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 name="lastName"
                 placeholder="e.g., Aiad"
                 autoCapitalize="words"
@@ -612,12 +915,14 @@ export default function NewClientForm({
                 {dual(t(lang, "dob"), "Date of birth")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 type="date"
                 name="dob"
                 autoComplete="bday"
                 value={form.dob}
-                onChange={(e) => setForm((f) => ({ ...f, dob: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, dob: e.target.value }))
+                }
                 max={new Date().toISOString().slice(0, 10)}
                 enterKeyHint="next"
               />
@@ -627,7 +932,7 @@ export default function NewClientForm({
                 {dual(t(lang, "phone"), "Phone")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 name="phone"
                 placeholder="(310) 254-1234"
                 inputMode="tel"
@@ -641,41 +946,94 @@ export default function NewClientForm({
             </label>
           </div>
 
-          {/* Address */}
-          <div className="flex flex-col gap-1">
+          {/* Address + ZIP + County */}
+          <div className="flex flex-col gap-1 relative">
             <span className="text-xs font-medium text-gray-700">
               {dual(t(lang, "address"), "Address")}
             </span>
             <input
-              className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
-              placeholder="e.g., 185 Harvard Dr, Seal Beach"
-              value={form.address}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, address: e.target.value }))
+              ref={addrBoxRef}
+              disabled={!addrEnabled}
+              className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500"
+              placeholder={
+                addrEnabled
+                  ? "e.g., 185 Harvard Dr, Seal Beach"
+                  : t(lang, "addrDisabled")
               }
+              value={form.address}
+              onChange={onAddressInputChange}
               enterKeyHint="next"
               autoComplete="street-address"
+              onFocus={() =>
+                addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)
+              }
             />
 
-            <div className="flex gap-3 mt-2">
+            {/* Suggestions dropdown */}
+            {addrEnabled && showDropdown && (
+              <div
+                ref={dropdownRef}
+                className="absolute left-0 right-0 top-[100%] mt-1 z-50 rounded-2xl bg-white shadow-xl ring-1 ring-black/10 overflow-hidden"
+              >
+                <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">
+                  {addrLoading ? t(lang, "searching") : "Nearby results"}
+                </div>
+                <ul className="max-h-[280px] overflow-auto">
+                  {!addrLoading && suggestions.length === 0 ? (
+                    <li className="px-3 py-2 text-sm text-gray-500">
+                      {t(lang, "noMatches")}
+                    </li>
+                  ) : null}
+                  {suggestions.map((sug) => (
+                    <li key={sug.id}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 active:bg-gray-100"
+                        onClick={() => onPickSuggestion(sug)}
+                        title={sug.place_name}
+                      >
+                        {sug.place_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 mt-2">
               <label className="flex-1">
                 <span className="sr-only">{t(lang, "zip")}</span>
                 <input
-                  className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
                   name="zip"
                   placeholder={lang === "es" ? "Código postal" : "ZIP code"}
                   value={form.zip}
-                  onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, zip: e.target.value }))
+                  }
                   inputMode="numeric"
                   pattern="\d{5}"
                   autoComplete="postal-code"
                   enterKeyHint="next"
                 />
               </label>
+              <label className="flex-1">
+                <span className="sr-only">{t(lang, "county")}</span>
+                <input
+                  className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  name="county"
+                  placeholder={lang === "es" ? "Condado" : "County"}
+                  value={form.county}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, county: e.target.value }))
+                  }
+                  enterKeyHint="next"
+                />
+              </label>
             </div>
           </div>
 
-          {/* Household + USDA flag */}
+          {/* Household + USDA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Household size */}
             <div className="flex flex-col gap-2">
@@ -720,21 +1078,23 @@ export default function NewClientForm({
               </div>
             </div>
 
-            {/* USDA this month (only when NEW) */}
+            {/* USDA (only for NEW) */}
             {!editing && (
               <fieldset className="flex flex-col gap-2">
                 <legend className="text-xs font-medium text-gray-700">
-                  {dual(t(lang, "usdaThisMonth"), "First time receiving USDA this month")}
+                  {dual(
+                    t(lang, "usdaThisMonth"),
+                    "First time receiving USDA this month"
+                  )}
                 </legend>
 
                 <div className="grid grid-cols-2 gap-2">
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors
-                      ${
-                        form.firstTimeThisMonth
-                          ? "bg-brand-700 text-white border-brand-700"
-                          : "bg-white text-gray-800 border-gray-300 hover:bg-brand-50"
-                      }`}
+                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors ${
+                      form.firstTimeThisMonth === true
+                        ? "bg-brand-700 text-white border-brand-700"
+                        : "bg-white text-gray-800 border-gray-300 hover:bg-brand-50"
+                    }`}
                   >
                     <input
                       type="radio"
@@ -749,12 +1109,11 @@ export default function NewClientForm({
                   </label>
 
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors
-                      ${
-                        !form.firstTimeThisMonth
-                          ? "bg-brand-700 text-white border-brand-700"
-                          : "bg-white text-gray-800 border-gray-300 hover:bg-brand-50"
-                      }`}
+                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors ${
+                      form.firstTimeThisMonth === false
+                        ? "bg-brand-700 text-white border-brand-700"
+                        : "bg-white text-gray-800 border-gray-300 hover:bg-brand-50"
+                    }`}
                   >
                     <input
                       type="radio"
@@ -773,7 +1132,7 @@ export default function NewClientForm({
             )}
           </div>
 
-          {/* Duplicate notice card (when found) */}
+          {/* Duplicate card */}
           {dup && (
             <div className="rounded-2xl border bg-amber-50 ring-1 ring-amber-200 p-4 space-y-2">
               <div className="font-semibold text-amber-900">
@@ -812,15 +1171,10 @@ export default function NewClientForm({
           )}
         </form>
 
-        {/* fixed footer inside modal (outside the scroll area) */}
+        {/* footer (fixed) */}
         <div
           ref={footerRef}
-          className="
-            absolute bottom-0 left-0 right-0
-            bg-white border-t
-            px-4 md:px-6 pt-2 pb-[max(12px,env(safe-area-inset-bottom))]
-            z-10
-          "
+          className="absolute bottom-0 left-0 right-0 bg-white border-t px-4 md:px-6 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] z-10"
         >
           {!editing && (
             <label className="flex items-center gap-2 text-xs text-gray-600 mb-2 select-none">
@@ -838,27 +1192,22 @@ export default function NewClientForm({
               {t(lang, "cancel")}
             </button>
 
-            {/* Submit the form even though the button is outside it */}
             <button
               type="submit"
               form="new-client-form"
               disabled={busy}
-              className="
-                h-14 md:h-12 w-full md:w-auto
-                px-6 rounded-2xl
-                bg-brand-700 text-white
-                text-[17px] font-semibold
-                shadow-sm
-                hover:bg-brand-600 active:bg-brand-800
-                disabled:opacity-50
-              "
+              className="h-14 md:h-12 w-full md:w-auto px-6 rounded-2xl bg-brand-700 text-white text-[17px] font-semibold shadow-sm hover:bg-brand-600 active:bg-brand-800 disabled:opacity-50"
             >
               {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
             </button>
           </div>
 
           {msg && (
-            <div className="mt-2 text-sm text-gray-700" role="status" aria-live="polite">
+            <div
+              className="mt-2 text-sm text-gray-700"
+              role="status"
+              aria-live="polite"
+            >
               {msg}
             </div>
           )}

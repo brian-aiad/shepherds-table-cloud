@@ -6,13 +6,7 @@ import {
   onSnapshot,
   query,
   orderBy,
-  limit as qLimit,
   where,
-  getDocs,
-  writeBatch,
-  serverTimestamp,
-  startAfter,
-  doc,
 } from "firebase/firestore";
 import { useAuth } from "../auth/useAuth";
 import NewClientForm from "../components/NewClientForm";
@@ -41,8 +35,9 @@ function relevanceScore(c, tks) {
     else if (full.includes(tk)) score += 30;
     else if (dtk && digits.includes(dtk)) score += 25;
   }
-  // small recency nudge
-  score += (c.updatedAt?._seconds || 0) / 100000;
+  // tiny recency nudge if Firestore TS exists
+  const sec = c?.updatedAt?._seconds ?? 0;
+  score += sec / 100000;
   return score;
 }
 
@@ -59,6 +54,9 @@ const localDateKey = (d = new Date()) => {
   return `${y}-${m}-${day}`;
 };
 
+const monthKeyOf = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
 const fmtLocal = (ts) => {
   try {
     return (ts?.toDate?.() ?? new Date(ts)).toLocaleString();
@@ -68,8 +66,6 @@ const fmtLocal = (ts) => {
 };
 
 // UI atoms
-const visitBtnCls =
-  "inline-flex items-center justify-center h-10 px-3.5 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-600 active:bg-brand-800 disabled:opacity-50 whitespace-nowrap flex-shrink-0 transition";
 const cardCls = "rounded-2xl border border-brand-200 bg-white shadow-sm";
 const subCardCls = "rounded-xl border border-brand-100 bg-white";
 
@@ -91,16 +87,10 @@ export default function Dashboard() {
   const [editor, setEditor] = useState({ open: false, client: null });
   const [visitSheet, setVisitSheet] = useState({ open: false, client: null });
   const [toast, setToast] = useState(null);
-  const [busy] = useState(false);
-  const [todayCount, setTodayCount] = useState(0);
+  const [err, setErr] = useState("");
 
-  // pagination
-  const PAGE_SIZE = 150;
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingClients, setLoadingClients] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const lastClientDocRef = useRef(null);
-  const firstPageUnsubRef = useRef(null);
+  // KPI (only: visits today)
+  const [todayCount, setTodayCount] = useState(0);
 
   // reset hard on scope changes
   const scopeKey = `${org?.id || "no-org"}__${location?.id || "all"}`;
@@ -110,85 +100,48 @@ export default function Dashboard() {
     setSelectedVisits([]);
     setRecentVisits([]);
     setTodayCount(0);
-    setHasMore(true);
-    setLoadingClients(true);
-    lastClientDocRef.current = null;
-    if (firstPageUnsubRef.current) {
-      firstPageUnsubRef.current();
-      firstPageUnsubRef.current = null;
-    }
+    setErr("");
   }, [org?.id, location?.id]);
 
-  /* ---- live clients (first page) scoped by org + optional location ---- */
+  /* ---- live clients (FULL LIST, no pagination) scoped by org + optional location ---- */
   useEffect(() => {
     if (loading) return;
-    if (!org?.id) {
-      setLoadingClients(false);
-      return;
-    }
+    if (!org?.id) return;
+
     const filters = [where("orgId", "==", org.id)];
     if (location?.id) filters.push(where("locationId", "==", location.id));
 
-    const q1 = query(collection(db, "clients"), ...filters, orderBy("firstName"), qLimit(PAGE_SIZE));
+    // Full list ordered by firstName then lastName for stability
+    const q1 = query(
+      collection(db, "clients"),
+      ...filters,
+      orderBy("firstName"),
+      orderBy("lastName")
+    );
 
     const unsub = onSnapshot(
       q1,
       (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data(), _doc: d }));
-        setClients(rows);
-        lastClientDocRef.current = snap.docs[snap.docs.length - 1] || null;
-        setHasMore(Boolean(lastClientDocRef.current));
-        setLoadingClients(false);
+        // Hide deactivated/merged clients on the client side for backward-compat with older docs
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((c) => c.inactive !== true && !c.mergedIntoId);
 
-        // keep selection fresh
+        setClients(rows);
+
+        // keep selection fresh or clear it if the client is gone/now inactive
         setSelected((prev) => {
           if (!prev) return null;
-          const fresh = rows.find((r) => r.id === prev.id);
-          return fresh || null;
+          return rows.find((r) => r.id === prev.id) || null;
         });
       },
-      (err) => {
-        console.error("clients onSnapshot error:", err);
-        setLoadingClients(false);
+      (e) => {
+        console.error("clients onSnapshot error:", e);
+        setErr("Couldn’t load clients. Please check your connection.");
       }
     );
-    firstPageUnsubRef.current = unsub;
     return () => unsub();
   }, [db, loading, org?.id, location?.id]);
-
-  /* ---- load more clients (append; one-shot; same scope) ---- */
-  const loadMoreClients = async () => {
-    if (!hasMore || loadingMore || !org?.id) return;
-    try {
-      setLoadingMore(true);
-      const after = lastClientDocRef.current;
-      if (!after) {
-        setHasMore(false);
-        setLoadingMore(false);
-        return;
-      }
-
-      const filters = [where("orgId", "==", org.id)];
-      if (location?.id) filters.push(where("locationId", "==", location.id));
-
-      const qMore = query(
-        collection(db, "clients"),
-        ...filters,
-        orderBy("firstName"),
-        startAfter(after),
-        qLimit(PAGE_SIZE)
-      );
-      const snap = await getDocs(qMore);
-      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data(), _doc: d }));
-      setClients((prev) => [...prev, ...rows]);
-      lastClientDocRef.current = snap.docs[snap.docs.length - 1] || null;
-      setHasMore(Boolean(lastClientDocRef.current));
-    } catch (e) {
-      console.error("loadMoreClients error:", e);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   /* ---- visit history for selected (client-specific) ---- */
   useEffect(() => {
@@ -199,8 +152,7 @@ export default function Dashboard() {
     const qv = query(
       collection(db, "visits"),
       where("clientId", "==", selected.id),
-      orderBy("visitAt", "desc"),
-      qLimit(50)
+      orderBy("visitAt", "desc")
     );
     return onSnapshot(qv, (snap) => {
       setSelectedVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -212,14 +164,18 @@ export default function Dashboard() {
     if (!org?.id) return;
     const filters = [where("orgId", "==", org.id)];
     if (location?.id) filters.push(where("locationId", "==", location.id));
-
-    const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"), qLimit(10));
+    const q2 = query(
+      collection(db, "visits"),
+      ...filters,
+      orderBy("visitAt", "desc")
+    );
     return onSnapshot(q2, (snap) => {
-      setRecentVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setRecentVisits(all.slice(0, 10)); // cap table to latest 10
     });
   }, [org?.id, location?.id]);
 
-  /* ---- signed-in today count, scoped ---- */
+  /* ---- visits today count, scoped ---- */
   useEffect(() => {
     if (!org?.id) return;
     const today = localDateKey();
@@ -257,7 +213,9 @@ export default function Dashboard() {
     if (searchTokens.length > 0) return [];
     const map = new Map();
     for (const c of clients) {
-      const key = ((c.firstName || c.lastName || "?")[0] || "?").toUpperCase().slice(0, 1);
+      const key = ((c.firstName || c.lastName || "?")[0] || "?")
+        .toUpperCase()
+        .slice(0, 1);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(c);
     }
@@ -287,11 +245,7 @@ export default function Dashboard() {
   }
 
   // USDA status for selected (current month), derived from selectedVisits
-  const currentMonthKey = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  }, []);
-
+  const currentMonthKey = useMemo(() => monthKeyOf(), []);
   const usdaThisMonth = useMemo(
     () =>
       selectedVisits.some((v) => {
@@ -300,7 +254,7 @@ export default function Dashboard() {
           (() => {
             try {
               const d = v.visitAt?.toDate?.() ?? new Date(v.visitAt);
-              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+              return monthKeyOf(d);
             } catch {
               return "";
             }
@@ -316,7 +270,9 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto p-4 md:p-6">
-        <div className={`${cardCls} p-4 text-sm text-gray-700`}>Loading…</div>
+        <div className={`${cardCls} p-4`}>
+          <SkeletonRows />
+        </div>
       </div>
     );
   }
@@ -324,7 +280,10 @@ export default function Dashboard() {
   if (!org?.id) {
     return (
       <div className="max-w-6xl mx-auto p-4 md:p-6">
-        <div className={`${cardCls} p-4 text-sm text-gray-700`}>Select an organization to begin.</div>
+        <div className={`${cardCls} p-6 text-sm text-gray-700`}>
+          <div className="text-base font-semibold mb-1">Choose an organization</div>
+          <p>Select an organization from the navbar to begin.</p>
+        </div>
       </div>
     );
   }
@@ -343,10 +302,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* scope pill ABOVE search */}
-      <div className="mb-2 text-xs text-gray-600">
+      {/* scope pill (above search) */}
+      <div className="mb-2 text-xs text-gray-700">
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-brand-200 bg-white">
-          <span className="font-semibold">Scope</span> • <span>{org?.name || "—"}</span>
+          <span className="font-semibold text-brand-900">Scope</span> • <span>{org?.name || "—"}</span>
           {location?.name ? (
             <>
               <span className="opacity-60">/</span>
@@ -363,7 +322,7 @@ export default function Dashboard() {
         {/* search */}
         <div className="relative w-full min-w-0 rounded-2xl border border-brand-200 bg-white shadow-sm">
           <input
-            className="w-full bg-transparent rounded-2xl pl-4 pr-10 py-3 text-[17px] focus:outline-none"
+            className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-3 text-[17px] focus:outline-none"
             placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
             value={term}
             onChange={(e) => setTerm(e.target.value)}
@@ -373,6 +332,8 @@ export default function Dashboard() {
             inputMode="search"
             aria-label="Search clients by name or phone"
           />
+          {/* lens */}
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">🔎</div>
           {term && (
             <button
               type="button"
@@ -389,7 +350,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3 shrink-0 md:ml-0">
           <button
             onClick={() => setShowNew(true)}
-            className="inline-flex items-center gap-2 h-11 px-4 rounded-2xl bg-brand-700 text-white text-sm font-medium shadow-sm hover:bg-brand-600 active:bg-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 transition whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-brand-700 text-white text-sm font-semibold shadow-sm hover:bg-brand-600 active:bg-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 transition"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
               <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
@@ -397,18 +358,25 @@ export default function Dashboard() {
             Add New Client
           </button>
 
+          {/* Visits Today pill — slimmer on mobile so it never sticks out */}
           <span
             role="status"
             aria-label={`Visits today ${todayCount}`}
-            className="inline-flex items-center gap-3 h-11 px-4 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm"
+            className="inline-flex items-center gap-2.5 h-10 px-4 rounded-xl border border-brand-200 text-brand-900 bg-white shadow-sm md:h-11 md:px-5 md:rounded-2xl"
           >
-            <span className="hidden md:inline text-sm font-medium">Visits Today</span>
-            <span className="md:hidden text-sm font-medium">Today</span>
-            <span className="mx-1 h-5 w-px bg-brand-200" aria-hidden="true" />
-            <span className="text-lg md:text-xl font-bold tabular-nums tracking-tight">{todayCount}</span>
+            <span className="text-sm font-medium md:text-base md:font-medium">Today</span>
+            <span className="h-5 w-px bg-brand-200 md:h-6" aria-hidden="true" />
+            <span className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{todayCount}</span>
           </span>
+
         </div>
       </div>
+
+      {err && (
+        <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm">
+          {err}
+        </div>
+      )}
 
       {/* main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
@@ -418,15 +386,8 @@ export default function Dashboard() {
             <span>
               {searchTokens.length > 0
                 ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
-                : loadingClients
-                ? "Loading clients…"
-                : `Showing ${clients.length}${hasMore ? "+" : ""} total`}
+                : `Showing ${clients.length} total`}
             </span>
-            {!loadingClients && !term && hasMore && (
-              <button onClick={loadMoreClients} className="text-brand-800 hover:text-brand-900 text-sm" disabled={loadingMore}>
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
-            )}
           </div>
 
           {/* Letter chips (when not searching) */}
@@ -435,7 +396,7 @@ export default function Dashboard() {
               {letterChips.map((L) => (
                 <button
                   key={L}
-                  className="px-2 py-1 rounded-md text-xs bg-gray-100 hover:bg-gray-200"
+                  className="px-2 py-1 rounded-md text-xs bg-brand-50 text-brand-900 ring-1 ring-brand-100 hover:bg-brand-100 active:bg-brand-200"
                   onClick={() => setTerm((t) => (t === L ? "" : L))}
                   aria-label={`Jump to ${L}`}
                 >
@@ -445,51 +406,60 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="max-h-[420px] overflow-auto">
+          {/* List — full list, comfortable scrolling */}
+          <div className="max-h-[70vh] md:max-h-[480px] overflow-auto pretty-scroll">
             {(searchTokens.length > 0
               ? [{ letter: null, items: filteredSorted }]
-              : grouped.map(([letter, items]) => ({ letter, items }))).map(({ letter, items }) => (
-              <div key={letter ?? "best"} className="mb-3">
-                {letter && (
-                  <div className="sticky top-0 z-10 bg-white text-xs font-semibold text-gray-500 py-1 border-b border-brand-100">
-                    {letter}
-                  </div>
-                )}
-                <ul className="divide-y">
-                  {items.map((c) => (
-                    <li
-                      key={c.id}
-                      onClick={() => setSelected(c)}
-                      className={`flex items-center justify-between gap-3 py-2.5 px-2 rounded cursor-pointer transition ${
-                        selected?.id === c.id ? "bg-brand-100 hover:bg-brand-100" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">
-                          {tcase(c.firstName)} {tcase(c.lastName)}
-                        </div>
-                        <div className="text-xs text-gray-600 truncate">
-                          {[c.phone || null, c.address ? `• ${c.address}` : null].filter(Boolean).join(" ")}
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          logVisit(c);
-                          setSelected(c);
-                        }}
-                        className={visitBtnCls}
-                        disabled={busy}
+              : grouped.map(([letter, items]) => ({ letter, items })))
+              .map(({ letter, items }) => (
+                <div key={letter ?? "best"} className="mb-3">
+                  {letter && (
+                    <div className="sticky top-0 z-10 bg-white text-xs font-semibold text-brand-800 py-1 border-b border-brand-100">
+                      {letter}
+                    </div>
+                  )}
+                  <ul className="divide-y">
+                    {items.map((c) => (
+                      <li
+                        key={c.id}
+                        onClick={() => setSelected(c)}
+                        className={`flex items-center justify-between gap-3 py-2.5 px-2 rounded cursor-pointer transition ${
+                          selected?.id === c.id
+                            ? "bg-brand-50 hover:bg-brand-100"
+                            : "hover:bg-gray-50"
+                        }`}
                       >
-                        Log Visit
-                      </button>
-                    </li>
-                  ))}
-                  {items.length === 0 && <li className="py-3 px-2 text-sm text-gray-600">No matches.</li>}
-                </ul>
-              </div>
-            ))}
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">
+                            {tcase(c.firstName)} {tcase(c.lastName)}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate">
+                            {[c.phone || null, c.address ? `• ${c.address}` : null]
+                              .filter(Boolean)
+                              .join(" ")}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            logVisit(c);
+                            setSelected(c);
+                          }}
+                          className="inline-flex items-center justify-center h-10 px-3.5 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-600 active:bg-brand-800 whitespace-nowrap transition"
+                        >
+                          Log Visit
+                        </button>
+                      </li>
+                    ))}
+                    {items.length === 0 && (
+                      <li className="py-6 px-2 text-sm text-gray-600">
+                        {searchTokens.length ? "No matches." : "No clients yet."}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              ))}
           </div>
         </div>
 
@@ -523,7 +493,7 @@ export default function Dashboard() {
                 <div className="text-base font-semibold leading-tight mb-3 border-b border-gray-100 pb-2">
                   {tcase(selected.firstName)} {tcase(selected.lastName)}
                 </div>
-                <dl className="grid grid-cols-[130px,1fr] md:grid-cols-[150px,1fr] gap-y-2 text-[14px] leading-6">
+                <dl className="grid grid-cols-[120px,1fr] md:grid-cols-[150px,1fr] gap-y-2 text-[14px] leading-6">
                   <dt className="text-gray-500 text-left">Address</dt>
                   <dd className="text-gray-900 break-words">{selected.address || "—"}</dd>
                   <dt className="text-gray-500 text-left">DOB</dt>
@@ -546,8 +516,12 @@ export default function Dashboard() {
                   <div className="text-sm font-semibold">Visit history</div>
                   <div className="text-[11px] text-gray-500">{selectedVisits.length} total</div>
                 </div>
-                <ul className="divide-y max-h-64 md:max-h-80 lg:max-h-[420px] overflow-y-auto overflow-x-hidden px-2 pr-1">
-                  {selectedVisits.length === 0 && <li className="py-3 text-sm text-gray-500">No visits yet.</li>}
+                {/* cap to ~5 rows before scrolling on desktop */}
+                <ul className="divide-y max-h-52 md:max-h-56 overflow-y-auto overflow-x-hidden px-2 pr-1 pretty-scroll">
+
+                  {selectedVisits.length === 0 && (
+                    <li className="py-3 text-sm text-gray-500">No visits yet.</li>
+                  )}
                   {selectedVisits.map((v) => (
                     <li key={v.id} className="py-2 text-[13px] grid grid-cols-5 items-center gap-x-2">
                       <div className="col-span-3 text-gray-900 truncate">{fmtLocal(v.visitAt)}</div>
@@ -569,7 +543,9 @@ export default function Dashboard() {
                           ].join(" ")}
                         >
                           <span className="uppercase tracking-wide text-[10px] opacity-70">USDA</span>
-                          <span className="font-semibold mt-0.5">{v.usdaFirstTimeThisMonth ? "Yes" : "No"}</span>
+                          <span className="font-semibold mt-0.5">
+                            {v.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                          </span>
                         </span>
                       </div>
                     </li>
@@ -578,7 +554,11 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="p-4 text-sm text-gray-600">Select a person to see details.</div>
+            <div className="p-6">
+              <div className="rounded-xl border border-brand-100 bg-brand-50 text-brand-900 px-3 py-2 text-sm">
+                Select a person in the list to view quick details and history.
+              </div>
+            </div>
           )}
         </aside>
       </div>
@@ -601,7 +581,10 @@ export default function Dashboard() {
                 const date = v.visitAt?.toDate ? v.visitAt.toDate() : new Date(v.visitAt);
                 const person = clientsById.get(v.clientId);
                 const fallback = `${tcase(v.clientFirstName || "")} ${tcase(v.clientLastName || "")}`.trim();
-                const label = person ? `${tcase(person.firstName)} ${tcase(person.lastName)}`.trim() : fallback || v.clientId || "Deleted client";
+                const label =
+                  person
+                    ? `${tcase(person.firstName)} ${tcase(person.lastName)}`.trim()
+                    : fallback || v.clientId || "Deleted client";
 
                 return (
                   <tr
@@ -622,7 +605,7 @@ export default function Dashboard() {
               })}
               {recentVisits.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4" colSpan={4}>
+                  <td className="px-3 py-6 text-gray-600" colSpan={4}>
                     No activity yet.
                   </td>
                 </tr>
@@ -642,14 +625,14 @@ export default function Dashboard() {
             <div className="flex gap-1.5">
               <button
                 onClick={() => logVisit(selected)}
-                className="h-8 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
+                className="h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
               >
                 Log
               </button>
               {isAdmin && (
                 <button
                   onClick={() => setEditor({ open: true, client: selected })}
-                  className="h-8 px-3 rounded-lg border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
+                  className="h-9 px-3 rounded-lg border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
                 >
                   Edit
                 </button>
@@ -665,13 +648,16 @@ export default function Dashboard() {
         onClose={() => setShowNew(false)}
         onSaved={(c) => {
           setClients((prev) => {
+            // ensure we keep the “hide inactive” rule even if a legacy form sent inactive
+            const next = { id: c.id, ...c };
+            if (next.inactive === true || next.mergedIntoId) return prev;
             const i = prev.findIndex((p) => p.id === c.id);
             if (i >= 0) {
               const copy = [...prev];
-              copy[i] = { ...prev[i], ...c };
+              copy[i] = { ...prev[i], ...next };
               return copy;
             }
-            return [{ id: c.id, ...c }, ...prev];
+            return [next, ...prev];
           });
           setSelected({ id: c.id, ...c });
         }}
@@ -682,6 +668,14 @@ export default function Dashboard() {
         client={editor.client}
         onClose={() => setEditor({ open: false, client: null })}
         onSaved={(updated) => {
+          if (updated?.deleted || updated?.inactive === true || updated?.mergedIntoId) {
+            setClients((prev) => prev.filter((p) => p.id !== updated.id));
+            setSelected((prev) => (prev?.id === updated.id ? null : prev));
+            setEditor({ open: false, client: null });
+            setToast({ msg: "Client removed from list. Visit history kept." });
+            setTimeout(() => setToast(null), 3500);
+            return;
+          }
           setClients((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
           setSelected((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
           setEditor({ open: false, client: null });
@@ -697,10 +691,24 @@ export default function Dashboard() {
         onSaved={() => {
           setToast({ msg: `Visit logged for ${visitSheet.client.firstName} ${visitSheet.client.lastName}` });
           setVisitSheet({ open: false, client: null });
+          // refresh selection from current list in case counters changed
           setSelected((prev) => (prev ? clients.find((x) => x.id === prev.id) ?? prev : null));
           setTimeout(() => setToast(null), 4000);
         }}
       />
+    </div>
+  );
+}
+
+/* ===========================
+   Presentational bits
+=========================== */
+function SkeletonRows({ rows = 7 }) {
+  return (
+    <div className="animate-pulse space-y-3">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="h-10 rounded-xl bg-gray-100" />
+      ))}
     </div>
   );
 }

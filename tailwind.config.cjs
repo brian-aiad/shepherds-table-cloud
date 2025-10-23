@@ -30,8 +30,8 @@ module.exports = {
           300: "#ff9e98",   // subtle dividers or light chips
           400: "#e8675f",   // hover states on brand surfaces
           500: "#c73a31",   // PRIMARY: active pills, primary buttons
-          600: "#a70c04ff", // NAVBAR: solid top bar (enterprise look)
-          700: "#8a0d06ff",   // SELECTOR STRIP: row under navbar / mobile panel
+          600: "#8f0b04ff", // NAVBAR: solid top bar (enterprise look)
+          700: "#990e07ff",   // SELECTOR STRIP: row under navbar / mobile panel
           800: "#7a1a15",   // deeper accents, pressed states on red
           900: "#58110f",   // darkest accents on red UIs
           950: "#3a0b0a",   // near-black red (rarely needed)

@@ -1,17 +1,11 @@
 // src/components/EditForm.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
 import {
   doc,
   getDoc,
   updateDoc,
   serverTimestamp,
-  collection,
-  query,
-  where,
-  getDocs,
-  writeBatch,
-  deleteDoc,
 } from "firebase/firestore";
 import { useAuth } from "../auth/useAuth";
 
@@ -21,6 +15,7 @@ const tcase = (s = "") =>
     .toLowerCase()
     .replace(/[\p{L}]+('[\p{L}]+)?/gu, (w) => w[0].toUpperCase() + w.slice(1))
     .replace(/([- ][\p{L}])/gu, (m) => m[0] + m[1].toUpperCase());
+
 const onlyDigits = (s = "") => s.replace(/\D/g, "");
 const safeNum = (v) => {
   if (v === "" || v === null || v === undefined) return null;
@@ -29,28 +24,44 @@ const safeNum = (v) => {
 };
 const isYmd = (s = "") => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+const formatPhoneFromDigits = (digits = "") => {
+  const d = String(digits).replace(/\D/g, "").slice(0, 10);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 10)}`;
+};
+
+// tiny stable hash for dedupe/search keys
+function hashDJB2(str = "") {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h) + str.charCodeAt(i);
+  return `h${(h >>> 0).toString(16)}`;
+}
+
 /* =============== Component =============== */
 export default function EditForm({ open, client, onClose, onSaved }) {
-  const { isAdmin } = useAuth() || {};
+  const { isAdmin, uid } = useAuth() || {};
 
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
     address: "",
-    phone: "",
+    phoneDigits: "",
     zip: "",
     dob: "",
     householdSize: "",
+    inactive: false,
   });
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
   const [error, setError] = useState("");
 
   // focus trap + click-outside
   const dialogRef = useRef(null);
   const firstFieldRef = useRef(null);
 
-  /* ---------- effects (always called, order is stable) ---------- */
+  /* ---------- effects ---------- */
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === "Escape" && onClose?.();
@@ -71,27 +82,43 @@ export default function EditForm({ open, client, onClose, onSaved }) {
       firstName: client.firstName || "",
       lastName: client.lastName || "",
       address: client.address || "",
-      phone: client.phone || "",
-      zip: client.zip || "",
+      phoneDigits: onlyDigits(client.phoneDigits || client.phone || ""),
+      zip: onlyDigits(client.zip || ""),
       dob: client.dob || "",
       householdSize:
         client.householdSize !== undefined && client.householdSize !== null
           ? String(client.householdSize)
           : "",
+      inactive: !!client.inactive,
     });
   }, [client]);
 
-  /* ---------- memos (also always called) ---------- */
+  /* ---------- memos ---------- */
   const normalized = useMemo(() => {
     const firstName = tcase((form.firstName || "").trim());
     const lastName = tcase((form.lastName || "").trim());
     const address = (form.address || "").trim();
-    const phone = onlyDigits(form.phone || "");
+    const phoneDigits = onlyDigits(form.phoneDigits || "");
+    const phone = formatPhoneFromDigits(phoneDigits);
     const zip = onlyDigits(form.zip || "");
     const dob = (form.dob || "").trim();
     const householdSize =
       form.householdSize === "" ? "" : String(onlyDigits(form.householdSize || ""));
-    return { firstName, lastName, address, phone, zip, dob, householdSize };
+    const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
+    const nameDobHash = hashDJB2(`${fullNameLower}|${dob || ""}`);
+    return {
+      firstName,
+      lastName,
+      address,
+      phoneDigits,
+      phone,
+      zip,
+      dob,
+      householdSize,
+      fullNameLower,
+      nameDobHash,
+      inactive: !!form.inactive,
+    };
   }, [form]);
 
   const hasChanges = useMemo(() => {
@@ -101,23 +128,24 @@ export default function EditForm({ open, client, onClose, onSaved }) {
       cmp(tcase(client.firstName || ""), normalized.firstName) &&
       cmp(tcase(client.lastName || ""), normalized.lastName) &&
       cmp(client.address || "", normalized.address) &&
-      cmp(onlyDigits(client.phone || ""), normalized.phone) &&
+      cmp(onlyDigits(client.phoneDigits || client.phone || ""), normalized.phoneDigits) &&
       cmp(onlyDigits(client.zip || ""), normalized.zip) &&
       cmp(client.dob || "", normalized.dob) &&
-      (safeNum(client.householdSize) ?? null) === (safeNum(normalized.householdSize) ?? null)
+      (safeNum(client.householdSize) ?? null) === (safeNum(normalized.householdSize) ?? null) &&
+      (!!client.inactive === normalized.inactive)
     );
   }, [client, normalized]);
 
   const formValid = useMemo(() => {
     if (!normalized.firstName || !normalized.lastName) return false;
     if (normalized.dob && !isYmd(normalized.dob)) return false;
-    if (normalized.phone && normalized.phone.length < 7) return false;
+    if (normalized.phoneDigits && normalized.phoneDigits.length < 7) return false;
     if (normalized.zip && normalized.zip.length < 3) return false;
     if (normalized.householdSize !== "" && safeNum(normalized.householdSize) === null) return false;
     return true;
   }, [normalized]);
 
-  /* ---------- early exit AFTER hooks are declared ---------- */
+  /* ---------- early exit ---------- */
   if (!open) return null;
 
   /* ---------- handlers ---------- */
@@ -126,8 +154,8 @@ export default function EditForm({ open, client, onClose, onSaved }) {
   };
 
   const onChange = (e) => {
-    const { name, value } = e.target;
-    setForm((f) => ({ ...f, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
   };
 
   const submit = async (e) => {
@@ -143,17 +171,28 @@ export default function EditForm({ open, client, onClose, onSaved }) {
       const current = snap.data() || {};
 
       const payload = {
+        // core edits
         firstName: normalized.firstName,
         lastName: normalized.lastName,
         address: normalized.address,
-        phone: normalized.phone,
+        phone: normalized.phone,             // formatted
+        phoneDigits: normalized.phoneDigits, // normalized
         zip: normalized.zip,
         dob: normalized.dob,
         householdSize: safeNum(normalized.householdSize),
+        inactive: normalized.inactive,
+
+        // computed / denorm for search & dedupe
+        fullNameLower: normalized.fullNameLower,
+        nameDobHash: normalized.nameDobHash,
+
         // preserve tenant scope
         orgId: current.orgId ?? client.orgId ?? null,
         locationId: current.locationId ?? client.locationId ?? null,
+
+        // audit
         updatedAt: serverTimestamp(),
+        updatedBy: uid || auth.currentUser?.uid || null,
       };
 
       await updateDoc(ref, payload);
@@ -166,51 +205,68 @@ export default function EditForm({ open, client, onClose, onSaved }) {
     }
   };
 
-  const deleteKeepHistory = async () => {
-    if (!client?.id || deleting) return;
+  // "Delete" now means deactivate (soft delete)
+  const deactivateClient = async () => {
+    if (!client?.id || deactivating) return;
+    if (client.inactive) return; // already inactive
+
     const name =
       `${tcase(client.firstName || "")} ${tcase(client.lastName || "")}`.trim() || "this client";
 
-    const ok1 = confirm(
-      `Delete ${name}'s profile?\n\nTheir visit history will be KEPT for reports.\nThis cannot be undone.`
+    const ok = confirm(
+      `Deactivate ${name}?\n\nThey will be hidden from intake/search but their history remains.\nYou can reactivate later.`
     );
-    if (!ok1) return;
+    if (!ok) return;
 
     try {
-      setDeleting(true);
+      setDeactivating(true);
       setError("");
 
-      // 1) backfill visit history with snapshot fields + flags
-      const qs = await getDocs(query(collection(db, "visits"), where("clientId", "==", client.id)));
-      const docs = qs.docs;
+      const ref = doc(db, "clients", client.id);
+      await updateDoc(ref, {
+        inactive: true,
+        deactivatedAt: serverTimestamp(),
+        deactivatedBy: uid || auth.currentUser?.uid || null,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid || auth.currentUser?.uid || null,
+      });
 
-      const chunkSize = 250; // Firestore limit safety
-      for (let i = 0; i < docs.length; i += chunkSize) {
-        const batch = writeBatch(db);
-        for (const d of docs.slice(i, i + chunkSize)) {
-          const v = d.data() || {};
-          batch.update(d.ref, {
-            clientDeleted: true,
-            clientDeletedAt: serverTimestamp(),
-            clientFirstName: v.clientFirstName ?? client.firstName ?? "",
-            clientLastName: v.clientLastName ?? client.lastName ?? "",
-          });
-        }
-        await batch.commit();
-      }
-
-      // 2) delete client profile
-      await deleteDoc(doc(db, "clients", client.id));
-
-      // 3) close modal + bubble up
-      onSaved?.({ id: client.id, deleted: true });
+      onSaved?.({ id: client.id, ...client, inactive: true });
       onClose?.();
-      alert(`Deleted profile for ${name}. Visit history retained.`);
+      alert(`Deactivated ${name}.`);
     } catch (err) {
-      console.error("Delete client error:", err);
-      setError(err?.message || "Failed to delete client while retaining visit history.");
+      console.error("Deactivate client error:", err);
+      setError(err?.message || "Failed to deactivate client.");
     } finally {
-      setDeleting(false);
+      setDeactivating(false);
+    }
+  };
+
+  const reactivateClient = async () => {
+    if (!client?.id || reactivating) return;
+    if (!client.inactive && !form.inactive) return;
+
+    try {
+      setReactivating(true);
+      setError("");
+
+      const ref = doc(db, "clients", client.id);
+      await updateDoc(ref, {
+        inactive: false,
+        reactivatedAt: serverTimestamp(),
+        reactivatedBy: uid || auth.currentUser?.uid || null,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid || auth.currentUser?.uid || null,
+      });
+
+      onSaved?.({ id: client.id, ...client, inactive: false });
+      onClose?.();
+      alert("Client reactivated.");
+    } catch (err) {
+      console.error("Reactivate client error:", err);
+      setError(err?.message || "Failed to reactivate client.");
+    } finally {
+      setReactivating(false);
     }
   };
 
@@ -236,6 +292,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
             {client?.firstName || client?.lastName ? (
               <span className="ml-2 text-gray-500 font-normal">
                 — {tcase(client.firstName)} {tcase(client.lastName)}
+                {client?.inactive ? (
+                  <span className="ml-2 inline-flex items-center text-[12px] px-2 py-[2px] rounded-full bg-gray-100 border text-gray-700">
+                    Inactive
+                  </span>
+                ) : null}
               </span>
             ) : null}
           </div>
@@ -307,16 +368,21 @@ export default function EditForm({ open, client, onClose, onSaved }) {
               </label>
 
               <label className="text-sm">
-                <span className="text-gray-700">Phone</span>
+                <span className="text-gray-700">Phone (digits)</span>
                 <input
                   className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="phone"
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: onlyDigits(e.target.value) }))}
+                  name="phoneDigits"
+                  value={form.phoneDigits}
+                  onChange={(e) => setForm((f) => ({ ...f, phoneDigits: onlyDigits(e.target.value) }))}
                   inputMode="tel"
                   autoComplete="tel"
-                  placeholder="digits only"
+                  placeholder="e.g., 3102541234"
                 />
+                {form.phoneDigits && (
+                  <div className="mt-1 text-[12px] text-gray-500">
+                    Saved as: {formatPhoneFromDigits(form.phoneDigits)}
+                  </div>
+                )}
               </label>
 
               <label className="text-sm">
@@ -358,6 +424,20 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                   placeholder="e.g., 3"
                 />
               </label>
+
+              {/* Active / Inactive (admin only) */}
+              {isAdmin && (
+                <label className="text-sm flex items-center gap-2 mt-1 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    name="inactive"
+                    checked={!!form.inactive}
+                    onChange={onChange}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <span className="text-gray-700">Mark client as inactive (hidden from search/intake)</span>
+                </label>
+              )}
             </div>
 
             {/* Error */}
@@ -369,34 +449,28 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
             {/* Actions row */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-              {/* Danger zone (Admin only) */}
+              {/* Danger / Reactivation zone (Admin only) */}
               {isAdmin && (
-                <div className="sm:order-1">
-                  <button
-                    type="button"
-                    onClick={deleteKeepHistory}
-                    disabled={deleting}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-                  >
-                    {deleting ? (
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" opacity=".25" />
-                        <path d="M22 12a10 10 0 0 1-10 10" fill="currentColor" />
-                      </svg>
-                    ) : (
-                      <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path
-                          fillRule="evenodd"
-                          d="M6 8a1 1 0 011 1v6a1 1 0 11-2 0V9a1 1 0 011-1zm4 0a1 1 0 011 1v6a1 1 0 11-2 0V9a1 1 0 011-1zm4 0a1 1 0 011 1v6a1 1 0 11-2 0V9a1 1 0 011-1zM7 4a3 3 0 013-3h0a3 3 0 013 3h4a1 1 0 110 2h-1v11a3 3 0 01-3 3H7a3 3 0 01-3-3V6H3a1 1 0 110-2h4zm2-1a1 1 0 00-1 1h4a1 1 0 00-1-1H9z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
-                    Delete client (keep visits)
-                  </button>
-                  <div className="mt-1 text-[12px] text-gray-500">
-                    Removes profile only. All visits stay for reports.
-                  </div>
+                <div className="sm:order-1 flex items-center gap-2">
+                  {!client?.inactive ? (
+                    <button
+                      type="button"
+                      onClick={deactivateClient}
+                      disabled={deactivating}
+                      className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
+                    >
+                      {deactivating ? "Working…" : "Deactivate client"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={reactivateClient}
+                      disabled={reactivating}
+                      className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
+                    >
+                      {reactivating ? "Working…" : "Reactivate client"}
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -70,27 +70,27 @@ export default function Navbar() {
     );
   }, [role]);
 
-  const goHome = useCallback(() => nav("/", { replace: true }), [nav]);
 
-  const handleOrgChange = useCallback(
-    async (nextOrgId) => {
-      await setActiveOrg(nextOrgId || null);
-      await setActiveLocation(null); // reset to all locations
-      setOrgOpen(false);
-      setLocOpen(false);
-      goHome();
-    },
-    [setActiveOrg, setActiveLocation, goHome]
-  );
+const handleOrgChange = useCallback(
+  async (nextOrgId) => {
+    // AuthProvider.setActiveOrg will auto-select the first location for that org
+    // and persist { activeOrgId, activeLocationId }. Do NOT override it here.
+    await setActiveOrg(nextOrgId || null);
+    setOrgOpen(false);
+    setLocOpen(false);
+  },
+  [setActiveOrg]
+);
 
   const handleLocChange = useCallback(
     async (nextLocId) => {
+      // update context and close popover — but DO NOT navigate
       await setActiveLocation(nextLocId || null);
-      setLocOpen(false);
-      goHome();
+     setLocOpen(false);
     },
-    [setActiveLocation, goHome]
+    [setActiveLocation]
   );
+
 
 
 

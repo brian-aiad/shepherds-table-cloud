@@ -3,68 +3,199 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /* Users */
+    /* ──────────────────────────────────────────────────────────────────
+       Helpers
+    ────────────────────────────────────────────────────────────────── */
+    // Safe lowercasing (Firestorm has built-in lower())
+    function lowerSafe(s) { return s == null ? null : lower(s); }
+
+    // Master Admin by email
+    function isMasterAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && lowerSafe(request.auth.token.email) == "csbrianaiad@gmail.com";
+    }
+
+    // Signed-in?
+    function isAuthed() { return request.auth != null; }
+
+    // orgUsers doc id convention: `${uid}_${orgId}`
+    function orgUserDocPath(orgId) {
+      return "/databases/" + database + "/documents/orgUsers/" + (request.auth.uid + "_" + orgId);
+    }
+
+    // Load orgUser record (null-safe)
+    function orgUser(orgId) {
+      return exists(orgUserDocPath(orgId)) ? get(orgUserDocPath(orgId)).data : null;
+    }
+
+    // Role checks
+    function isAdminOfOrg(orgId) {
+      let ou = orgUser(orgId);
+      return isMasterAdmin() || (isAuthed() && ou != null && ou.role == "admin");
+    }
+
+    function isVolunteerOfOrg(orgId) {
+      let ou = orgUser(orgId);
+      return isAuthed() && ou != null && ou.role == "volunteer";
+    }
+
+    function volunteerHasLocation(orgId, locationId) {
+      let ou = orgUser(orgId);
+      return isVolunteerOfOrg(orgId)
+        && locationId != null
+        && ou.locationIds != null
+        && locationId in ou.locationIds;
+    }
+
+    // Scoped read/write checks
+    function canReadScoped(orgId, locationId) {
+      return isAdminOfOrg(orgId) || volunteerHasLocation(orgId, locationId);
+    }
+    function canWriteScoped(orgId, locationId) {
+      return isAdminOfOrg(orgId) || volunteerHasLocation(orgId, locationId);
+    }
+
+    // Field presence on create
+    function hasOrgId() {
+      return request.resource.data.orgId is string && request.resource.data.orgId.size() > 0;
+    }
+    function hasLocationId() {
+      return request.resource.data.locationId is string && request.resource.data.locationId.size() > 0;
+    }
+
+    // Immutability on update
+    function orgIdImmutable() {
+      return !exists(resource.__name__) || request.resource.data.orgId == resource.data.orgId;
+    }
+    function locationIdImmutable() {
+      return !exists(resource.__name__) || request.resource.data.locationId == resource.data.locationId;
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+       users  (per-account sticky scope; private to each user)
+    ────────────────────────────────────────────────────────────────── */
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      // Allow a user to read and update ONLY their own user doc
+      allow get, list: if false; // prevent listing
+      allow get: if isAuthed() && request.auth.uid == userId;
+      allow create: if isAuthed() && request.auth.uid == userId;
+      allow update: if isAuthed() && request.auth.uid == userId;
+      allow delete: if false;
     }
 
-    /* Org memberships */
-    // Allow reads so the app can discover the user's orgs/locations.
-    match /orgUsers/{orgUserId} {
-      allow read:  if request.auth != null;
-      allow write: if isAdminOfAnyOrg(); // keep tight in prod if you want
+    /* ──────────────────────────────────────────────────────────────────
+       orgUsers (membership & roles)
+       - Read: self; org admins for their org; Master Admin all.
+       - Write: ONLY Master Admin (central provisioning).
+    ────────────────────────────────────────────────────────────────── */
+    match /orgUsers/{id} {
+      allow read: if isAuthed() && (
+        isMasterAdmin() ||
+        (resource.data != null && resource.data.userId == request.auth.uid) ||
+        (resource.data != null && isAdminOfOrg(resource.data.orgId))
+      );
+      allow create, update, delete: if isMasterAdmin();
     }
 
-    /* Organizations */
+    /* ──────────────────────────────────────────────────────────────────
+       organizations / locations
+       - Read: any signed-in user (bootstrap lists).
+       - Write: admins of the org (or Master Admin).
+    ────────────────────────────────────────────────────────────────── */
     match /organizations/{orgId} {
-      allow read:  if request.auth != null;          // UNBLOCK boot
-      allow write: if isAdminOfOrg(orgId);
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdminOfOrg(orgId);
     }
 
-    /* Locations */
     match /locations/{locationId} {
-      allow read:  if request.auth != null;          // UNBLOCK boot
-      allow write: if isAdminOfOrg(getResourceOrgId());
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+        && hasOrgId()
+        && isAdminOfOrg(request.resource.data.orgId);
+      allow update: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && orgIdImmutable();            // cannot move a location across orgs
+      allow delete: if isAdminOfOrg(resource.data.orgId);
     }
 
-    /* Clients */
+    /* ──────────────────────────────────────────────────────────────────
+       clients
+       - Admins of org can create/update.
+       - Volunteers: READ-ONLY for assigned locations.
+       - orgId & locationId immutable on update.
+    ────────────────────────────────────────────────────────────────── */
     match /clients/{clientId} {
-      allow read:  if request.auth != null;
-      allow write: if isAdminOfOrg(getResourceOrgId());
+      allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
+
+      allow create: if isAuthed()
+        && hasOrgId()
+        && hasLocationId()
+        && isAdminOfOrg(request.resource.data.orgId);
+
+      allow update: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && orgIdImmutable()
+        && locationIdImmutable();
+
+      // Hard deletes disabled (use inactive flag)
+      allow delete: if false;
     }
 
-    /* Visits */
+    /* ──────────────────────────────────────────────────────────────────
+       visits
+       - Admins: full read/write in their org.
+       - Volunteers: read/write only for their assigned locations.
+       - Integrity:
+         • orgId/locationId required on create
+         • orgId/locationId immutable on update
+         • client must exist and belong to same org
+    ────────────────────────────────────────────────────────────────── */
     match /visits/{visitId} {
-      allow read:  if request.auth != null;
-      allow write: if isAdminOfOrg(getResourceOrgId());
+      allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
+
+      allow create: if isAuthed()
+        && hasOrgId()
+        && hasLocationId()
+        && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId)
+        && exists(/databases/$(database)/documents/clients/$(request.resource.data.clientId))
+        && get(/databases/$(database)/documents/clients/$(request.resource.data.clientId)).data.orgId
+             == request.resource.data.orgId;
+
+      allow update: if isAuthed()
+        && canWriteScoped(resource.data.orgId, resource.data.locationId)
+        && orgIdImmutable()
+        && locationIdImmutable();
+
+      allow delete: if false; // audit trail
     }
 
-    /* USDA monthly markers */
+    /* ──────────────────────────────────────────────────────────────────
+       usda_first (idempotent monthly marker)
+       - Same scoping as visits.
+       - orgId/locationId required on create; immutable on update.
+    ────────────────────────────────────────────────────────────────── */
     match /usda_first/{markerId} {
-      allow read:  if request.auth != null;
-      allow write: if isAdminOfOrg(getResourceOrgId());
+      allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
+
+      allow create: if isAuthed()
+        && hasOrgId()
+        && hasLocationId()
+        && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId);
+
+      allow update: if isAuthed()
+        && canWriteScoped(resource.data.orgId, resource.data.locationId)
+        && orgIdImmutable()
+        && locationIdImmutable();
+
+      allow delete: if false;
     }
 
-    /* Catch-all */
+    /* ──────────────────────────────────────────────────────────────────
+       Default deny
+    ────────────────────────────────────────────────────────────────── */
     match /{document=**} {
       allow read, write: if false;
-    }
-
-    /* -------- Helpers -------- */
-    function getResourceOrgId() {
-      return (request.resource.data.orgId != null)
-        ? request.resource.data.orgId
-        : resource.data.orgId;
-    }
-
-    // Admin check assumes orgUsers doc id format: `${uid}_${orgId}`
-    function isAdminOfOrg(orgId) {
-      return request.auth != null &&
-        get(/databases/$(database)/documents/orgUsers/$(request.auth.uid + "_" + orgId)).data.role == "admin";
-    }
-
-    function isAdminOfAnyOrg() {
-      return request.auth != null;
     }
   }
 }

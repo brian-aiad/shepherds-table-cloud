@@ -1,6 +1,6 @@
 // src/utils/buildEfapMonthlyPdf.jsx
-// EFAP Monthly Calendar PDF generator — numbers only in cells, plus Month/Year text up top.
-// Calibrated to your EFAP_Monthly_SignIn_Form.pdf.
+// EFAP Monthly Calendar PDF generator — day-cell numbers only + Month/Year up top.
+// Calibrated to EFAP_Monthly_SignIn_Form.pdf.
 // Requires: pdf-lib, file-saver.
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -13,10 +13,10 @@ const TEMPLATE_URL = "/forms/EFAP_Monthly_SignIn_Form.pdf";
    ↑ up = increase Y, ↓ down = decrease Y   |   → right = increase X, ← left = decrease X
 ──────────────────────────────────────────────────────────────────────────── */
 const GRID = {
-  ORIGIN_X: 38,       // whole calendar left/right
-  ORIGIN_Y: 100,      // whole calendar up/down
-  COL_W: 78.5,        // spacing between day columns
-  ROW_H: 58.8,        // spacing between week rows
+  ORIGIN_X: 38,
+  ORIGIN_Y: 100,
+  COL_W: 78.5,
+  ROW_H: 58.8,
 };
 
 const OFF = {
@@ -54,19 +54,16 @@ const FOOTER = {
 
 /* ===== Month/Year text (top blanks) =========================================
    These rectangles match the underlined blanks next to "Month:" and "Year:".
-   If you need to nudge, tweak x/y/w.
-   TIP: set monthYearDebug: true when building to see the boxes.
+   TIP: set monthYearDebug: true to see the guide boxes.
 ============================================================================ */
-const MONTH_BOX = { x: 115, y: 493, w: 255 }; // centered on "Month: ______" underline
-const YEAR_BOX  = { x: 270, y: 493, w: 255 }; // centered on "Year:  ______" underline
+const MONTH_BOX = { x: 115, y: 493, w: 255 };
+const YEAR_BOX  = { x: 270, y: 493, w: 255 };
 
 /* ============================================================================
    Helpers
 ============================================================================ */
 const fmtKey = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 function monthGrid(year, monthIndex0) {
   const first = new Date(year, monthIndex0, 1);
@@ -100,6 +97,16 @@ function ensureMap(maybeMap) {
   return m;
 }
 
+// Simple slug for filenames (ASCII, no spaces)
+function slugify(s = "") {
+  return String(s)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
 /* ============================================================================
    Builder
 ============================================================================ */
@@ -112,8 +119,21 @@ export async function buildbuildEfapMonthlyPdf({
   header = {},                    // not used for Month/Year (computed from args)
   debug = false,                  // draw faint boxes for the grid
   monthYearDebug = false,         // draw faint boxes for Month/Year placement
+  templateUrl = TEMPLATE_URL,     // allow override if hosting path differs
 }) {
-  const bytes = await fetch(TEMPLATE_URL).then((r) => r.arrayBuffer());
+  // ✅ Input validation (fail fast)
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error(`EFAP PDF: invalid 'year' (${year}).`);
+  }
+  if (!Number.isInteger(monthIndex0) || monthIndex0 < 0 || monthIndex0 > 11) {
+    throw new Error(`EFAP PDF: invalid 'monthIndex0' (${monthIndex0}).`);
+  }
+
+  // Fetch template bytes (with basic guardrails)
+  const resp = await fetch(templateUrl);
+  if (!resp.ok) throw new Error(`EFAP PDF: failed to fetch template (${resp.status} ${resp.statusText}).`);
+  const bytes = await resp.arrayBuffer();
+
   const pdf = await PDFDocument.load(bytes);
   const page = pdf.getPages()[0];
 
@@ -141,7 +161,6 @@ export async function buildbuildEfapMonthlyPdf({
   const yearX  = YEAR_BOX.x  + (YEAR_BOX.w  - yearWidth)  / 2;
 
   if (monthYearDebug) {
-    // light visual guides for the Month/Year boxes
     page.drawRectangle({ x: MONTH_BOX.x, y: MONTH_BOX.y - 3, width: MONTH_BOX.w, height: 20, opacity: 0.15, color: rgb(0.7, 0.9, 1) });
     page.drawRectangle({ x: YEAR_BOX.x,  y: YEAR_BOX.y  - 3, width: YEAR_BOX.w,  height: 20, opacity: 0.15, color: rgb(0.7, 0.9, 1) });
   }
@@ -172,10 +191,12 @@ export async function buildbuildEfapMonthlyPdf({
         });
       }
 
-      // Day number (top-left of the cell)
-      draw(x0 + OFF.DAY_NUM_X, y0 + OFF.DAY_NUM_Y, d.getDate(), tiny);
+      // Day number — only for days in the selected month
+      if (d.getMonth() === monthIndex0) {
+        draw(x0 + OFF.DAY_NUM_X, y0 + OFF.DAY_NUM_Y, d.getDate(), tiny);
+      }
 
-      // Values for days that belong to the selected month
+      // Values for in-month days
       if (d.getMonth() === monthIndex0) {
         const k = fmtKey(d);
         const a = byDay.get(k) || { households: 0, persons: 0 };
@@ -215,13 +236,27 @@ export async function buildbuildEfapMonthlyPdf({
 }
 
 /* ============================================================================
-   Convenience helpers
+   File name helpers (tenant-aware)
 ============================================================================ */
-export function efapMonthlySuggestedFileName({ year, monthIndex0, site = "ShepherdsTable" } = {}) {
+export function efapMonthlySuggestedFileName({
+  year,
+  monthIndex0,
+  orgName = "ShepherdsTable",
+  locationName = "",
+} = {}) {
   const monthName = new Date(year, monthIndex0, 1).toLocaleString(undefined, { month: "short" });
-  return `EFAP_Monthly_${site}_${monthName}_${year}.pdf`;
+  const org = slugify(orgName || "Org");
+  const loc = slugify(locationName || "");
+  const parts = ["EFAP_Monthly", org];
+  if (loc) parts.push(loc);
+  parts.push(`${monthName}_${year}`);
+  return parts.join("_") + ".pdf";
 }
 
+/* ============================================================================
+   Download convenience
+   - Accepts orgName / locationName and uses them in filename automatically.
+============================================================================ */
 export async function downloadbuildEfapMonthlyPdf(opts) {
   const bytes = await buildbuildEfapMonthlyPdf(opts);
   const name =
@@ -229,8 +264,13 @@ export async function downloadbuildEfapMonthlyPdf(opts) {
     efapMonthlySuggestedFileName({
       year: opts.year,
       monthIndex0: opts.monthIndex0,
-      site: opts?.site,
+      orgName: opts?.orgName || opts?.site || "ShepherdsTable",
+      locationName: opts?.locationName || "",
     });
   const blob = new Blob([bytes], { type: "application/pdf" });
   saveAs(blob, name);
 }
+
+// Non-breaking aliases (nicer names)
+export const buildEfapMonthlyPdf = buildbuildEfapMonthlyPdf;
+export const downloadEfapMonthlyPdf = downloadbuildEfapMonthlyPdf;
