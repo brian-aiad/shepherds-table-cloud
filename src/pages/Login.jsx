@@ -101,7 +101,6 @@ export default function Login() {
             className="absolute inset-0"
             style={{
               background:
-                // bright brand wave using brand-600/500
                 "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-500) 70%, var(--brand-700) 120%)",
             }}
             aria-hidden
@@ -279,7 +278,10 @@ export default function Login() {
               <footer className="px-7 sm:px-9 pb-7">
                 <p className="text-xs text-gray-500">
                   By signing in you agree to Shepherds Table Cloud’s{" "}
-                  <Link to="#" className="text-[color:var(--brand-700)] hover:text-[color:var(--brand-800)]">
+                  <Link
+                    to="#"
+                    className="text-[color:var(--brand-700)] hover:text-[color:var(--brand-800)]"
+                  >
                     usage policy
                   </Link>
                   .
@@ -314,7 +316,15 @@ function Spinner() {
 
 function EyeIcon({ open }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
       {open ? (
         <>
           <path d="M3 3l18 18" />

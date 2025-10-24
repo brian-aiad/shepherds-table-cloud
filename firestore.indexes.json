@@ -5,10 +5,21 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "orgId", "order": "ASCENDING" },
-        { "fieldPath": "locationId", "order": "ASCENDING" },
-        { "fieldPath": "firstName", "order": "ASCENDING" }
+        { "fieldPath": "firstName", "order": "ASCENDING" },
+        { "fieldPath": "lastName", "order": "ASCENDING" }
       ]
     },
+    {
+      "collectionGroup": "clients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "locationId", "order": "ASCENDING" },
+        { "fieldPath": "firstName", "order": "ASCENDING" },
+        { "fieldPath": "lastName", "order": "ASCENDING" }
+      ]
+    },
+
     {
       "collectionGroup": "clients",
       "queryScope": "COLLECTION",
@@ -18,11 +29,56 @@
       ]
     },
     {
+      "collectionGroup": "clients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "locationId", "order": "ASCENDING" },
+        { "fieldPath": "firstName", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "visits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "visits",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "orgId", "order": "ASCENDING" },
         { "fieldPath": "locationId", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "visits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "visits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "locationId", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "ASCENDING" }
+      ]
+    },
+
+    {
+      "collectionGroup": "visits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orgId", "order": "ASCENDING" },
         { "fieldPath": "visitAt", "order": "DESCENDING" }
       ]
     },
@@ -31,6 +87,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "orgId", "order": "ASCENDING" },
+        { "fieldPath": "locationId", "order": "ASCENDING" },
         { "fieldPath": "visitAt", "order": "DESCENDING" }
       ]
     },
@@ -42,23 +99,7 @@
         { "fieldPath": "visitAt", "order": "DESCENDING" }
       ]
     },
-    {
-      "collectionGroup": "visits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "orgId", "order": "ASCENDING" },
-        { "fieldPath": "locationId", "order": "ASCENDING" },
-        { "fieldPath": "dateKey", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "visits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "orgId", "order": "ASCENDING" },
-        { "fieldPath": "dateKey", "order": "ASCENDING" }
-      ]
-    },
+
     {
       "collectionGroup": "usda_first",
       "queryScope": "COLLECTION",
@@ -66,7 +107,27 @@
         { "fieldPath": "orgId", "order": "ASCENDING" },
         { "fieldPath": "monthKey", "order": "ASCENDING" }
       ]
-    }
+    },
+      {
+    "collectionGroup": "clients",
+    "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "orgId", "order": "ASCENDING" },
+      { "fieldPath": "lastName", "order": "ASCENDING" },
+      { "fieldPath": "firstName", "order": "ASCENDING" }
+    ]
+  },
+  {
+    "collectionGroup": "clients",
+    "queryScope": "COLLECTION",
+    "fields": [
+      { "fieldPath": "orgId", "order": "ASCENDING" },
+      { "fieldPath": "locationId", "order": "ASCENDING" },
+      { "fieldPath": "lastName", "order": "ASCENDING" },
+      { "fieldPath": "firstName", "order": "ASCENDING" }
+    ]
+  }
+
   ],
   "fieldOverrides": []
 }

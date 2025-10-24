@@ -1,13 +1,7 @@
 // src/pages/Dashboard.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../lib/firebase";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-  where,
-} from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
 import { useAuth } from "../auth/useAuth";
 import NewClientForm from "../components/NewClientForm";
 import EditForm from "../components/EditForm";
@@ -103,45 +97,57 @@ export default function Dashboard() {
     setErr("");
   }, [org?.id, location?.id]);
 
-  /* ---- live clients (FULL LIST, no pagination) scoped by org + optional location ---- */
+
+  /* ---- live clients (FULL LIST) — ALWAYS scope by org; only non-admins are location-scoped ---- */
+useEffect(() => {
+  if (loading) return;
+  if (!org?.id) return;
+
+  // Always restrict by orgId to satisfy Firestore rules for queries.
+  const filters = [where("orgId", "==", org.id)];
+
+  // Only restrict by location for non-admins. Admins may see all locations in the org.
+  if (!isAdmin && location?.id) {
+    filters.push(where("locationId", "==", location.id));
+  }
+
+  // Stable ordering; spread the filters array (important!)
+  const q1 = query(
+    collection(db, "clients"),
+    ...filters,
+    orderBy("lastName"),
+    orderBy("firstName")
+  );
+
+  const unsub = onSnapshot(
+    q1,
+    (snap) => {
+      // Hide deactivated/merged clients for legacy compatibility
+      const rows = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((c) => c.inactive !== true && !c.mergedIntoId);
+
+      setClients(rows);
+
+      // keep selection fresh or clear it if the client is gone/now inactive
+      setSelected((prev) => {
+        if (!prev) return null;
+        return rows.find((r) => r.id === prev.id) || null;
+      });
+    },
+    (e) => {
+      console.error("clients onSnapshot error:", e);
+      setErr("Couldn’t load clients. Check org/location scope and rules.");
+    }
+  );
+
+  return () => unsub();
+}, [loading, org?.id, location?.id, isAdmin]);
+
   useEffect(() => {
-    if (loading) return;
-    if (!org?.id) return;
+    console.log("scope", { isAdmin, orgId: org?.id, locationId: location?.id });
+  }, [isAdmin, org?.id, location?.id]);
 
-    const filters = [where("orgId", "==", org.id)];
-    if (location?.id) filters.push(where("locationId", "==", location.id));
-
-    // Full list ordered by firstName then lastName for stability
-    const q1 = query(
-      collection(db, "clients"),
-      ...filters,
-      orderBy("firstName"),
-      orderBy("lastName")
-    );
-
-    const unsub = onSnapshot(
-      q1,
-      (snap) => {
-        // Hide deactivated/merged clients on the client side for backward-compat with older docs
-        const rows = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((c) => c.inactive !== true && !c.mergedIntoId);
-
-        setClients(rows);
-
-        // keep selection fresh or clear it if the client is gone/now inactive
-        setSelected((prev) => {
-          if (!prev) return null;
-          return rows.find((r) => r.id === prev.id) || null;
-        });
-      },
-      (e) => {
-        console.error("clients onSnapshot error:", e);
-        setErr("Couldn’t load clients. Please check your connection.");
-      }
-    );
-    return () => unsub();
-  }, [db, loading, org?.id, location?.id]);
 
   /* ---- visit history for selected (client-specific) ---- */
   useEffect(() => {
@@ -164,11 +170,7 @@ export default function Dashboard() {
     if (!org?.id) return;
     const filters = [where("orgId", "==", org.id)];
     if (location?.id) filters.push(where("locationId", "==", location.id));
-    const q2 = query(
-      collection(db, "visits"),
-      ...filters,
-      orderBy("visitAt", "desc")
-    );
+    const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
     return onSnapshot(q2, (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setRecentVisits(all.slice(0, 10)); // cap table to latest 10
@@ -213,9 +215,7 @@ export default function Dashboard() {
     if (searchTokens.length > 0) return [];
     const map = new Map();
     for (const c of clients) {
-      const key = ((c.firstName || c.lastName || "?")[0] || "?")
-        .toUpperCase()
-        .slice(0, 1);
+      const key = ((c.firstName || c.lastName || "?")[0] || "?").toUpperCase().slice(0, 1);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(c);
     }
@@ -368,7 +368,6 @@ export default function Dashboard() {
             <span className="h-5 w-px bg-brand-200 md:h-6" aria-hidden="true" />
             <span className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{todayCount}</span>
           </span>
-
         </div>
       </div>
 
@@ -424,9 +423,7 @@ export default function Dashboard() {
                         key={c.id}
                         onClick={() => setSelected(c)}
                         className={`flex items-center justify-between gap-3 py-2.5 px-2 rounded cursor-pointer transition ${
-                          selected?.id === c.id
-                            ? "bg-brand-50 hover:bg-brand-100"
-                            : "hover:bg-gray-50"
+                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-50"
                         }`}
                       >
                         <div className="min-w-0">
@@ -434,9 +431,7 @@ export default function Dashboard() {
                             {tcase(c.firstName)} {tcase(c.lastName)}
                           </div>
                           <div className="text-xs text-gray-600 truncate">
-                            {[c.phone || null, c.address ? `• ${c.address}` : null]
-                              .filter(Boolean)
-                              .join(" ")}
+                            {[c.phone || null, c.address ? `• ${c.address}` : null].filter(Boolean).join(" ")}
                           </div>
                         </div>
 
@@ -518,10 +513,10 @@ export default function Dashboard() {
                 </div>
                 {/* cap to ~5 rows before scrolling on desktop */}
                 <ul className="divide-y max-h-52 md:max-h-56 overflow-y-auto overflow-x-hidden px-2 pr-1 pretty-scroll">
-
                   {selectedVisits.length === 0 && (
                     <li className="py-3 text-sm text-gray-500">No visits yet.</li>
                   )}
+
                   {selectedVisits.map((v) => (
                     <li key={v.id} className="py-2 text-[13px] grid grid-cols-5 items-center gap-x-2">
                       <div className="col-span-3 text-gray-900 truncate">{fmtLocal(v.visitAt)}</div>

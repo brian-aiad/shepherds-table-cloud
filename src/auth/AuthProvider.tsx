@@ -2,18 +2,17 @@
 // Shepherds Table Cloud — Auth context (multi-tenant, Oct 2025)
 //
 // Exposes useAuth() fields via context:
-// { uid, email, org, orgs, location, locations, role, isAdmin, loading, setActiveOrg, setActiveLocation, signOutNow }
+// { uid, email, org, orgs, location, locations, role, isAdmin, isMaster, loading,
+//   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow }
 //
-// Key behaviors & fixes:
-// - Master Admin (by email) can see all orgs & locations.
-// - Non-master users load memberships from orgUsers and are restricted by role.
-// - On org change we ALWAYS pick a valid location (no lingering nulls).
-// - We persist activeOrgId/activeLocationId to users/{uid} and mirror to localStorage
-//   so each device remembers its last scope without waiting for the network.
-// - Defensive loading: never crash consumers; provide safe defaults.
+// Master policy in this build:
+// - Master is ONLY the email "csbrianaiad@gmail.com" (no claim required).
+// - Admins are determined by /orgUsers/<uid>_<ORGID>.
+// - Volunteers can read clients (assigned locations) and write visits (assigned locations).
 
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
+import type { User } from "firebase/auth";
 import {
   collection,
   doc,
@@ -59,39 +58,43 @@ export type AuthValue = {
   locations: LocationRec[];
 
   role: Role;
-  isAdmin: boolean;
+  isAdmin: boolean;   // true for org admins and master
+  isMaster: boolean;  // explicit master flag (email match)
 
   loading: boolean;
 
   setActiveOrg: (orgId: string | null) => Promise<void>;
   setActiveLocation: (locationId: string | null) => Promise<void>;
+  saveDeviceDefaultScope: () => Promise<void>;
   signOutNow: () => Promise<void>;
 };
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Constants
 ────────────────────────────────────────────────────────────────────────────── */
-const MASTER_ADMIN_EMAIL = "csbrianaiad@gmail.com";
-const LS_KEY = "stc_scope"; // mirrors Firestore selection per device
+const MASTER_EMAIL = "csbrianaiad@gmail.com"; // single master account
+const LS_KEY = "stc_scope"; // per-device mirror of activeOrgId/activeLocationId
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Helpers
+   Helpers: device scope
 ────────────────────────────────────────────────────────────────────────────── */
-function readDeviceScope() {
+type DeviceScope = { activeOrgId: string | null; activeLocationId: string | null };
+
+function readDeviceScope(): DeviceScope {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { activeOrgId: null as string | null, activeLocationId: null as string | null };
+    if (!raw) return { activeOrgId: null, activeLocationId: null };
     const parsed = JSON.parse(raw);
     return {
-      activeOrgId: (parsed?.activeOrgId ?? null) as string | null,
-      activeLocationId: (parsed?.activeLocationId ?? null) as string | null,
+      activeOrgId: parsed?.activeOrgId ?? null,
+      activeLocationId: parsed?.activeLocationId ?? null,
     };
   } catch {
     return { activeOrgId: null, activeLocationId: null };
   }
 }
 
-function writeDeviceScope(patch: { activeOrgId?: string | null; activeLocationId?: string | null }) {
+function writeDeviceScope(patch: Partial<DeviceScope>) {
   const prev = readDeviceScope();
   const next = {
     activeOrgId: patch.activeOrgId ?? prev.activeOrgId,
@@ -100,18 +103,22 @@ function writeDeviceScope(patch: { activeOrgId?: string | null; activeLocationId
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(next));
   } catch {
-    // ignore
+    /* ignore */
   }
 }
 
-async function persistUserContext(
-  uid: string,
-  patch: Partial<{ activeOrgId: string | null; activeLocationId: string | null }>
-) {
+/* ──────────────────────────────────────────────────────────────────────────────
+   Firestore: persist user context (explicit only)
+────────────────────────────────────────────────────────────────────────────── */
+async function persistUserScopeToFirestore(uid: string, scope: DeviceScope) {
   const uref = doc(db, "users", uid);
   await setDoc(
     uref,
-    { ...patch, updatedAt: serverTimestamp() },
+    {
+      activeOrgId: scope.activeOrgId ?? null,
+      activeLocationId: scope.activeLocationId ?? null,
+      updatedAt: serverTimestamp(),
+    },
     { merge: true }
   );
 }
@@ -122,15 +129,22 @@ async function persistUserContext(
 export const AuthContext = createContext<AuthValue>({
   uid: null,
   email: null,
+
   org: null,
   location: null,
+
   orgs: [],
   locations: [],
+
   role: null,
   isAdmin: false,
+  isMaster: false,
+
   loading: true,
+
   setActiveOrg: async () => {},
   setActiveLocation: async () => {},
+  saveDeviceDefaultScope: async () => {},
   signOutNow: async () => {},
 });
 
@@ -144,70 +158,69 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const [location, setLocation] = useState<LocationRec | null>(null);
 
   const [role, setRole] = useState<Role>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isMaster, setIsMaster] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  /* ── Actions ─────────────────────────────────────────────────────────────── */
+  /* ── Derived ─────────────────────────────────────────────────────────────── */
+  const isAdmin = useMemo(() => isMaster || role === "admin", [isMaster, role]);
 
+  /* ── Actions ─────────────────────────────────────────────────────────────── */
   const signOutNow = useCallback(async () => {
     await signOut(auth);
   }, []);
 
-  // Switch org, auto-pick a valid location, persist both
+  // Switch org: update memory + device mirror; auto-pick first location for that org.
   const setActiveOrg = useCallback(
     async (orgId: string | null) => {
       if (!uid) return;
 
-      // Set org in memory
       const nextOrg = orgId ? (orgs.find((o) => o.id === orgId) ?? null) : null;
       setOrg(nextOrg);
 
-      // Filter locations for this org; if none loaded yet, lazy fetch
-      let locsForOrg = locations.filter((l) => l.orgId === orgId);
-      if (orgId && locsForOrg.length === 0) {
-        const qs = await getDocs(query(collection(db, "locations"), where("orgId", "==", orgId)));
-        locsForOrg = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
-        // merge into cache
-        setLocations((prev) => {
-          const map = new Map<string, LocationRec>();
-          [...prev, ...locsForOrg].forEach((l) => map.set(l.id, l));
-          return Array.from(map.values());
-        });
-      }
-
-      // Always pick a sensible default location (prevents null holes on save)
+      // filter locations for this org
+      const locsForOrg = nextOrg ? locations.filter((l) => l.orgId === nextOrg.id) : [];
       const nextLoc = nextOrg ? (locsForOrg[0] ?? null) : null;
       setLocation(nextLoc);
 
-      // Persist (Firestore + device mirror)
-      await persistUserContext(uid, {
-        activeOrgId: nextOrg?.id ?? null,
-        activeLocationId: nextLoc?.id ?? null,
-      });
       writeDeviceScope({ activeOrgId: nextOrg?.id ?? null, activeLocationId: nextLoc?.id ?? null });
     },
     [uid, orgs, locations]
   );
 
-  // Switch location within current org and persist
+  // Switch location within current org: update memory + device mirror.
   const setActiveLocation = useCallback(
     async (locationId: string | null) => {
       if (!uid) return;
       const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
+
+      // Guard: only allow locations that match current org
+      if (next && org && next.orgId !== org.id) {
+        const fallback = locations.find((l) => org && l.orgId === org.id) ?? null;
+        setLocation(fallback);
+        writeDeviceScope({ activeLocationId: fallback?.id ?? null });
+        return;
+      }
+
       setLocation(next);
-      await persistUserContext(uid, { activeLocationId: next?.id ?? null });
       writeDeviceScope({ activeLocationId: next?.id ?? null });
     },
-    [uid, locations]
+    [uid, locations, org]
   );
+
+  // Explicit “Make default on this device” → persists the current device scope to Firestore
+  const saveDeviceDefaultScope = useCallback(async () => {
+    if (!uid) return;
+    const scope = readDeviceScope();
+    await persistUserScopeToFirestore(uid, scope);
+  }, [uid]);
 
   /* ── Bootstrap on auth state ─────────────────────────────────────────────── */
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, async (u: User | null) => {
       setLoading(true);
       try {
         if (!u) {
-          // Reset everything on sign-out
+          // Reset on sign-out
           setUid(null);
           setEmail(null);
           setOrg(null);
@@ -215,7 +228,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           setOrgs([]);
           setLocations([]);
           setRole(null);
-          setIsAdmin(false);
+          setIsMaster(false);
           setLoading(false);
           return;
         }
@@ -223,20 +236,38 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         setUid(u.uid);
         setEmail(u.email ?? null);
 
-        const isMaster = (u.email ?? "").toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+        // Master flag: ONLY email match
+        const masterNow =
+          (u.email ?? "").toLowerCase() === MASTER_EMAIL.toLowerCase();
+        setIsMaster(masterNow);
+
+        // Ensure users/{uid} shell exists (no scope write here)
+        const uref = doc(db, "users", u.uid);
+        const usnap = await getDoc(uref);
+        if (!usnap.exists()) {
+          await setDoc(
+            uref,
+            { email: u.email ?? "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        }
+
+        // Load orgs/locations depending on master/admin
         let nextOrgs: Org[] = [];
         let nextLocations: LocationRec[] = [];
         let nextRole: Role = null;
 
-        if (isMaster) {
-          // Master Admin: all orgs & all locations
+        if (masterNow) {
+          // Master: can see all orgs & locations
           const orgQs = await getDocs(collection(db, "organizations"));
           nextOrgs = orgQs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Org[];
+
           const locQs = await getDocs(collection(db, "locations"));
           nextLocations = locQs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
+
           nextRole = "admin";
         } else {
-          // Regular user: derive memberships from orgUsers
+          // Non-master: memberships from orgUsers
           const ouQs = await getDocs(
             query(collection(db, "orgUsers"), where("userId", "==", u.uid))
           );
@@ -262,7 +293,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           });
           nextOrgs = (await Promise.all(orgFetches)).filter(Boolean) as Org[];
 
-          // Load locations and restrict volunteers to assigned locationIds
+          // Load locations; volunteers restricted to assigned locationIds
           const locFetches = nextOrgs.map(async (o) => {
             const qs = await getDocs(query(collection(db, "locations"), where("orgId", "==", o.id)));
             const all = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
@@ -274,31 +305,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           nextRole = anyAdmin ? "admin" : "volunteer";
         }
 
-        // Load sticky selection (prefer device mirror for instant UX, then reconcile with Firestore)
+        // Resolve initial selection with device-first preference (no Firestore writes here)
         const device = readDeviceScope();
+        const stored = (await getDoc(doc(db, "users", u.uid))).data() as any | undefined;
 
-        const uref = doc(db, "users", u.uid);
-        const usnap = await getDoc(uref);
-        if (!usnap.exists()) {
-          await setDoc(
-            uref,
-            { email: u.email ?? "", createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
-            { merge: true }
-          );
-        }
-        const data = usnap.data() as any | undefined;
-        const stored = {
-          activeOrgId: data?.activeOrgId ?? null,
-          activeLocationId: data?.activeLocationId ?? null,
-        };
+        const storedOrgId: string | null = stored?.activeOrgId ?? null;
+        const storedLocId: string | null = stored?.activeLocationId ?? null;
 
-        // Resolve initial selection:
-        // 1) try device values (fast + per-device),
-        // 2) else stored Firestore values,
-        // 3) else first allowed org/location.
         const pickOrgId =
           (device.activeOrgId && nextOrgs.find((o) => o.id === device.activeOrgId)?.id) ||
-          (stored.activeOrgId && nextOrgs.find((o) => o.id === stored.activeOrgId)?.id) ||
+          (storedOrgId && nextOrgs.find((o) => o.id === storedOrgId)?.id) ||
           nextOrgs[0]?.id ||
           null;
 
@@ -307,8 +323,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         const pickLocId =
           (device.activeLocationId &&
             nextLocations.find((l) => l.id === device.activeLocationId && l.orgId === pickOrgId)?.id) ||
-          (stored.activeLocationId &&
-            nextLocations.find((l) => l.id === stored.activeLocationId && l.orgId === pickOrgId)?.id) ||
+          (storedLocId &&
+            nextLocations.find((l) => l.id === storedLocId && l.orgId === pickOrgId)?.id) ||
           (pickOrgId ? nextLocations.find((l) => l.orgId === pickOrgId)?.id : null) ||
           null;
 
@@ -319,13 +335,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         setOrg(pickOrg ?? null);
         setLocation(pickLoc ?? null);
         setRole(nextRole);
-        setIsAdmin(nextRole === "admin" || isMaster);
 
-        // Persist final decision to both places (avoids drift)
-        await persistUserContext(u.uid, {
-          activeOrgId: pickOrg?.id ?? null,
-          activeLocationId: pickLoc?.id ?? null,
-        });
+        // Update device mirror so reloads are instant on this device
         writeDeviceScope({ activeOrgId: pickOrg?.id ?? null, activeLocationId: pickLoc?.id ?? null });
       } finally {
         setLoading(false);
@@ -345,12 +356,29 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       locations,
       role,
       isAdmin,
+      isMaster,
       loading,
       setActiveOrg,
       setActiveLocation,
+      saveDeviceDefaultScope,
       signOutNow,
     }),
-    [uid, email, org, orgs, location, locations, role, isAdmin, loading, setActiveOrg, setActiveLocation, signOutNow]
+    [
+      uid,
+      email,
+      org,
+      orgs,
+      location,
+      locations,
+      role,
+      isAdmin,
+      isMaster,
+      loading,
+      setActiveOrg,
+      setActiveLocation,
+      saveDeviceDefaultScope,
+      signOutNow,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

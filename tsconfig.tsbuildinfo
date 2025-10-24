@@ -1,0 +1,1 @@
+{"root":["./src/auth/authprovider.tsx","./src/auth/protectedroute.tsx","./src/auth/useauth.ts","./src/dev/createorgusers.ts","./src/dev/createorgusers_lafb.ts","./src/lib/firebase.ts","./src/types/jsx-modules.d.ts","./src/types/models.ts"],"version":"5.9.3"}

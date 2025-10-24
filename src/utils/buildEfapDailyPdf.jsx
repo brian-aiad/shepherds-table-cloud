@@ -120,7 +120,7 @@ const COL_ORDER = ["name", "address", "zip", "householdSize", "firstTime"];
    BUILDER
    =========================== */
 
-export async function buildbuildEfapDailylyPdf(rows, opts = {}) {
+export async function buildEfapDailyPdf(rows, opts = {}) {
   // rows come from Reports.jsx shaped like:
   // { name, address, zip, householdSize: number, firstTime: boolean | "" }
   const foodBankName = opts.foodBankName ?? FOOD_BANK.defaultText;

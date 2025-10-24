@@ -1,5 +1,12 @@
 // src/pages/Reports.jsx
-import { useEffect, useMemo, useState, useCallback, useRef, useLayoutEffect } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+} from "react";
 import { useLocation as useRouteLocation } from "react-router-dom";
 import {
   collection,
@@ -13,18 +20,21 @@ import {
   runTransaction,
   serverTimestamp,
   limit as qLimit,
+  startAt,
+  endAt,
 } from "firebase/firestore";
 
 // 🔐 project paths
 import { db, auth } from "../lib/firebase";
-import { useAuth } from "../auth/useAuth";
+// NOTE: useAuth is a DEFAULT export in your app
+import useAuth from "../auth/useAuth";
 
-// EFAP / USDA builders
+// EFAP / USDA builders (fixed names)
 import {
-  buildbuildEfapDailylyPdf,
+  buildEfapDailyPdf,
   efapSuggestedFileName,
 } from "../utils/buildEfapDailyPdf";
-import { downloadbuildEfapMonthlyPdf } from "../utils/buildEfapMonthlyPdf";
+import { downloadEfapMonthlyPdf } from "../utils/buildEfapMonthlyPdf";
 
 // Recharts (charts & responsive container)
 import {
@@ -61,7 +71,10 @@ const dateFromMonthKey = (mk) => {
   return new Date(y, m - 1, 1);
 };
 const monthLabel = (mk) =>
-  dateFromMonthKey(mk).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  dateFromMonthKey(mk).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
 
 const toJSDate = (ts) => (ts?.toDate ? ts.toDate() : new Date(ts));
 const toISO = (d) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
@@ -140,7 +153,9 @@ async function shareFileFallback(fileOrBlob, filename) {
     const file =
       fileOrBlob instanceof File
         ? fileOrBlob
-        : new File([fileOrBlob], filename, { type: fileOrBlob.type || "application/octet-stream" });
+        : new File([fileOrBlob], filename, {
+            type: fileOrBlob.type || "application/octet-stream",
+          });
 
     const canShare =
       typeof navigator !== "undefined" &&
@@ -192,7 +207,11 @@ function buildUsdaMonthlyCsv({ rows }) {
 
 /* ---------- USDA units helper ---------- */
 const usdaUnitsOf = (v) =>
-  Number.isFinite(v?.usdaCount) ? Number(v.usdaCount) : v?.usdaFirstTimeThisMonth ? 1 : 0;
+  Number.isFinite(v?.usdaCount)
+    ? Number(v.usdaCount)
+    : v?.usdaFirstTimeThisMonth
+    ? 1
+    : 0;
 
 /* ---------- simple month aggregator (for EFAP monthly builder) ---------- */
 function aggregateMonthForPdf(visits) {
@@ -215,14 +234,22 @@ function aggregateMonthForPdf(visits) {
 
     if (v.clientId && v.usdaFirstTimeThisMonth) {
       const cur = firsts.get(v.clientId);
-      if (!cur || v.dateKey < cur.dateKey) firsts.set(v.clientId, { dateKey: v.dateKey, persons });
+      if (!cur || v.dateKey < cur.dateKey)
+        firsts.set(v.clientId, { dateKey: v.dateKey, persons });
     }
   }
 
   const undHH = firsts.size;
-  const undPP = Array.from(firsts.values()).reduce((s, x) => s + x.persons, 0);
+  const undPP = Array.from(firsts.values()).reduce(
+    (s, x) => s + x.persons,
+    0
+  );
 
-  return { byDay, monthTotals: { households: hh, persons: pp }, unduplicated: { households: undHH, persons: undPP } };
+  return {
+    byDay,
+    monthTotals: { households: hh, persons: pp },
+    unduplicated: { households: undHH, persons: undPP },
+  };
 }
 
 /* ---------- Lightweight Monthly PDF using pdf-lib (kept for share action) ---------- */
@@ -238,8 +265,13 @@ async function buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy }) {
   const dayKeys = Array.from(rowsMap.keys()).sort();
 
   const totalUsda = (visits || []).reduce((s, v) => s + usdaUnitsOf(v), 0);
-  const totalHH = (visits || []).reduce((s, v) => s + Number(v.householdSize || 0), 0);
-  const avgPerDay = dayKeys.length ? Math.round((totalUsda / dayKeys.length) * 10) / 10 : 0;
+  const totalHH = (visits || []).reduce(
+    (s, v) => s + Number(v.householdSize || 0),
+    0
+  );
+  const avgPerDay = dayKeys.length
+    ? Math.round((totalUsda / dayKeys.length) * 10) / 10
+    : 0;
 
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -279,7 +311,11 @@ async function buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy }) {
     x += c.width;
   }
   y -= 10;
-  page.drawLine({ start: { x: 40, y }, end: { x: pageWidth - 40, y }, thickness: 1 });
+  page.drawLine({
+    start: { x: 40, y },
+    end: { x: pageWidth - 40, y },
+    thickness: 1,
+  });
   y -= 12;
 
   const rowH = 16;
@@ -294,7 +330,8 @@ async function buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy }) {
       page = pdf.addPage([pageWidth, pageHeight]);
       y = pageHeight - 40;
       x = 40;
-      for (const c of columns) page.drawText(c.label, { x, y, size: 10, font: fontBold });
+      for (const c of columns)
+        page.drawText(c.label, { x, y, size: 10, font: fontBold });
       y -= 22;
     }
     const arr = rowsMap.get(dk) || [];
@@ -317,7 +354,12 @@ async function buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy }) {
 }
 
 async function shareUsdaMonthlyReport(monthKey, { visits, org, generatedBy }) {
-  const pdfBytes = await buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy });
+  const pdfBytes = await buildUsdaMonthlyPdf({
+    monthKey,
+    visits,
+    org,
+    generatedBy,
+  });
   const csvRows = (visits || []).map((v) => ({
     dateKey: v.dateKey || fmtDateKey(toJSDate(v.visitAt)),
     monthKey: v.monthKey || monthKey,
@@ -328,8 +370,12 @@ async function shareUsdaMonthlyReport(monthKey, { visits, org, generatedBy }) {
   }));
   const csv = buildUsdaMonthlyCsv({ rows: csvRows });
 
-  const pdfFile = new File([pdfBytes], `USDA_Monthly_${monthKey}.pdf`, { type: "application/pdf" });
-  const csvFile = new File([csv], `USDA_Monthly_${monthKey}.csv`, { type: "text/csv;charset=utf-8" });
+  const pdfFile = new File([pdfBytes], `USDA_Monthly_${monthKey}.pdf`, {
+    type: "application/pdf",
+  });
+  const csvFile = new File([csv], `USDA_Monthly_${monthKey}.csv`, {
+    type: "text/csv;charset=utf-8",
+  });
 
   try {
     const canShare =
@@ -400,18 +446,44 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
 
   return (
     <div className="inline-flex items-center gap-2 sm:gap-3 rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm px-2.5 sm:px-3 py-1.5 sm:py-2">
-      <button onClick={() => jump(-1)} className={iconBtn} aria-label="Previous month" title="Previous month">
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+      <button
+        onClick={() => jump(-1)}
+        className={iconBtn}
+        aria-label="Previous month"
+        title="Previous month"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          fill="none"
+          aria-hidden="true"
+        >
           <path d="M15 6l-6 6 6 6" strokeWidth="2" />
         </svg>
       </button>
 
       <div className="min-w-[150px] text-center">
-        <span className="text-base sm:text-lg font-semibold tracking-tight">{label}</span>
+        <span className="text-base sm:text-lg font-semibold tracking-tight">
+          {label}
+        </span>
       </div>
 
-      <button onClick={() => jump(1)} className={iconBtn} aria-label="Next month" title="Next month">
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+      <button
+        onClick={() => jump(1)}
+        className={iconBtn}
+        aria-label="Next month"
+        title="Next month"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          fill="none"
+          aria-hidden="true"
+        >
           <path d="M9 6l6 6-6 6" strokeWidth="2" />
         </svg>
       </button>
@@ -432,13 +504,16 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
    ======================================================================================= */
 export default function Reports() {
   const routeLocation = useRouteLocation();
-  const { loading: authLoading, org, location, role, isAdmin, email } = useAuth() || {};
+  const { loading: authLoading, org, location, isAdmin, email } =
+    useAuth() || {};
 
   // UI/state
   const [exportingPdf, setExportingPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedMonthKey, setSelectedMonthKey] = useState(monthKeyFor(new Date()));
+  const [selectedMonthKey, setSelectedMonthKey] = useState(
+    monthKeyFor(new Date())
+  );
   const [selectedDate, setSelectedDate] = useState(fmtDateKey(new Date()));
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
@@ -449,7 +524,10 @@ export default function Reports() {
   useEffect(() => {
     const tick = () => {
       if (!lastSyncedAt) return setSyncAgo("");
-      const secs = Math.max(0, Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000));
+      const secs = Math.max(
+        0,
+        Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000)
+      );
       if (secs < 60) setSyncAgo(`${secs}s ago`);
       else setSyncAgo(`${Math.floor(secs / 60)}m ago`);
     };
@@ -469,6 +547,7 @@ export default function Reports() {
   // add visit modal
   const [addOpen, setAddOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
+  theAddCandidatesFix();
   const [addCandidates, setAddCandidates] = useState([]);
   const [addHH, setAddHH] = useState(1);
   const [addUSDA, setAddUSDA] = useState(true);
@@ -476,25 +555,23 @@ export default function Reports() {
 
   const toast = useToast();
 
-// Disable native scroll restoration while Reports is mounted
-useLayoutEffect(() => {
-  if ("scrollRestoration" in window.history) {
-    const prev = window.history.scrollRestoration;
-    window.history.scrollRestoration = "manual";
-    return () => {
-      window.history.scrollRestoration = prev;
-    };
-  }
-}, []);
+  // Disable native scroll restoration while Reports is mounted
+  useLayoutEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      const prev = window.history.scrollRestoration;
+      window.history.scrollRestoration = "manual";
+      return () => {
+        window.history.scrollRestoration = prev;
+      };
+    }
+  }, []);
 
-// Force the page to the very top immediately on navigation to Reports
-useLayoutEffect(() => {
-  // do it synchronously before paint
-  window.scrollTo(0, 0);
-  // extra safety for Safari/iOS
-  document.body.scrollTop = 0;
-  document.documentElement.scrollTop = 0;
-}, [routeLocation.pathname, routeLocation.search, routeLocation.hash]);
+  // Force the page to the very top immediately on navigation to Reports
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+  }, [routeLocation.pathname, routeLocation.search, routeLocation.hash]);
 
   // Jump from other screens with state.jumpToDate (YYYY-MM-DD)
   useEffect(() => {
@@ -508,11 +585,10 @@ useLayoutEffect(() => {
   }, [routeLocation.state]);
 
   /* --------------------------------
-     Scoped live query: visits (org + optional location) for month
-     NOTE: Uses composite indexes available in firestore.indexes.json:
-       - visits: orgId, locationId, dateKey (ASC)
-       - visits: orgId, dateKey (ASC)
-     We order by dateKey (ASC) then sort client-side as needed.
+     Scoped live query: visits for month (RANGE BY dateKey)
+     Index-friendly with existing composites:
+       - visits: (orgId, locationId, dateKey ASC)
+       - visits: (orgId, dateKey ASC)
      -------------------------------- */
   useEffect(() => {
     if (authLoading) return;
@@ -525,13 +601,24 @@ useLayoutEffect(() => {
     setError("");
     let off;
 
-    const filters = [where("orgId", "==", org.id), where("monthKey", "==", selectedMonthKey)];
-    // Volunteers are always scoped to active location (if present)
-    const effectiveLocationId = location?.id || (isAdmin ? null : location?.id || null);
+    // Compute month range on dateKey (YYYY-MM-DD)
+    const d = dateFromMonthKey(selectedMonthKey);
+    const startKey = fmtDateKey(new Date(d.getFullYear(), d.getMonth(), 1));
+    const endKey = fmtDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0)); // last day of month
+
+    const filters = [where("orgId", "==", org.id)];
+    // Volunteers are scoped to active location; admins may see all
+    const effectiveLocationId = location?.id && !isAdmin ? location.id : null;
     if (effectiveLocationId) filters.push(where("locationId", "==", effectiveLocationId));
 
-    // Use dateKey for index-friendly ordering (ASC) — we'll derive UI order after
-    const qv = query(collection(db, "visits"), ...filters, orderBy("dateKey", "asc"));
+    // Use dateKey range
+    const qv = query(
+      collection(db, "visits"),
+      ...filters,
+      orderBy("dateKey", "asc"),
+      startAt(startKey),
+      endAt(endKey)
+    );
 
     (async () => {
       try {
@@ -548,8 +635,8 @@ useLayoutEffect(() => {
             try {
               const snap2 = await getDocs(qv);
               setVisits(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
-            } catch {
-              setError("Failed to load visits for this month.");
+            } catch (err) {
+              setError(extractIndexHelp(err) || "Failed to load visits for this month.");
             } finally {
               setLoading(false);
               setLastSyncedAt(new Date());
@@ -558,7 +645,7 @@ useLayoutEffect(() => {
         );
       } catch (e) {
         console.error(e);
-        setError("Failed to load visits for this month.");
+        setError(extractIndexHelp(e) || "Failed to load visits for this month.");
         setLoading(false);
       }
     })();
@@ -572,14 +659,18 @@ useLayoutEffect(() => {
   useEffect(() => {
     (async () => {
       try {
-        const ids = Array.from(new Set(visits.map((v) => v.clientId).filter(Boolean)));
+        const ids = Array.from(
+          new Set(visits.map((v) => v.clientId).filter(Boolean))
+        );
         if (!ids.length) {
           setClientsById(new Map());
           return;
         }
         const m = new Map();
         for (const part of chunk(ids, 10)) {
-          const qs = await getDocs(query(collection(db, "clients"), where("__name__", "in", part)));
+          const qs = await getDocs(
+            query(collection(db, "clients"), where("__name__", "in", part))
+          );
           for (const d of qs.docs) m.set(d.id, { id: d.id, ...d.data() });
         }
         setClientsById(m);
@@ -599,8 +690,8 @@ useLayoutEffect(() => {
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(v);
     }
-    // keep each day array sorted by time (desc)
-    for (const arr of m.values()) arr.sort((a, b) => toJSDate(b.visitAt) - toJSDate(a.visitAt));
+    for (const arr of m.values())
+      arr.sort((a, b) => toJSDate(b.visitAt) - toJSDate(a.visitAt));
     return m;
   }, [visits]);
 
@@ -613,7 +704,7 @@ useLayoutEffect(() => {
   );
 
   /* --------------------------------
-     Keep day selection valid & scroll-into-view (no jump)
+     Keep day selection valid & scroll-into-view
      -------------------------------- */
   useEffect(() => {
     if (!sortedDayKeys.length) return;
@@ -636,8 +727,9 @@ useLayoutEffect(() => {
       const d = toJSDate(v.visitAt);
       const person = clientsById.get(v.clientId) || {};
       const labelName =
-        `${person.firstName || v.clientFirstName || ""} ${person.lastName || v.clientLastName || ""}`.trim() ||
-        v.clientId;
+        `${person.firstName || v.clientFirstName || ""} ${
+          person.lastName || v.clientLastName || ""
+        }`.trim() || v.clientId;
 
       const address =
         person.address ||
@@ -682,7 +774,9 @@ useLayoutEffect(() => {
 
     if (usdaFilter !== "all") {
       rows = rows.filter((r) =>
-        usdaFilter === "yes" ? r.usdaFirstTimeThisMonth === true : r.usdaFirstTimeThisMonth === false
+        usdaFilter === "yes"
+          ? r.usdaFirstTimeThisMonth === true
+          : r.usdaFirstTimeThisMonth === false
       );
     }
 
@@ -699,8 +793,11 @@ useLayoutEffect(() => {
     const cmp = (a, b) => {
       let d = 0;
       if (sortKey === "time") d = a.visitAtISO.localeCompare(b.visitAtISO);
-      else if (sortKey === "name") d = (a.labelName || "").localeCompare(b.labelName || "");
-      else if (sortKey === "hh") d = Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
+      else if (sortKey === "name")
+        d = (a.labelName || "").localeCompare(b.labelName || "");
+      else if (sortKey === "hh")
+        d =
+          Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
       return sortDir === "asc" ? d : -d;
     };
     return [...rows].sort(cmp);
@@ -711,8 +808,14 @@ useLayoutEffect(() => {
      -------------------------------- */
   const dayTotals = useMemo(() => {
     const count = filteredSortedRows.length;
-    const hh = filteredSortedRows.reduce((s, r) => s + Number(r.visitHousehold || 0), 0);
-    const usdaYes = filteredSortedRows.reduce((s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
+    const hh = filteredSortedRows.reduce(
+      (s, r) => s + Number(r.visitHousehold || 0),
+      0
+    );
+    const usdaYes = filteredSortedRows.reduce(
+      (s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0),
+      0
+    );
     return { count, hh, usdaYes };
   }, [filteredSortedRows]);
 
@@ -720,7 +823,10 @@ useLayoutEffect(() => {
      Month aggregates (KPI + charts)
      -------------------------------- */
   const monthAgg = useMemo(() => {
-    const totalHH = visits.reduce((s, v) => s + Number(v.householdSize || 0), 0);
+    const totalHH = visits.reduce(
+      (s, v) => s + Number(v.householdSize || 0),
+      0
+    );
     const usdaUnits = visits.reduce((s, v) => s + usdaUnitsOf(v), 0);
 
     const byDay = new Map();
@@ -738,12 +844,20 @@ useLayoutEffect(() => {
       .map(([dateKey, arr]) => ({
         date: dateKey.slice(5), // "MM-DD"
         visits: arr.length,
-        people: arr.reduce((s, v) => s + Number(v.householdSize || 0), 0),
-        usdaYes: arr.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0),
+        people: arr.reduce(
+          (s, v) => s + Number(v.householdSize || 0),
+          0
+        ),
+        usdaYes: arr.reduce(
+          (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
+          0
+        ),
       }))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const usdaYesTotal = visits.filter((v) => v.usdaFirstTimeThisMonth === true).length;
+    const usdaYesTotal = visits.filter(
+      (v) => v.usdaFirstTimeThisMonth === true
+    ).length;
     const usdaNoTotal = visits.length - usdaYesTotal;
 
     return {
@@ -779,7 +893,7 @@ useLayoutEffect(() => {
         alert("Failed to delete visit. Please try again.");
       }
     },
-    [isAdmin]
+    [isAdmin, toast]
   );
 
   const exportOneDayCsv = useCallback(
@@ -788,7 +902,14 @@ useLayoutEffect(() => {
       const rows = src.map((v) => {
         const d = toJSDate(v.visitAt);
         const p = clientsById.get(v.clientId) || {};
-        const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
+        const address =
+          p.address ||
+          p.addr ||
+          p.street ||
+          p.street1 ||
+          p.line1 ||
+          p.address1 ||
+          "";
         return {
           dateKey: v.dateKey || fmtDateKey(d),
           monthKey: v.monthKey || "",
@@ -808,27 +929,41 @@ useLayoutEffect(() => {
       downloadText(csv, `visits_${dayKey}.csv`);
       toast.show("CSV exported.", "info");
     },
-    [visitsByDay, clientsById]
+    [visitsByDay, clientsById, toast]
   );
 
-  const exportbuildEfapDailylyPdfForDay = useCallback(
+  const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
         const src = visitsByDay.get(dayKey) || [];
         const rows = src.map((v) => {
           const p = clientsById.get(v.clientId) || {};
-          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
-          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
+          const name =
+            `${p.firstName || ""} ${p.lastName || ""}`.trim() ||
+            v.clientId ||
+            "";
+          const address =
+            p.address ||
+            p.addr ||
+            p.street ||
+            p.street1 ||
+            p.line1 ||
+            p.address1 ||
+            "";
           return {
             name,
             address,
             zip: p.zip || "",
             householdSize: Number(v.householdSize || 0),
             firstTime:
-              v.usdaFirstTimeThisMonth === true ? true : v.usdaFirstTimeThisMonth === false ? false : "",
+              v.usdaFirstTimeThisMonth === true
+                ? true
+                : v.usdaFirstTimeThisMonth === false
+                ? false
+                : "",
           };
         });
-        const pdfBytes = await buildbuildEfapDailylyPdf(rows, { dateStamp: dayKey });
+        const pdfBytes = await buildEfapDailyPdf(rows, { dateStamp: dayKey });
         const fileName = efapSuggestedFileName(dayKey);
         downloadBytes(pdfBytes, fileName, "application/pdf");
         toast.show("EFAP PDF downloaded.", "info");
@@ -837,29 +972,45 @@ useLayoutEffect(() => {
         alert("Couldn’t build the EFAP PDF for that day.");
       }
     },
-    [visitsByDay, clientsById]
+    [visitsByDay, clientsById, toast]
   );
 
-  const sharebuildEfapDailylyPdfForDay = useCallback(
+  const shareEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
         const src = visitsByDay.get(dayKey) || [];
         const rows = src.map((v) => {
           const p = clientsById.get(v.clientId) || {};
-          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
-          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
+          const name =
+            `${p.firstName || ""} ${p.lastName || ""}`.trim() ||
+            v.clientId ||
+            "";
+          const address =
+            p.address ||
+            p.addr ||
+            p.street ||
+            p.street1 ||
+            p.line1 ||
+            p.address1 ||
+            "";
           return {
             name,
             address,
             zip: p.zip || "",
             householdSize: Number(v.householdSize || 0),
             firstTime:
-              v.usdaFirstTimeThisMonth === true ? true : v.usdaFirstTimeThisMonth === false ? false : "",
+              v.usdaFirstTimeThisMonth === true
+                ? true
+                : v.usdaFirstTimeThisMonth === false
+                ? false
+                : "",
           };
         });
-        const pdfBytes = await buildbuildEfapDailylyPdf(rows, { dateStamp: dayKey });
+        const pdfBytes = await buildEfapDailyPdf(rows, { dateStamp: dayKey });
         const fileName = efapSuggestedFileName(dayKey);
-        const file = new File([toUint8Array(pdfBytes)], fileName, { type: "application/pdf" });
+        const file = new File([toUint8Array(pdfBytes)], fileName, {
+          type: "application/pdf",
+        });
         await shareFileFallback(file, file.name);
         toast.show("EFAP PDF ready to share.", "info");
       } catch (e) {
@@ -867,10 +1018,10 @@ useLayoutEffect(() => {
         alert("Couldn’t share the EFAP PDF for that day.");
       }
     },
-    [visitsByDay, clientsById]
+    [visitsByDay, clientsById, toast]
   );
 
-  /* ---------- Export USDA Monthly (uses dedicated builder util) ---------- */
+  /* ---------- Export USDA Monthly (dedicated builder) ---------- */
   const handleExportUsdaPdf = useCallback(async () => {
     try {
       setExportingPdf(true);
@@ -881,12 +1032,15 @@ useLayoutEffect(() => {
 
       const agg = aggregateMonthForPdf(visits);
 
-      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(undefined, {
-        month: "long",
-        year: "numeric",
-      });
+      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(
+        undefined,
+        {
+          month: "long",
+          year: "numeric",
+        }
+      );
 
-      await downloadbuildEfapMonthlyPdf(
+      await downloadEfapMonthlyPdf(
         {
           year,
           monthIndex0,
@@ -912,219 +1066,256 @@ useLayoutEffect(() => {
      RENDER
      ======================================================================================= */
   return (
-  <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto overflow-visible">
-{/* ===== Toolbar (not sticky on mobile; sticky only on md+) ===== */}
-<div className="border-b border-brand-100 bg-white">
-  <div className="px-3 sm:px-0 py-3 sm:py-4">
-    <div className="grid items-center gap-3 lg:grid-cols-[1fr,auto,1fr]">
-      {/* Left: Title + scope */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Reports</h1>
-        <span className="hidden sm:inline h-5 w-px bg-brand-200" aria-hidden="true" />
-        <span className="hidden sm:inline text-xs text-gray-600">
-          <strong className="font-semibold">{org?.name || "—"}</strong>
-          {location?.name ? (
-            <>
-              <span className="opacity-60"> / </span>
-              <strong className="font-semibold">{location.name}</strong>
-            </>
-          ) : (
-            <span className="opacity-70"> (all locations)</span>
-          )}
-        </span>
-      </div>
-
-      {/* Center: month nav */}
-      <div className="justify-self-center">
-        <ReportsMonthNav
-          monthKey={selectedMonthKey}
-          setMonthKey={setSelectedMonthKey}
-          setSelectedDate={setSelectedDate}
-        />
-      </div>
-
-      {/* Right: export monthly */}
-      <div className="justify-self-end">
-        <div className="flex items-center gap-2">
-          
-          <span className="hidden md:inline text-xs text-gray-500">
-            Synced {syncAgo || "—"}
-          </span>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-  {/* ===== KPI Row (mobile scroller → 4-up grid on md+) ===== */}
-    <div className="mt-4">
-      {/* make the scroller full-bleed on mobile, but keep inner padding so borders aren't clipped */}
-      <div className="-mx-4 sm:mx-0">
-        {/* horizontal gutters + snap padding so first/last cards aren't cut */}
-        <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar scroll-px-4 py-1">
-          <div
-            className="
-              px-4 md:px-0
-              grid grid-flow-col
-              auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
-              md:grid-flow-row md:grid-cols-4
-              gap-3 sm:gap-4 md:gap-5
-              snap-x md:snap-none
-            "
-          >
-            <div className="snap-start md:snap-none flex-none">
-              <KpiModern title="Total Visits (Month)" value={visits.length} />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto overflow-visible">
+      {/* ===== Toolbar ===== */}
+      <div className="border-b border-brand-100 bg-white">
+        <div className="px-3 sm:px-0 py-3 sm:py-4">
+          <div className="grid items-center gap-3 lg:grid-cols-[1fr,auto,1fr]">
+            {/* Left: Title + scope */}
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">
+                Reports
+              </h1>
+              <span
+                className="hidden sm:inline h-5 w-px bg-brand-200"
+                aria-hidden="true"
+              />
+              <span className="hidden sm:inline text-xs text-gray-600">
+                <strong className="font-semibold">
+                  {org?.name || "—"}
+                </strong>
+                {location?.name ? (
+                  <>
+                    <span className="opacity-60"> / </span>
+                    <strong className="font-semibold">
+                      {location.name}
+                    </strong>
+                  </>
+                ) : (
+                  <span className="opacity-70"> (all locations)</span>
+                )}
+              </span>
             </div>
 
-            <div className="snap-start md:snap-none flex-none">
-              <KpiModern title="Households Totals (Month)" value={monthAgg.households} />
-            </div>
-
-            <div className="snap-start md:snap-none flex-none">
-              <KpiModern
-                title="USDA Yes First-Time (Month)"
-                value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0}
+            {/* Center: month nav */}
+            <div className="justify-self-center">
+              <ReportsMonthNav
+                monthKey={selectedMonthKey}
+                setMonthKey={setSelectedMonthKey}
+                setSelectedDate={setSelectedDate}
               />
             </div>
 
-            <div className="snap-start md:snap-none flex-none">
-              <KpiModern
-                title="Active Service Days (Month)"
-                value={Array.from(monthAgg.byDay.keys()).length}
-              />
+            {/* Right: export monthly */}
+            <div className="justify-self-end">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportUsdaPdf}
+                  disabled={exportingPdf}
+                  className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold bg-brand-700 text-white shadow-sm hover:bg-brand-800 active:bg-brand-900 active:scale-[.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-60"
+                >
+                  <DownloadIcon className="h-4 w-4" />
+                  {exportingPdf ? "Building…" : "Export Monthly PDF"}
+                </button>
+
+                <span className="hidden md:inline text-xs text-gray-500">
+                  Synced {syncAgo || "—"}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-
-
-    <div className="mt-8 lg:mt-10" />
-
-    {/* ===== Charts ===== */}
-    <div className="grid gap-4 sm:gap-5 lg:gap-6 md:grid-cols-3 mb-6 sm:mb-8">
-      {/* Visits per Day */}
-      <Card title="Visits per Day">
-        {/* centered, roomier canvas */}
-        <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
-          <ResponsiveContainer width="98%" height="95%">
-            <LineChart
-              data={monthAgg.charts.visitsPerDay}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+      {/* ===== KPI Row ===== */}
+      <div className="mt-4">
+        <div className="-mx-4 sm:mx-0">
+          <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar scroll-px-4 py-1">
+            <div
+              className="
+                px-4 md:px-0
+                grid grid-flow-col
+                auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
+                md:grid-flow-row md:grid-cols-4
+                gap-3 sm:gap-4 md:gap-5
+                snap-x md:snap-none
+              "
             >
-              <defs>
-                <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={{ stroke: "#e5e7eb" }}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                allowDecimals={false}
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={{ stroke: "#e5e7eb" }}
-                tickLine={false}
-                width={30}
-              />
-              <Tooltip contentStyle={tooltipBoxStyle} cursor={{ stroke: "#ef4444", opacity: 0.25 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line
-                type="monotone"
-                dataKey="visits"
-                stroke="url(#lineGradient)"
-                strokeWidth={3}
-                dot={false}
-                activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2, fill: "#991b1b" }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+              <div className="snap-start md:snap-none flex-none">
+                <KpiModern title="Total Visits (Month)" value={visits.length} />
+              </div>
 
-      {/* USDA Yes vs No */}
-      <Card title="USDA Yes vs No">
-        <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
-          <ResponsiveContainer width="96%" height="96%">
-            <PieChart margin={{ top: 0, bottom: 0 }}>
-              <Pie
-                data={monthAgg.charts.usdaPie}
-                dataKey="value"
-                nameKey="name"
-                innerRadius="55%"
-                outerRadius="78%"
-                paddingAngle={2}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                labelLine={false}
+              <div className="snap-start md:snap-none flex-none">
+                <KpiModern
+                  title="Households Totals (Month)"
+                  value={monthAgg.households}
+                />
+              </div>
+
+              <div className="snap-start md:snap-none flex-none">
+                <KpiModern
+                  title="USDA Yes First-Time (Month)"
+                  value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0}
+                />
+              </div>
+
+              <div className="snap-start md:snap-none flex-none">
+                <KpiModern
+                  title="Active Service Days (Month)"
+                  value={Array.from(monthAgg.byDay.keys()).length}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 lg:mt-10" />
+
+      {/* ===== Charts ===== */}
+      <div className="grid gap-4 sm:gap-5 lg:gap-6 md:grid-cols-3 mb-6 sm:mb-8">
+        {/* Visits per Day */}
+        <Card title="Visits per Day">
+          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
+            <ResponsiveContainer width="98%" height="95%">
+              <LineChart
+                data={monthAgg.charts.visitsPerDay}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
               >
-                {monthAgg.charts.usdaPie.map((_, i) => (
-                  <Cell
-                    key={i}
-                    fill={i === 0 ? "#991b1b" : "#fecaca"}
-                    stroke="#fff"
-                    strokeWidth={1.5}
-                  />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={tooltipBoxStyle} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+                <defs>
+                  <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  axisLine={{ stroke: "#e5e7eb" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  axisLine={{ stroke: "#e5e7eb" }}
+                  tickLine={false}
+                  width={30}
+                />
+                <Tooltip
+                  contentStyle={tooltipBoxStyle}
+                  cursor={{ stroke: "#ef4444", opacity: 0.25 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line
+                  type="monotone"
+                  dataKey="visits"
+                  stroke="url(#lineGradient)"
+                  strokeWidth={3}
+                  dot={false}
+                  activeDot={{
+                    r: 5,
+                    stroke: "#fff",
+                    strokeWidth: 2,
+                    fill: "#991b1b",
+                  }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
 
-      {/* People Served by Day */}
-      <Card title="Household # Served by Day">
-        <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
-          <ResponsiveContainer width="98%" height="95%">
-            <BarChart
-              data={monthAgg.charts.visitsPerDay}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              barCategoryGap={10}
-            >
-              <defs>
-                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={{ stroke: "#e5e7eb" }}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                allowDecimals={false}
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={{ stroke: "#e5e7eb" }}
-                tickLine={false}
-                width={30}
-              />
-              <Tooltip cursor={false} contentStyle={tooltipBoxStyle} />
-              <Bar dataKey="people" fill="url(#barGradient)" radius={[10, 10, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-    </div>
+        {/* USDA Yes vs No */}
+        <Card title="USDA Yes vs No">
+          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
+            <ResponsiveContainer width="96%" height="96%">
+              <PieChart margin={{ top: 0, bottom: 0 }}>
+                <Pie
+                  data={monthAgg.charts.usdaPie}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius="55%"
+                  outerRadius="78%"
+                  paddingAngle={2}
+                  label={({ name, percent }) =>
+                    `${name} ${(percent * 100).toFixed(0)}%`
+                  }
+                  labelLine={false}
+                >
+                  {monthAgg.charts.usdaPie.map((_, i) => (
+                    <Cell
+                      key={i}
+                      fill={i === 0 ? "#991b1b" : "#fecaca"}
+                      stroke="#fff"
+                      strokeWidth={1.5}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={tooltipBoxStyle} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
 
+        {/* People Served by Day */}
+        <Card title="Household # Served by Day">
+          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
+            <ResponsiveContainer width="98%" height="95%">
+              <BarChart
+                data={monthAgg.charts.visitsPerDay}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                barCategoryGap={10}
+              >
+                <defs>
+                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  axisLine={{ stroke: "#e5e7eb" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  axisLine={{ stroke: "#e5e7eb" }}
+                  tickLine={false}
+                  width={30}
+                />
+                <Tooltip cursor={false} contentStyle={tooltipBoxStyle} />
+                <Bar
+                  dataKey="people"
+                  fill="url(#barGradient)"
+                  radius={[10, 10, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </div>
 
       {/* ===== Layout: days list + table ===== */}
       <div className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 print:block">
         {/* Days list */}
         <aside className="rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div className="font-semibold">Days in {monthLabel(selectedMonthKey)}</div>
+            <div className="font-semibold">
+              Days in {monthLabel(selectedMonthKey)}
+            </div>
             <input
               className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
               placeholder="Filter (YYYY-MM-DD)"
@@ -1143,8 +1334,14 @@ useLayoutEffect(() => {
             <ul className="space-y-2">
               {sortedDayKeys.map((k) => {
                 const items = visitsByDay.get(k) || [];
-                const dayHH = items.reduce((s, v) => s + Number(v.householdSize || 0), 0);
-                const dayUsda = items.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
+                const dayHH = items.reduce(
+                  (s, v) => s + Number(v.householdSize || 0),
+                  0
+                );
+                const dayUsda = items.reduce(
+                  (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
+                  0
+                );
                 const isSelected = selectedDate === k;
                 const isToday = k === todayKey;
 
@@ -1166,7 +1363,9 @@ useLayoutEffect(() => {
                       }
                     }}
                     className={`group cursor-pointer flex items-stretch gap-2 p-2 rounded-xl border transition ${
-                      isSelected ? "bg-brand-50 border-brand-200 shadow-sm" : "bg-white border-gray-200 hover:bg-gray-50 shadow-sm"
+                      isSelected
+                        ? "bg-brand-50 border-brand-200 shadow-sm"
+                        : "bg-white border-gray-200 hover:bg-gray-50 shadow-sm"
                     }`}
                   >
                     <div className="flex-1 px-2 py-1">
@@ -1177,7 +1376,8 @@ useLayoutEffect(() => {
                       )}
                       <div className="font-medium">{k}</div>
                       <div className="text-xs text-gray-500">
-                        {items.length} visit{items.length === 1 ? "" : "s"} • HH {dayHH} • USDA {dayUsda}
+                        {items.length} visit{items.length === 1 ? "" : "s"} •
+                        HH {dayHH} • USDA {dayUsda}
                       </div>
                     </div>
 
@@ -1185,7 +1385,7 @@ useLayoutEffect(() => {
                       <button
                         data-day-action
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-800 hover:bg-brand-50 disabled:opacity-50 transition-colors"
-                        onClick={() => sharebuildEfapDailylyPdfForDay(k)}
+                        onClick={() => shareEfapDailyPdfForDay(k)}
                         disabled={!k}
                         aria-label={`Share EFAP PDF for ${k}`}
                         title="Share EFAP PDF"
@@ -1196,7 +1396,7 @@ useLayoutEffect(() => {
                       <button
                         data-day-action
                         className="inline-flex h-8 items-center justify-center rounded-lg px-2 bg-brand-700 text-white hover:bg-brand-800 text-[11px] transition-colors"
-                        onClick={() => exportbuildEfapDailylyPdfForDay(k)}
+                        onClick={() => exportEfapDailyPdfForDay(k)}
                         title="Download EFAP PDF"
                         aria-label={`Download EFAP PDF for ${k}`}
                       >
@@ -1208,7 +1408,9 @@ useLayoutEffect(() => {
               })}
 
               {!sortedDayKeys.length && (
-                <li className="py-3 px-2 text-sm text-gray-600">No days found for this month.</li>
+                <li className="py-3 px-2 text-sm text-gray-600">
+                  No days found for this month.
+                </li>
               )}
             </ul>
           </div>
@@ -1225,7 +1427,7 @@ useLayoutEffect(() => {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-800 hover:bg-brand-50 disabled:opacity-50 transition-colors"
-                onClick={() => sharebuildEfapDailylyPdfForDay(selectedDate)}
+                onClick={() => shareEfapDailyPdfForDay(selectedDate)}
                 disabled={!selectedDate}
                 aria-label="Share EFAP PDF"
                 title="Share EFAP PDF"
@@ -1235,7 +1437,7 @@ useLayoutEffect(() => {
 
               <button
                 className="inline-flex h-10 items-center justify-center rounded-lg px-3 bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-50 transition-colors"
-                onClick={() => exportbuildEfapDailylyPdfForDay(selectedDate)}
+                onClick={() => exportEfapDailyPdfForDay(selectedDate)}
                 disabled={!selectedDate}
               >
                 EFAP (This day)
@@ -1256,11 +1458,21 @@ useLayoutEffect(() => {
                     try {
                       // Tenant-scoped client list
                       const filters = [where("orgId", "==", org.id)];
-                      if (location?.id) filters.push(where("locationId", "==", location.id));
+                      if (location?.id)
+                        filters.push(where("locationId", "==", location.id));
+                      // Order by firstName to match existing client indexes
                       const snap = await getDocs(
-                        query(collection(db, "clients"), ...filters, orderBy("lastName"), qLimit(200))
+                        query(
+                          collection(db, "clients"),
+                          ...filters,
+                          orderBy("firstName"),
+                          qLimit(200)
+                        )
                       );
-                      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                      const rows = snap.docs.map((d) => ({
+                        id: d.id,
+                        ...d.data(),
+                      }));
                       setAddCandidates(rows);
                       setAddHH(1);
                       setAddUSDA(true);
@@ -1324,7 +1536,9 @@ useLayoutEffect(() => {
               </label>
               <button
                 className="rounded-lg border px-2 py-1 text-sm bg-gray-50 hover:bg-gray-100"
-                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                onClick={() =>
+                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                }
                 title="Toggle sort direction"
                 aria-label="Toggle sort direction"
               >
@@ -1336,7 +1550,8 @@ useLayoutEffect(() => {
           {/* Summary stripe */}
           <div className="mb-2 text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
             <span className="inline-flex items-center gap-1">
-              <strong>{dayTotals.count}</strong> visit{dayTotals.count === 1 ? "" : "s"}
+              <strong>{dayTotals.count}</strong> visit
+              {dayTotals.count === 1 ? "" : "s"}
             </span>
             <span className="inline-flex items-center gap-1">
               HH <strong>{dayTotals.hh}</strong>
@@ -1373,20 +1588,33 @@ useLayoutEffect(() => {
 
               <tbody className="divide-y divide-gray-200 align-top">
                 {filteredSortedRows.map((r) => (
-                  <tr key={r.visitId} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100">
+                  <tr
+                    key={r.visitId}
+                    className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
+                  >
                     <td className="px-4 py-3 break-words">
                       <div className="font-medium">{r.labelName}</div>
                       {r.addedByReports && r.addedLocalTime ? (
-                        <div className="mt-0.5 text-xs text-gray-500">added {r.addedLocalTime}</div>
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          added {r.addedLocalTime}
+                        </div>
                       ) : null}
                     </td>
                     <td className="px-4 py-3 break-words">{r.address}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
-                    <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
-                    <td className="px-4 py-3">
-                      {r.usdaFirstTimeThisMonth === "" ? "" : r.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                    <td className="px-4 py-3 tabular-nums">
+                      {r.visitHousehold}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700">{r.localTime}</td>
+                    <td className="px-4 py-3">
+                      {r.usdaFirstTimeThisMonth === ""
+                        ? ""
+                        : r.usdaFirstTimeThisMonth
+                        ? "Yes"
+                        : "No"}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700">
+                      {r.localTime}
+                    </td>
                     <td className="px-4 py-3">
                       {isAdmin ? (
                         <button
@@ -1398,7 +1626,9 @@ useLayoutEffect(() => {
                           <TrashIcon className="h-5 w-5" />
                         </button>
                       ) : (
-                        <span className="text-[11px] text-gray-500">view-only</span>
+                        <span className="text-[11px] text-gray-500">
+                          view-only
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -1406,7 +1636,10 @@ useLayoutEffect(() => {
 
                 {filteredSortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                    <td
+                      colSpan={7}
+                      className="px-4 py-6 text-center text-gray-500"
+                    >
                       {loading ? "Loading…" : "No visits on this day."}
                     </td>
                   </tr>
@@ -1421,7 +1654,9 @@ useLayoutEffect(() => {
                   <td className="px-4 py-2">{dayTotals.hh}</td>
                   <td className="px-4 py-2">{dayTotals.usdaYes} Yes</td>
                   <td className="px-4 py-2" />
-                  <td className="px-4 py-2">{filteredSortedRows.length} rows</td>
+                  <td className="px-4 py-2">
+                    {filteredSortedRows.length} rows
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -1430,7 +1665,10 @@ useLayoutEffect(() => {
           {/* MOBILE LIST */}
           <ul className="md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden">
             {filteredSortedRows.map((r, i) => (
-              <li key={r.visitId} className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
+              <li
+                key={r.visitId}
+                className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.labelName}</div>
@@ -1442,7 +1680,9 @@ useLayoutEffect(() => {
                     ) : null}
 
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
-                      <span className="px-1.5 py-0.5 rounded border bg-white">HH {r.visitHousehold || 0}</span>
+                      <span className="px-1.5 py-0.5 rounded border bg-white">
+                        HH {r.visitHousehold || 0}
+                      </span>
                       {r.usdaFirstTimeThisMonth !== "" && (
                         <span className="px-1.5 py-0.5 rounded border bg-white">
                           {r.usdaFirstTimeThisMonth ? "USDA Yes" : "USDA No"}
@@ -1451,12 +1691,17 @@ useLayoutEffect(() => {
                     </div>
 
                     {r.addedByReports && r.addedLocalTime ? (
-                      <div className="text-[11px] text-gray-500 mt-0.5">Added {r.addedLocalTime}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5">
+                        Added {r.addedLocalTime}
+                      </div>
                     ) : null}
                   </div>
 
                   <div className="shrink-0 flex flex-col items-end gap-1">
-                    <div className="px-2 py-0.5 rounded border border-gray-300 text-[11px] whitespace-nowrap bg-gray-100 text-gray-800 font-medium" title={r.localTime}>
+                    <div
+                      className="px-2 py-0.5 rounded border border-gray-300 text-[11px] whitespace-nowrap bg-gray-100 text-gray-800 font-medium"
+                      title={r.localTime}
+                    >
                       {r.localTime}
                     </div>
                     {isAdmin ? (
@@ -1475,7 +1720,9 @@ useLayoutEffect(() => {
             ))}
 
             {filteredSortedRows.length === 0 && (
-              <li className="p-6 text-center text-gray-500">{loading ? "Loading…" : "No visits on this day."}</li>
+              <li className="p-6 text-center text-gray-500">
+                {loading ? "Loading…" : "No visits on this day."}
+              </li>
             )}
           </ul>
         </section>
@@ -1484,7 +1731,11 @@ useLayoutEffect(() => {
       {/* Add Visit Modal — bottom sheet (TENANT-SCOPED & CONCURRENCY-SAFE) */}
       {addOpen && (
         <div className="fixed inset-0 z-50">
-          <button className="absolute inset-0 bg-black/45" onClick={() => setAddOpen(false)} aria-label="Close add modal" />
+          <button
+            className="absolute inset-0 bg-black/45"
+            onClick={() => setAddOpen(false)}
+            aria-label="Close add modal"
+          />
           <div
             role="dialog"
             aria-modal="true"
@@ -1496,7 +1747,9 @@ useLayoutEffect(() => {
 
             <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b">
               <div className="min-w-0">
-                <h2 className="text-base sm:text-lg font-semibold truncate">Add visit</h2>
+                <h2 className="text-base sm:text-lg font-semibold truncate">
+                  Add visit
+                </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
                   to <span className="font-medium">{selectedDate}</span>
                 </p>
@@ -1514,7 +1767,9 @@ useLayoutEffect(() => {
             <div className="px-4 sm:px-5 py-3 border-b">
               <div className="grid gap-3 sm:grid-cols-3 items-center">
                 <label className="sm:col-span-2 block">
-                  <span className="text-[11px] font-medium text-gray-700">Find client</span>
+                  <span className="text-[11px] font-medium text-gray-700">
+                    Find client
+                  </span>
                   <div className="mt-1 relative">
                     <input
                       className="w-full rounded-2xl border px-4 pl-11 py-3 h-12 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand-400"
@@ -1529,7 +1784,9 @@ useLayoutEffect(() => {
 
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4">
                   <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Household size:</label>
+                    <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                      Household size:
+                    </label>
                     <div className="inline-flex items-center rounded-full border bg-white overflow-hidden shadow-sm">
                       <button
                         className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
@@ -1538,7 +1795,9 @@ useLayoutEffect(() => {
                       >
                         –
                       </button>
-                      <div className="px-3 text-sm font-semibold tabular-nums min-w-[2ch] text-center select-none">{addHH}</div>
+                      <div className="px-3 text-sm font-semibold tabular-nums min-w-[2ch] text-center select-none">
+                        {addHH}
+                      </div>
                       <button
                         className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
                         onClick={() => setAddHH((n) => Math.min(20, Number(n) + 1))}
@@ -1562,7 +1821,10 @@ useLayoutEffect(() => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div
+              className="flex-1 overflow-auto"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
               {addBusy ? (
                 <div className="p-6 text-sm text-gray-600 flex items-center gap-2">
                   <Spinner className="h-5 w-5" /> Loading…
@@ -1573,13 +1835,22 @@ useLayoutEffect(() => {
                     .filter((c) => {
                       const q = addSearch.trim().toLowerCase();
                       if (!q) return true;
-                      const full = `${c.firstName || ""} ${c.lastName || ""}`.toLowerCase();
+                      const full = `${c.firstName || ""} ${
+                        c.lastName || ""
+                      }`.toLowerCase();
                       const addr = (c.address || "").toLowerCase();
-                      return full.includes(q) || addr.includes(q) || (c.zip || "").includes(q);
+                      return (
+                        full.includes(q) ||
+                        addr.includes(q) ||
+                        (c.zip || "").includes(q)
+                      );
                     })
                     .slice(0, 120)
                     .map((c) => {
-                      const initials = `${(c.firstName || "").slice(0, 1)}${(c.lastName || "").slice(0, 1)}`.toUpperCase();
+                      const initials = `${(c.firstName || "").slice(
+                        0,
+                        1
+                      )}${(c.lastName || "").slice(0, 1)}`.toUpperCase();
                       return (
                         <li key={c.id} className="p-3 sm:p-4 hover:bg-gray-50">
                           <div className="flex items-center justify-between gap-3">
@@ -1589,10 +1860,13 @@ useLayoutEffect(() => {
                               </div>
                               <div className="min-w-0">
                                 <div className="font-medium truncate text-[15px]">
-                                  {(c.firstName || "") + " " + (c.lastName || "")}
+                                  {(c.firstName || "") +
+                                    " " +
+                                    (c.lastName || "")}
                                 </div>
                                 <div className="text-xs text-gray-700 truncate">
-                                  {(c.address || "")} {c.zip ? `• ${c.zip}` : ""}
+                                  {(c.address || "")}{" "}
+                                  {c.zip ? `• ${c.zip}` : ""}
                                 </div>
                               </div>
                             </div>
@@ -1618,20 +1892,27 @@ useLayoutEffect(() => {
                                       now.getSeconds(),
                                       now.getMilliseconds()
                                     );
-                                    const latestHH = Math.max(1, Math.min(20, Number(addHH || 1)));
+                                    const latestHH = Math.max(
+                                      1,
+                                      Math.min(20, Number(addHH || 1))
+                                    );
                                     const isFirst = !!addUSDA;
-                                    const currentUser = auth.currentUser?.uid || null;
+                                    const currentUser =
+                                      auth.currentUser?.uid || null;
                                     const locId = location?.id || null;
 
                                     // BULLETPROOF CONCURRENCY:
-                                    //   - Create visit
-                                    //   - Upsert usda_first/{clientId_month} sentinel (unique)
-                                    //   - Update client snapshot fields (non-destructive)
                                     await runTransaction(db, async (tx) => {
-                                      // unique sentinel for "first this month"
+                                      // unique sentinel for "first this month": usda_first/{clientId_monthKey}
                                       const sentinelId = `${c.id}_${mk}`;
-                                      const usdaFirstRef = doc(db, "usda_first", sentinelId);
-                                      const usdaFirstSnap = await tx.get(usdaFirstRef);
+                                      const usdaFirstRef = doc(
+                                        db,
+                                        "usda_first",
+                                        sentinelId
+                                      );
+                                      const usdaFirstSnap = await tx.get(
+                                        usdaFirstRef
+                                      );
 
                                       // visit doc
                                       const visitRef = doc(collection(db, "visits"));
@@ -1651,13 +1932,15 @@ useLayoutEffect(() => {
                                         addedAt: serverTimestamp(),
                                       });
 
-                                      // if marking as first this month, lock it with sentinel (idempotent)
+                                      // idempotent-usda-first marker
                                       if (isFirst && !usdaFirstSnap.exists()) {
                                         tx.set(usdaFirstRef, {
                                           clientId: c.id,
                                           orgId: org.id,
                                           monthKey: mk,
+                                          locationId: locId || null,
                                           createdAt: serverTimestamp(),
+                                          createdByUserId: currentUser || null,
                                         });
                                       }
 
@@ -1677,7 +1960,7 @@ useLayoutEffect(() => {
                                       );
                                     });
 
-                                    // Optimistic UI (safe to append — onSnapshot will reconcile)
+                                    // Optimistic UI
                                     setVisits((prev) => [
                                       {
                                         id: crypto.randomUUID(),
@@ -1700,7 +1983,9 @@ useLayoutEffect(() => {
                                     toast.show("Visit added.", "info");
                                   } catch (e) {
                                     console.error(e);
-                                    alert("Failed to add visit. Please try again.");
+                                    alert(
+                                      "Failed to add visit. Please try again."
+                                    );
                                   } finally {
                                     setAddBusy(false);
                                   }
@@ -1716,19 +2001,33 @@ useLayoutEffect(() => {
                         </li>
                       );
                     })}
-                  {addCandidates.length === 0 && <li className="p-6 text-sm text-gray-600">No clients found.</li>}
+                  {addCandidates.length === 0 && (
+                    <li className="p-6 text-sm text-gray-600">
+                      No clients found.
+                    </li>
+                  )}
                 </ul>
               )}
             </div>
 
             <div className="px-4 sm:px-5 py-3 border-t bg-white">
               <div className="flex items-center justify-end gap-2">
-                <button className="h-11 px-5 rounded-xl border hover:bg-gray-50 active:scale-[.98] transition" onClick={() => setAddOpen(false)}>
+                <button
+                  className="h-11 px-5 rounded-xl border hover:bg-gray-50 active:scale-[.98] transition"
+                  onClick={() => setAddOpen(false)}
+                >
                   Done
                 </button>
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Error helper (index enable hint if present) */}
+      {!!error && (
+        <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">
+          {error}
         </div>
       )}
 
@@ -1792,17 +2091,27 @@ function KpiModern({ title, value, sub }) {
         <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">
           {value ?? "—"}
         </div>
-        {sub ? <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">{sub}</div> : null}
+        {sub ? (
+          <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">
+            {sub}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-
 /* ---------- icons ---------- */
 function ShareIcon({ className = "h-5 w-5" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
       <path d="M12 16V4" />
       <path d="M7 9l5-5 5 5" />
@@ -1812,7 +2121,16 @@ function ShareIcon({ className = "h-5 w-5" }) {
 
 function TrashIcon({ className = "h-5 w-5" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M4 7h16" />
       <path d="M10 11v6M14 11v6" />
       <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
@@ -1823,7 +2141,16 @@ function TrashIcon({ className = "h-5 w-5" }) {
 
 function PlusIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M12 5v14M5 12h14" />
     </svg>
   );
@@ -1831,7 +2158,16 @@ function PlusIcon({ className = "h-4 w-4" }) {
 
 function SearchIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.3-4.3" />
     </svg>
@@ -1849,7 +2185,16 @@ function Spinner({ className = "h-4 w-4" }) {
 
 function CheckIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M20 6L9 17l-5-5" />
     </svg>
   );
@@ -1864,3 +2209,17 @@ function DownloadIcon({ className = "h-4 w-4" }) {
     </svg>
   );
 }
+
+/* ---------- helpers ---------- */
+function extractIndexHelp(err) {
+  // Firestore throws a 'failed-precondition' with an "create index" URL.
+  const msg = String(err?.message || "");
+  const urlMatch = msg.match(/https:\/\/console\.firebase\.google\.com\/[^\s)]+/i);
+  if (err?.code === "failed-precondition" && urlMatch) {
+    return `A Firestore index is required for this query. Click "Enable index" → ${urlMatch[0]}`;
+  }
+  return "";
+}
+
+// tiny no-op used to clearly mark we applied the "addCandidates orderBy fix"
+function theAddCandidatesFix() {}

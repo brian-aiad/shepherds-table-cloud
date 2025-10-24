@@ -1,19 +1,26 @@
 // src/App.jsx
-// Notes:
-// - Uses ProtectedRoute for all authed pages.
-// - AdminRoute wraps /reports and /usda-monthly to require isAdmin.
-// - Layout provides the navbar/shell for authed pages.
-// - Includes a safe fallback for lazy content and a catch-all redirect.
+// Shepherds Table Cloud — App Router (Oct 2025)
+// - Protected shell for all authenticated pages
+// - AdminRoute guards admin-only pages (respects useAuth().isAdmin)
+// - Lazy-loaded route components with a safe <Suspense> fallback
+// - Catch-alls route back to "/"
 
 import { Routes, Route, Navigate } from "react-router-dom";
-import ProtectedRoute from "./auth/ProtectedRoute";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Reports from "./pages/Reports";
-import Layout from "./components/Layout";
-import UsdaMonthly from "./pages/UsdaMonthly";
-import useAuth from "./auth/useAuth";
+import { Suspense, lazy } from "react";
 
+import ProtectedRoute from "./auth/ProtectedRoute";
+import { useAuth } from "./auth/useAuth"; // ← named export (consistent with the rest of the app)
+import Layout from "./components/Layout";
+
+// Lazy pages (Vite-friendly dynamic imports)
+const Login = lazy(() => import("./pages/Login"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Reports = lazy(() => import("./pages/Reports"));
+const UsdaMonthly = lazy(() => import("./pages/UsdaMonthly"));
+
+// ─────────────────────────────────────────────────────────────
+// AdminRoute — simple wrapper to guard admin-only routes
+// ─────────────────────────────────────────────────────────────
 function AdminRoute({ children }) {
   const { loading, isAdmin } = useAuth();
   if (loading) return <div className="p-6 text-sm text-gray-600">Loading…</div>;
@@ -21,48 +28,67 @@ function AdminRoute({ children }) {
   return children;
 }
 
+// Shared Suspense fallback (accessible)
+const Fallback = (
+  <div
+    className="min-h-[40vh] grid place-items-center p-6 text-sm text-gray-600"
+    aria-busy="true"
+    aria-live="polite"
+  >
+    Loading…
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────
+// Main App Component
+// ─────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <Routes>
-      {/* Public */}
-      <Route path="/login" element={<Login />} />
+    <Suspense fallback={Fallback}>
+      <Routes>
+        {/* Public Route */}
+        <Route path="/login" element={<Login />} />
 
-      {/* Authed shell */}
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        {/* Default dashboard */}
-        <Route index element={<Dashboard />} />
-
-        {/* Admin-only routes */}
+        {/* Authenticated Shell */}
         <Route
-          path="reports"
+          path="/"
           element={
-            <AdminRoute>
-              <Reports />
-            </AdminRoute>
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
           }
-        />
-        <Route
-          path="usda-monthly"
-          element={
-            <AdminRoute>
-              <UsdaMonthly />
-            </AdminRoute>
-          }
-        />
+        >
+          {/* Default Dashboard */}
+          <Route index element={<Dashboard />} />
 
-        {/* In-shell catch-all */}
+          {/* Admin-only routes */}
+          <Route
+            path="reports"
+            element={
+              <AdminRoute>
+                <Reports />
+              </AdminRoute>
+            }
+          />
+
+          <Route
+            path="usda-monthly"
+            element={
+              <AdminRoute>
+                <UsdaMonthly />
+              </AdminRoute>
+            }
+          />
+
+          
+
+          {/* In-shell catch-all */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+
+        {/* Outside-shell catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-
-      {/* Outside-shell catch-all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

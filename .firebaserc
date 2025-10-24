@@ -1,7 +1,7 @@
 {
-"projects": {
-"default": "shepherds-table-cloud-dev",
-"dev": "shepherds-table-cloud-dev",
-"prod": "shepherds-table-cloud-prod"
-}
+  "projects": {
+    "default": "shepherds-table-cloud-dev",
+    "dev": "shepherds-table-cloud-dev",
+    "prod": "shepherds-table-cloud-prod"
+  }
 }

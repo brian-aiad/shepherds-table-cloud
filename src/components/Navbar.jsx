@@ -3,13 +3,12 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { NavLink, useNavigate, useLocation as useRouteLoc } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 
-
 /**
- * Shepherds Table Cloud — Roomier Navbar
- * - Taller brand bar (h-16) with larger paddings and a wide container.
- * - Brand (logo + name) locked far-left, primary links center-left,
- *   context/user/sign out on the far-right.
- * - Same desktop Context strip with popover selectors; mobile panel unchanged.
+ * Shepherds Table Cloud — Navbar (Oct 2025)
+ * Fixes:
+ *  - On org change, auto-select first location (in-memory) instead of persisting null.
+ *  - Do NOT persist scope automatically; add explicit “Make default on this device”.
+ *  - Safer popovers, a11y, and brand styles.
  */
 
 export default function Navbar() {
@@ -28,17 +27,20 @@ export default function Navbar() {
     setActiveOrg,
     setActiveLocation,
     signOutNow,
-  } = useAuth();
+    // New optional API on the hook; if absent we no-op in handlers.
+    saveDeviceDefaultScope,
+  } = useAuth() || {};
 
-  // mobile + context strip state
+  // ── UI state ───────────────────────────────────────────────────────────
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => setMobileOpen(false), [route.pathname]);
+
   const [contextOpen, setContextOpen] = useState(false);
   useEffect(() => setContextOpen(false), [route.pathname]);
 
-  // popover state
   const [orgOpen, setOrgOpen] = useState(false);
   const [locOpen, setLocOpen] = useState(false);
+
   const orgBtnRef = useRef(null);
   const orgMenuRef = useRef(null);
   const locBtnRef = useRef(null);
@@ -47,6 +49,7 @@ export default function Navbar() {
   const orgId = org?.id || "";
   const locId = location?.id || "";
 
+  // ── Identity chips ─────────────────────────────────────────────────────
   const initials = useMemo(() => {
     if (!email) return "ST";
     const left = email.split("@")[0];
@@ -70,37 +73,52 @@ export default function Navbar() {
     );
   }, [role]);
 
-
-const handleOrgChange = useCallback(
-  async (nextOrgId) => {
-    // AuthProvider.setActiveOrg will auto-select the first location for that org
-    // and persist { activeOrgId, activeLocationId }. Do NOT override it here.
-    await setActiveOrg(nextOrgId || null);
-    setOrgOpen(false);
-    setLocOpen(false);
-  },
-  [setActiveOrg]
-);
+  // ── Handlers ───────────────────────────────────────────────────────────
+  const handleOrgChange = useCallback(
+    async (nextOrgId) => {
+      // Change org (local context only)
+      await setActiveOrg(nextOrgId || null);
+      // Close menus
+      setOrgOpen(false);
+      setLocOpen(false);
+      // We auto-pick a location in an effect once locations hydrate for the new org.
+    },
+    [setActiveOrg]
+  );
 
   const handleLocChange = useCallback(
     async (nextLocId) => {
-      // update context and close popover — but DO NOT navigate
+      // Update local context only; do not persist to Firestore
+      if (!nextLocId && !isAdmin) {
+        // Never allow null for volunteers; silently ignore.
+        return;
+      }
       await setActiveLocation(nextLocId || null);
-     setLocOpen(false);
+      setLocOpen(false);
     },
-    [setActiveLocation]
+    [setActiveLocation, isAdmin]
   );
 
-
-
-
+  const handleSaveDefault = useCallback(async () => {
+    try {
+      if (typeof saveDeviceDefaultScope === "function") {
+        await saveDeviceDefaultScope();
+        showToast("Default saved for this device.");
+      } else {
+        // Fallback no-op with user feedback
+        showToast("Defaults not available yet in this build.");
+      }
+    } catch {
+      showToast("Couldn’t save default. Try again.");
+    }
+  }, [saveDeviceDefaultScope]);
 
   const onSignOut = async () => {
     await signOutNow();
     nav("/login", { replace: true });
   };
 
-  // click-outside + ESC for popovers
+  // ── Click outside + ESC for popovers ───────────────────────────────────
   useEffect(() => {
     const onDocClick = (e) => {
       if (orgOpen) {
@@ -124,17 +142,47 @@ const handleOrgChange = useCallback(
     };
   }, [orgOpen, locOpen]);
 
-  // Desktop list: only locations for active org
+  // ── Auto-select first location after org changes (no persistence) ──────
+  useEffect(() => {
+    // If we have an org selected, and there are locations, and no location is currently set,
+    // auto-select the first location. This runs AFTER the locations array hydrates for the new org.
+    if (!loading && orgId && locations.length > 0 && !locId) {
+      // Choose the first active location (array already filtered by org in your auth context).
+      const first = locations[0];
+      if (first?.id) {
+        setActiveLocation(first.id); // local-only update; no Firestore writes here
+      }
+    }
+  }, [loading, orgId, locId, locations, setActiveLocation]);
+
+  // ── Desktop list (admins can choose “All locations”; volunteers can’t) ──
   const desktopLocations = useMemo(() => {
     if (!orgId) return [];
-    return [{ id: "", name: "All locations" }, ...locations];
-  }, [locations, orgId]);
+    const base = locations;
+    return isAdmin ? [{ id: "", name: "All locations" }, ...base] : base;
+  }, [locations, orgId, isAdmin]);
+
+  // ── Tiny toast for “saved default” message ─────────────────────────────
+  const [toast, setToast] = useState(null);
+  function showToast(msg, ms = 1800) {
+    setToast(msg);
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(null), ms);
+  }
 
   return (
     <header className="sticky top-0 z-40 shadow-md">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999]">
+          <div className="rounded-lg bg-gray-900 text-white text-sm px-3 py-1.5 shadow-lg border border-brand-300">
+            {toast}
+          </div>
+        </div>
+      )}
+
       {/* ===== Top brand bar ===== */}
       <div className="w-full bg-brand-600 shadow-insetTop border-b border-black/10">
-        {/* wider container & paddings; h-16 for more breathing room */}
         <div className="mx-auto w-full max-w-7xl xl:max-w-[90rem] h-16 px-4 md:px-8 flex items-center gap-4">
           {/* Mobile hamburger */}
           <button
@@ -145,29 +193,28 @@ const handleOrgChange = useCallback(
             aria-controls="nav-panel"
             onClick={() => setMobileOpen((v) => !v)}
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               {mobileOpen ? <path d="M6 6l12 12M6 18L18 6" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
             </svg>
           </button>
 
-          {/* Brand (far-left) */}
+          {/* Brand */}
           <NavLink
             to="/"
             className="inline-flex items-center gap-3 rounded-lg px-2 py-1 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label="Go to Dashboard"
           >
-           <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="Shepherd’s Table Cloud logo"
-            className="h-9 w-9 rounded-md bg-white p-1 ring-1 ring-black/10 object-contain"
-          />
-
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Shepherd’s Table Cloud logo"
+              className="h-9 w-9 rounded-md bg-white p-1 ring-1 ring-black/10 object-contain"
+            />
             <span className="text-[16px] sm:text-[17px] md:text-[18px] font-semibold tracking-tight text-white">
               Shepherd’s Table
             </span>
           </NavLink>
 
-          {/* Primary links (center-left) */}
+          {/* Primary links */}
           <nav aria-label="Primary" className="hidden md:flex items-center gap-3 md:gap-6 ml-4">
             <TopLink to="/" end>Dashboard</TopLink>
             {isAdmin && (
@@ -178,10 +225,10 @@ const handleOrgChange = useCallback(
             )}
           </nav>
 
-          {/* spacer pushes right group to the edge */}
+          {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Right group: Context toggle + user + sign out */}
+          {/* Right group */}
           <div className="hidden sm:flex items-center gap-2 md:gap-3">
             <button
               type="button"
@@ -196,11 +243,11 @@ const handleOrgChange = useCallback(
               ].join(" ")}
               title="Organization & Location"
             >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <path d="M4 7h16M6 12h12M8 17h8" />
               </svg>
               <span className="text-sm font-medium">Context</span>
-              <svg className={`h-4 w-4 transition-transform ${contextOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+              <svg className={`h-4 w-4 transition-transform ${contextOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path d="M5.75 7.75L10 12l4.25-4.25" />
               </svg>
             </button>
@@ -222,7 +269,7 @@ const handleOrgChange = useCallback(
           </div>
         </div>
 
-        {/* ===== Desktop Context Strip (collapsible) ===== */}
+        {/* ===== Desktop context strip ===== */}
         <DesktopContextStrip
           open={contextOpen}
           orgId={orgId}
@@ -232,6 +279,7 @@ const handleOrgChange = useCallback(
           loading={loading}
           onOrgChange={handleOrgChange}
           onLocChange={handleLocChange}
+          onSaveDefault={handleSaveDefault}
           orgOpen={orgOpen}
           setOrgOpen={setOrgOpen}
           locOpen={locOpen}
@@ -240,10 +288,11 @@ const handleOrgChange = useCallback(
           orgMenuRef={orgMenuRef}
           locBtnRef={locBtnRef}
           locMenuRef={locMenuRef}
+          isAdmin={isAdmin}
         />
       </div>
 
-      {/* ===== Mobile panel (unchanged) ===== */}
+      {/* ===== Mobile panel ===== */}
       <div
         id="nav-panel"
         className={[
@@ -278,14 +327,24 @@ const handleOrgChange = useCallback(
               id="location"
               label="Location"
               value={locId}
-              options={[...(orgId ? [{ id: "", name: "All locations" }] : []), ...locations]}
+              options={[...(orgId && isAdmin ? [{ id: "", name: "All locations" }] : []), ...locations]}
               optionLabel="name"
               onChange={handleLocChange}
               disabled={loading || (!orgId && locations.length === 0)}
             />
-            <p className="mt-2 text-[11px] text-gray-500">
-              Selections are saved per user. Switching locations scopes dashboards and reports.
-            </p>
+
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-[11px] text-gray-500">
+                Changes are local only. Save as your device default when ready.
+              </p>
+              <button
+                type="button"
+                onClick={handleSaveDefault}
+                className="h-9 px-3 rounded-lg bg-brand-700 text-white text-xs font-semibold hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+              >
+                Make default on this device
+              </button>
+            </div>
           </div>
 
           {/* User summary */}
@@ -318,6 +377,7 @@ function DesktopContextStrip({
   loading,
   onOrgChange,
   onLocChange,
+  onSaveDefault,
   orgOpen,
   setOrgOpen,
   locOpen,
@@ -326,10 +386,11 @@ function DesktopContextStrip({
   orgMenuRef,
   locBtnRef,
   locMenuRef,
+  isAdmin,
 }) {
   const activeOrgName = orgs.find((o) => o.id === orgId)?.name || "Select an org";
   const activeLocName =
-    (orgId && (locations.find((l) => l.id === locId)?.name || "All locations")) || "—";
+    orgId ? (locations.find((l) => l.id === locId)?.name || (isAdmin ? "All locations" : "Select a location")) : "—";
 
   return (
     <div
@@ -373,12 +434,22 @@ function DesktopContextStrip({
               activeId={locId}
               onSelect={(l) => onLocChange(l.id)}
               getKey={(l) => l.id}
-              getLabel={(l) => l.name}
+              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
             />
           </div>
-          <p className="mt-3 text-[11px] text-white/85">
-            Choose an organization, then a location. Use “All locations” for org-wide data.
-          </p>
+
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-[11px] text-white/85">
+              Changes are local (per device). Use “All locations” for org-wide admin data.
+            </p>
+            <button
+              type="button"
+              onClick={onSaveDefault}
+              className="h-9 px-3 rounded-lg bg-white/15 text-white ring-1 ring-white/30 hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 text-xs font-semibold"
+            >
+              Make default on this device
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -462,7 +533,7 @@ function SelectorRow({ id, label, value, options, optionLabel, onChange, disable
         {(!options || options.length === 0) && <option value="">No options</option>}
         {options?.map((o) => (
           <option key={o.id} value={o.id}>
-            {o[optionLabel]}
+            {o[optionLabel] ?? o.name ?? String(o.id)}
           </option>
         ))}
       </select>
@@ -494,7 +565,6 @@ function SelectorCard({
           {label}
         </label>
 
-        {/* Large pill trigger that opens the popover list */}
         <button
           id={id}
           ref={buttonRef}
@@ -522,13 +592,12 @@ function SelectorCard({
           ].join(" ")}
         >
           <span className="truncate">{valueLabel}</span>
-          <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+          <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M5.75 7.75L10 12l4.25-4.25" />
           </svg>
         </button>
       </div>
 
-      {/* Popover list */}
       {open && (
         <div
           ref={menuRef}
