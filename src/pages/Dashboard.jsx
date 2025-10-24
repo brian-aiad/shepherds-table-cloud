@@ -60,7 +60,7 @@ const fmtLocal = (ts) => {
 };
 
 // UI atoms
-const cardCls = "rounded-2xl border border-brand-200 bg-white shadow-sm";
+const cardCls = "rounded-2xl border border-brand-100 bg-white shadow-soft";
 const subCardCls = "rounded-xl border border-brand-100 bg-white";
 
 /* ===========================
@@ -318,7 +318,7 @@ useEffect(() => {
       </div>
 
       {/* top bar */}
-      <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3">
+      <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
         {/* search */}
         <div className="relative w-full min-w-0 rounded-2xl border border-brand-200 bg-white shadow-sm">
           <input
@@ -333,7 +333,11 @@ useEffect(() => {
             aria-label="Search clients by name or phone"
           />
           {/* lens */}
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">🔎</div>
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>          
           {term && (
             <button
               type="button"
@@ -347,28 +351,35 @@ useEffect(() => {
         </div>
 
         {/* actions */}
-        <div className="flex items-center gap-3 shrink-0 md:ml-0">
-          <button
-            onClick={() => setShowNew(true)}
-            className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-brand-700 text-white text-sm font-semibold shadow-sm hover:bg-brand-600 active:bg-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 transition"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            Add New Client
-          </button>
-
-          {/* Visits Today pill — slimmer on mobile so it never sticks out */}
+        <div className="flex items-center gap-3 md:gap-4 md:ml-auto shrink-0">
+          {/* Today (smaller; left) */}
           <span
             role="status"
             aria-label={`Visits today ${todayCount}`}
-            className="inline-flex items-center gap-2.5 h-10 px-4 rounded-xl border border-brand-200 text-brand-900 bg-white shadow-sm md:h-11 md:px-5 md:rounded-2xl"
-          >
-            <span className="text-sm font-medium md:text-base md:font-medium">Today</span>
-            <span className="h-5 w-px bg-brand-200 md:h-6" aria-hidden="true" />
-            <span className="text-lg font-bold tabular-nums tracking-tight md:text-2xl">{todayCount}</span>
+            className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0">
+            <span className="text-sm font-semibold whitespace-nowrap">
+              <span className="hidden md:inline">Visits </span>Today
+            </span>
+            <span className="h-4 w-px bg-brand-200 md:h-5" aria-hidden="true" />
+            <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">{todayCount}</span>
           </span>
+
+          {/* Add New Client (longer; right) */}
+          <button
+            onClick={() => setShowNew(true)}
+            className="btn btn-brand-grad px-6 min-w-[184px] md:min-w-[208px]"
+            aria-label="Add new client"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 align-middle" aria-hidden="true">
+              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            <span className="md:hidden align-middle">Add New Client</span>
+            <span className="hidden md:inline align-middle">Add New Client</span>
+          </button>
+
+
         </div>
+
       </div>
 
       {err && (
@@ -384,8 +395,9 @@ useEffect(() => {
           <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
             <span>
               {searchTokens.length > 0
-                ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
-                : `Showing ${clients.length} total`}
+              ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
+              : `Showing ${clients.length} client${clients.length === 1 ? "" : "s"}`}
+
             </span>
           </div>
 
@@ -423,8 +435,7 @@ useEffect(() => {
                         key={c.id}
                         onClick={() => setSelected(c)}
                         className={`flex items-center justify-between gap-3 py-2.5 px-2 rounded cursor-pointer transition ${
-                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-50"
-                        }`}
+                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-100"                        }`}
                       >
                         <div className="min-w-0">
                           <div className="font-medium truncate">
@@ -441,7 +452,7 @@ useEffect(() => {
                             logVisit(c);
                             setSelected(c);
                           }}
-                          className="inline-flex items-center justify-center h-10 px-3.5 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-600 active:bg-brand-800 whitespace-nowrap transition"
+                            className="btn btn-brand h-10 px-3.5 rounded-lg"
                         >
                           Log Visit
                         </button>
@@ -466,14 +477,14 @@ useEffect(() => {
               <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
                 <button
                   onClick={() => logVisit(selected)}
-                  className="h-8 md:h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
+                  className="h-8 md:h-9 px-3 rounded-2xl bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
                 >
                   Log Visit
                 </button>
                 {isAdmin && (
                   <button
                     onClick={() => setEditor({ open: true, client: selected })}
-                    className="h-8 md:h-9 px-3 rounded-lg border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
+                    className="h-8 md:h-9 px-3 rounded-2xl border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
                   >
                     Edit
                   </button>
@@ -563,12 +574,12 @@ useEffect(() => {
         <div className="text-sm font-semibold mb-2">Recent activity (latest 10)</div>
         <div className={`${subCardCls} overflow-auto`}>
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr className="text-left">
-                <th className="px-3 py-2 w-1/2">Client</th>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">HH</th>
-                <th className="px-3 py-2">USDA (mo)</th>
+            <thead className="bg-gray-50 sticky top-0 z-10">
+              <tr className="text-left text-gray-700">
+                <th className="px-3 py-2 w-1/2 font-semibold">Client</th>
+                <th className="px-3 py-2 font-semibold">Time</th>
+                <th className="px-3 py-2 font-semibold">HH</th>
+                <th className="px-3 py-2 font-semibold">USDA (mo)</th>
               </tr>
             </thead>
             <tbody>

@@ -95,17 +95,16 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-[color:var(--surface-100)] text-gray-900">
       <div className="grid lg:grid-cols-2 min-h-screen">
-        {/* Left brand panel — lighter, inviting brand gradient */}
+        {/* Left brand panel — same gradient as Navbar + soft sheen */}
         <aside className="hidden lg:flex relative overflow-hidden text-white">
           <div
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-500) 70%, var(--brand-700) 120%)",
+                "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
             }}
             aria-hidden
           />
-          {/* soft accents */}
           <div
             className="absolute inset-0 opacity-25"
             style={{
@@ -198,7 +197,7 @@ export default function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={busy}
-                    className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-3 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-[color:var(--brand-200)] focus:border-[color:var(--brand-400)] disabled:opacity-60"
+                    className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-3 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:border-[color:var(--brand-500)] focus:ring-4 focus:ring-[color:var(--brand-200)] disabled:opacity-60"
                     placeholder="you@example.org"
                     aria-invalid={!!err && !emailClean ? "true" : "false"}
                   />
@@ -233,7 +232,7 @@ export default function Login() {
                       onKeyDown={onPwKeyEvent}
                       onKeyPress={onPwKeyEvent}
                       disabled={busy}
-                      className="w-full rounded-xl border border-gray-300 bg-white px-3.5 pr-12 py-3 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-[color:var(--brand-200)] focus:border-[color:var(--brand-400)] disabled:opacity-60"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3.5 pr-12 py-3 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:border-[color:var(--brand-500)] focus:ring-4 focus:ring-[color:var(--brand-200)] disabled:opacity-60"
                       placeholder="••••••••"
                       aria-describedby={capsLock ? "caps-hint" : undefined}
                     />
@@ -257,11 +256,15 @@ export default function Login() {
                   )}
                 </div>
 
-                {/* Submit — bigger, friendlier primary */}
+                {/* Submit — gradient like Navbar */}
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[color:var(--brand-600)] text-white px-5 py-3.5 text-base font-semibold shadow-sm hover:bg-[color:var(--brand-500)] active:bg-[color:var(--brand-700)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--brand-200)] disabled:opacity-60 transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-full text-white px-5 py-3.5 text-base font-semibold shadow-sm focus:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--brand-200)] disabled:opacity-60 transition-colors"
+                  style={{
+                    background:
+                      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                  }}
                 >
                   {busy ? (
                     <>

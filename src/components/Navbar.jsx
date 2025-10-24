@@ -181,8 +181,26 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* ===== Top brand bar ===== */}
-      <div className="w-full bg-brand-600 shadow-insetTop border-b border-black/10">
+
+     {/* ===== Top brand bar ===== */}
+      <div
+        className="relative w-full shadow-insetTop border-b border-black/10"
+        style={{
+          background:
+            "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+        }}
+      >
+        {/* soft highlight accents (match Login) */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-20"
+          style={{
+            background:
+              "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
+          }}
+        />
+
+        {/* Top bar content */}
         <div className="mx-auto w-full max-w-7xl xl:max-w-[90rem] h-16 px-4 md:px-8 flex items-center gap-4">
           {/* Mobile hamburger */}
           <button
@@ -198,7 +216,7 @@ export default function Navbar() {
             </svg>
           </button>
 
-          {/* Brand */}
+          {/* Brand (slightly lowered text) */}
           <NavLink
             to="/"
             className="inline-flex items-center gap-3 rounded-lg px-2 py-1 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
@@ -207,15 +225,26 @@ export default function Navbar() {
             <img
               src={`${import.meta.env.BASE_URL}logo.png`}
               alt="Shepherd’s Table Cloud logo"
-              className="h-9 w-9 rounded-md bg-white p-1 ring-1 ring-black/10 object-contain"
+              className="h-10 w-10 rounded-md bg-white p-1.5 ring-1 ring-black/10 object-contain"
             />
-            <span className="text-[16px] sm:text-[17px] md:text-[18px] font-semibold tracking-tight text-white">
+            <span className="relative top-[2px] text-[17px] sm:text-[19px] md:text-[21px] lg:text-[22px] font-semibold tracking-tight leading-[1.1] text-white drop-shadow-[0_1px_0_rgba(0,0,0,.15)]">
               Shepherd’s Table
             </span>
           </NavLink>
 
-          {/* Primary links */}
-          <nav aria-label="Primary" className="hidden md:flex items-center gap-3 md:gap-6 ml-4">
+          {/* Spacer pushes everything else to the right */}
+          <div className="flex-1" />
+
+          {/* Mobile-only Sign out (right side) */}
+          <button
+            onClick={onSignOut}
+            className="sm:hidden h-9 px-3 rounded-full border border-white/30 bg-white/10 text-white text-sm hover:bg-white/20 active:bg-white/25 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            Sign out
+          </button>
+
+          {/* Primary links (desktop) */}
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-2 md:gap-3 ml-2">
             <TopLink to="/" end>Dashboard</TopLink>
             {isAdmin && (
               <>
@@ -225,11 +254,8 @@ export default function Navbar() {
             )}
           </nav>
 
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Right group */}
-          <div className="hidden sm:flex items-center gap-2 md:gap-3">
+          {/* Right group (desktop) */}
+          <div className="hidden sm:flex items-center gap-2 md:gap-2.5">
             <button
               type="button"
               onClick={() => setContextOpen((v) => !v)}
@@ -237,7 +263,7 @@ export default function Navbar() {
               aria-controls="context-panel"
               className={[
                 "inline-flex items-center gap-2 h-11 px-4 rounded-full",
-                "bg-white/12 text-white ring-1 ring-white/25",
+                "bg-white/15 text-white ring-1 ring-white/30",
                 "hover:bg-white/20 active:bg-white/25 transition",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
               ].join(" ")}
@@ -292,6 +318,7 @@ export default function Navbar() {
         />
       </div>
 
+
       {/* ===== Mobile panel ===== */}
       <div
         id="nav-panel"
@@ -300,7 +327,21 @@ export default function Navbar() {
           mobileOpen ? "max-h-[560px] opacity-100" : "max-h-0 opacity-0",
         ].join(" ")}
       >
-        <div className="px-4 pb-4 bg-brand-700">
+<div
+  className="px-4 pb-4 relative"
+  style={{
+    background:
+      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+  }}
+>
+  <span
+    aria-hidden
+    className="pointer-events-none absolute inset-0 opacity-20"
+    style={{
+      background:
+        "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
+    }}
+  />
           <div className="flex gap-2 pt-3">
             <QuickLink to="/" end>Dashboard</QuickLink>
             {isAdmin && (
@@ -333,33 +374,19 @@ export default function Navbar() {
               disabled={loading || (!orgId && locations.length === 0)}
             />
 
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-[11px] text-gray-500">
-                Changes are local only. Save as your device default when ready.
-              </p>
-              <button
-                type="button"
-                onClick={handleSaveDefault}
-                className="h-9 px-3 rounded-lg bg-brand-700 text-white text-xs font-semibold hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-              >
-                Make default on this device
-              </button>
-            </div>
+            <p className="mt-3 text-[11px] text-gray-500">
+              Changes are local (per device).
+            </p>
           </div>
 
-          {/* User summary */}
-          <div className="mt-3 flex items-center justify-between text-white">
+          {/* User summary (right-aligned; no sign out here on mobile now) */}
+          <div className="mt-3 flex items-center justify-end text-white">
             <div className="inline-flex items-center gap-2 text-[12px]">
               <span className="truncate max-w-[220px]">{email || "—"}</span>
               {roleBadge}
             </div>
-            <button
-              onClick={onSignOut}
-              className="h-9 px-4 rounded-full border border-white/30 bg-white/10 text-white text-sm hover:bg-white/20 active:bg-white/25 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            >
-              Sign out
-            </button>
           </div>
+
         </div>
       </div>
     </header>
@@ -396,12 +423,27 @@ function DesktopContextStrip({
     <div
       id="context-panel"
       className={[
-        "hidden sm:block bg-brand-700 transition-[max-height,opacity] duration-300",
+        "hidden sm:block transition-[max-height,opacity] duration-300",
+
         open ? "max-h-[80vh] opacity-100 overflow-visible" : "max-h-0 opacity-0 overflow-hidden",
       ].join(" ")}
       aria-hidden={!open}
     >
-      <div className="mx-auto w-full max-w-7xl xl:max-w-[90rem] px-4 md:px-8 py-4">
+<div
+  className="mx-auto w-full max-w-7xl xl:max-w-[90rem] px-4 md:px-8 py-4 relative"
+  style={{
+    background:
+      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+  }}
+>
+  <span
+    aria-hidden
+    className="pointer-events-none absolute inset-0 opacity-20"
+    style={{
+      background:
+        "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
+    }}
+  />
         <div className="relative rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur-[2px] p-4 md:p-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {/* Org popover */}
@@ -438,18 +480,12 @@ function DesktopContextStrip({
             />
           </div>
 
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3">
             <p className="text-[11px] text-white/85">
               Changes are local (per device). Use “All locations” for org-wide admin data.
             </p>
-            <button
-              type="button"
-              onClick={onSaveDefault}
-              className="h-9 px-3 rounded-lg bg-white/15 text-white ring-1 ring-white/30 hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 text-xs font-semibold"
-            >
-              Make default on this device
-            </button>
           </div>
+
         </div>
       </div>
     </div>
@@ -465,7 +501,7 @@ function TopLink({ to, end, className = "", children }) {
       end={end}
       className={({ isActive }) =>
         [
-          "relative h-11 px-5 rounded-full text-[15px] font-medium inline-flex items-center justify-center transition",
+          "relative h-9 px-3 rounded-full text-[14px] tracking-tight font-medium inline-flex items-center justify-center transition",
           isActive ? "bg-white/15 text-white shadow-inner" : "text-white/95 hover:bg-white/10 active:bg-white/15",
           className,
         ].join(" ")
@@ -473,11 +509,11 @@ function TopLink({ to, end, className = "", children }) {
     >
       {({ isActive }) => (
         <>
-          <span>{children}</span>
+          <span className="leading-none">{children}</span>
           <span
             aria-hidden
             className={[
-              "pointer-events-none absolute -bottom-2 left-5 right-5 h-[3px] rounded-full bg-white/90 origin-center",
+              "pointer-events-none absolute -bottom-1.5 left-3 right-3 h-[2px] rounded-full bg-white/90 origin-center",
               "transition-transform duration-300 ease-out",
               isActive ? "scale-x-100" : "scale-x-0",
             ].join(" ")}
@@ -487,6 +523,8 @@ function TopLink({ to, end, className = "", children }) {
     </NavLink>
   );
 }
+
+
 
 function QuickLink({ to, end, children }) {
   return (

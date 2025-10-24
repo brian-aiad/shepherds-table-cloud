@@ -1109,14 +1109,7 @@ export default function Reports() {
             {/* Right: export monthly */}
             <div className="justify-self-end">
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportUsdaPdf}
-                  disabled={exportingPdf}
-                  className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold bg-brand-700 text-white shadow-sm hover:bg-brand-800 active:bg-brand-900 active:scale-[.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-60"
-                >
-                  <DownloadIcon className="h-4 w-4" />
-                  {exportingPdf ? "Building…" : "Export Monthly PDF"}
-                </button>
+                
 
                 <span className="hidden md:inline text-xs text-gray-500">
                   Synced {syncAgo || "—"}
