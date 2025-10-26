@@ -706,7 +706,7 @@ useEffect(() => {
 
       {/* mobile quick actions bar */}
       {selected && (
-        <div className="md:hidden fixed bottom-2 inset-x-2 z-40">
+        <div className="md:hidden fixed bottom-9 inset-x-2 z-40">
           <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
             <div className="min-w-0 text-sm font-medium truncate">
               {tcase(selected.firstName)} {tcase(selected.lastName)}

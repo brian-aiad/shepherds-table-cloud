@@ -4,14 +4,14 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /** ============================== Helpers =============================== */
-    function lowerSafe(s) { return s == null ? null : toLower(s); }
+    function lowerSafe(s) { return s == null ? null : lower(s); }
     function isAuthed()  { return request.auth != null; }
 
     // 🔑 Master override — ONLY your account (email gate).
     function isMaster() {
       return isAuthed()
         && lowerSafe(request.auth.token.email) == "csbrianaiad@gmail.com";
-      // If you also want to require a custom claim, add:
+      // Optionally also require a custom claim:
       // && request.auth.token.master == true
     }
 
@@ -36,10 +36,10 @@ service cloud.firestore {
     // Volunteers must be assigned to the location they access.
     function volunteerHasLocation(rawOrgId, rawLocationId) {
       let ou = orgUser(rawOrgId);
-      // `hasAny()` is the correct contains check for arrays.
       return isVolunteerOfOrg(rawOrgId)
-        && ou.locationIds != null
-        && ou.locationIds.hasAny([rawLocationId]);
+        && ou != null
+        && ou.locationIds is list
+        && (rawLocationId in ou.locationIds);
     }
 
     // Convenience: read/write permission for a scoped (orgId, locationId) thing
@@ -51,8 +51,8 @@ service cloud.firestore {
     }
 
     // Required fields for new tenant-scoped docs
-    function hasOrgId()      { return request.resource.data.orgId is string && request.resource.data.orgId.size() > 0; }
-    function hasLocationId() { return request.resource.data.locationId is string && request.resource.data.locationId.size() > 0; }
+    function hasOrgId()      { return (request.resource.data.orgId is string) && request.resource.data.orgId.size() > 0; }
+    function hasLocationId() { return (request.resource.data.locationId is string) && request.resource.data.locationId.size() > 0; }
 
     /** ========================== Global master allow ======================= */
     // Master can read/write everything, everywhere.
@@ -68,34 +68,32 @@ service cloud.firestore {
     }
 
     /** ============================= orgUsers ================================ */
-    // IMPORTANT: Do NOT call isAdminOfOrg() here (it reads orgUsers → recursion).
     // Let users read ONLY their own orgUsers doc; master already allowed globally.
     match /orgUsers/{id} {
       allow read: if isAuthed()
         && resource.data != null
         && resource.data.userId == request.auth.uid;
-      allow create, update, delete: if false; // master handled by global rule above
+      allow create, update, delete: if false; // master via global
     }
 
     /** ========================== organizations ============================== */
-    // Viewable by signed-in; writes are master-only (provisioning).
     match /organizations/{orgId} {
       allow read: if isAuthed();
       allow create, update, delete: if false; // master via global
     }
 
     /** ============================ locations ================================ */
-    // Viewable by signed-in; writes are master-only (provisioning).
     match /locations/{locationId} {
       allow read: if isAuthed();
       allow create, update, delete: if false; // master via global
     }
 
-    /** ============================== clients =================================
- *  Admins: full CRUD inside their org (including hard delete).
- *  Volunteers: READ at assigned locations; may update ONLY visit counters
- *  and last-visit metadata (no tenant-scope changes, no profile edits).
- * ======================================================================= */
+    /** ============================== clients ================================
+     *  Admins: full CRUD inside their org (including hard delete).
+     *  Volunteers: READ at assigned locations; may update ONLY visit counters
+     *  and last-visit metadata (no tenant-scope changes, no profile edits).
+     * =======================================================================
+     */
     match /clients/{clientId} {
       // Read: admin of org OR volunteer assigned to client.locationId
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
@@ -141,8 +139,7 @@ service cloud.firestore {
       allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
     }
 
-
-    /** ============================== visits ================================== */
+    /** ============================== visits ================================= */
     match /visits/{visitId} {
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 
@@ -152,9 +149,11 @@ service cloud.firestore {
         && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId)
         // client must exist…
         && exists(/databases/$(database)/documents/clients/$(request.resource.data.clientId))
-        // …and belong to the same org
+        // …and belong to the same org AND location
         && get(/databases/$(database)/documents/clients/$(request.resource.data.clientId)).data.orgId
-             == request.resource.data.orgId;
+             == request.resource.data.orgId
+        && get(/databases/$(database)/documents/clients/$(request.resource.data.clientId)).data.locationId
+             == request.resource.data.locationId;
 
       allow update: if isAuthed()
         && canWriteScoped(resource.data.orgId, resource.data.locationId)
@@ -165,7 +164,9 @@ service cloud.firestore {
         && request.resource.data.dateKey    == resource.data.dateKey
         && request.resource.data.monthKey   == resource.data.monthKey;
 
-      allow delete: if false; // keep audit history
+      // Admins of the org may hard delete visits
+      allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
+
     }
 
     /** ============================== reports ================================= */

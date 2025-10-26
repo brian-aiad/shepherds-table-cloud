@@ -17,17 +17,17 @@ import {
   orderBy,
   doc,
   deleteDoc,
-  runTransaction,
-  serverTimestamp,
-  limit as qLimit,
   startAt,
   endAt,
 } from "firebase/firestore";
+
 
 // 🔐 project paths
 import { db, auth } from "../lib/firebase";
 // NOTE: useAuth is a DEFAULT export in your app
 import useAuth from "../auth/useAuth";
+import AddVisitButton from "../components/AddVisitButton";
+
 
 // EFAP / USDA builders (fixed names)
 import {
@@ -544,14 +544,7 @@ export default function Reports() {
   const [sortKey, setSortKey] = useState("time"); // time|name|hh
   const [sortDir, setSortDir] = useState("desc"); // asc|desc
 
-  // add visit modal
-  const [addOpen, setAddOpen] = useState(false);
-  const [addSearch, setAddSearch] = useState("");
-  theAddCandidatesFix();
-  const [addCandidates, setAddCandidates] = useState([]);
-  const [addHH, setAddHH] = useState(1);
-  const [addUSDA, setAddUSDA] = useState(true);
-  const [addBusy, setAddBusy] = useState(false);
+ 
 
   const toast = useToast();
 
@@ -714,8 +707,15 @@ export default function Reports() {
 
     const id = `day-${selectedDate || fallback}`;
     requestAnimationFrame(() => {
-      const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ block: "nearest" });
+      const list = dayListRef.current;
+      if (!list) return;
+      // Query inside the list so we don’t scroll the whole window
+      const el = list.querySelector(`#${CSS.escape(id)}`);
+      if (!el) return;
+      // Scroll the list so the item is near the top (with a small padding)
+      const padding = 8;
+      const elTop = el.offsetTop - list.offsetTop;
+      list.scrollTo({ top: Math.max(0, elTop - padding), behavior: "auto" });
     });
   }, [sortedDayKeys, selectedDate, visitsByDay]);
 
@@ -1067,10 +1067,10 @@ export default function Reports() {
      RENDER
      ======================================================================================= */
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto overflow-visible">
+    <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
       {/* ===== Toolbar ===== */}
-      <div className="border-b border-brand-100 bg-white">
-        <div className="px-3 sm:px-0 py-3 sm:py-4">
+        <div className="border-b border-brand-100 bg-white">
+        <div className="px-3 sm:px-0 py-2 sm:py-3">
           <div className="grid items-center gap-3 lg:grid-cols-[1fr,auto,1fr]">
             {/* Left: Title + scope */}
             <div className="flex items-center gap-3">
@@ -1124,17 +1124,18 @@ export default function Reports() {
       {/* ===== KPI Row ===== */}
       <div className="mt-4">
         <div className="-mx-4 sm:mx-0">
-          <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar scroll-px-4 py-1">
+          <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar px-4 py-1">
             <div
               className="
-                px-4 md:px-0
-                grid grid-flow-col
-                auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
-                md:grid-flow-row md:grid-cols-4
-                gap-3 sm:gap-4 md:gap-5
-                snap-x md:snap-none
-              "
-            >
+                  px-0
+                  grid grid-flow-col
+                  auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
+                  md:grid-flow-row md:grid-cols-4
+                  gap-3 sm:gap-4 md:gap-5
+                  snap-x md:snap-none
+                "
+              >
+
               <div className="snap-start md:snap-none flex-none">
                 <KpiModern title="Total Visits (Month)" value={visits.length} />
               </div>
@@ -1444,49 +1445,15 @@ export default function Reports() {
                 CSV (This day)
               </button>
 
-              {selectedDate && isAdmin && (
-                <button
-                  onClick={async () => {
-                    setAddOpen(true);
-                    setAddBusy(true);
-                    try {
-                      // Tenant-scoped client list
-                      const filters = [where("orgId", "==", org.id)];
-                      if (location?.id)
-                        filters.push(where("locationId", "==", location.id));
-                      // Order by firstName to match existing client indexes
-                      const snap = await getDocs(
-                        query(
-                          collection(db, "clients"),
-                          ...filters,
-                          orderBy("firstName"),
-                          qLimit(200)
-                        )
-                      );
-                      const rows = snap.docs.map((d) => ({
-                        id: d.id,
-                        ...d.data(),
-                      }));
-                      setAddCandidates(rows);
-                      setAddHH(1);
-                      setAddUSDA(true);
-                      setAddSearch("");
-                    } catch (e) {
-                      console.error(e);
-                      alert("Couldn’t load clients to add.");
-                      setAddOpen(false);
-                    } finally {
-                      setAddBusy(false);
-                    }
-                  }}
-                  title="Add a visit to this day"
-                  className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold bg-brand-700 text-white shadow-sm hover:bg-brand-800 active:bg-brand-900 active:scale-[.98] border border-brand-800/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                  aria-label="Add visit"
-                >
-                  <PlusIcon className="h-4 w-4 shrink-0" />
-                  Add Visit
-                </button>
-              )}
+             {selectedDate && isAdmin && (
+              <AddVisitButton
+                org={org}
+                location={location}
+                selectedDate={selectedDate}
+                onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+              />
+            )}
+
             </div>
           </div>
 
@@ -1568,7 +1535,8 @@ export default function Reports() {
                 <col className="w-[8%]" />
               </colgroup>
 
-              <thead className="bg-gray-100 sticky top-0 z-10">
+              <thead className="bg-gray-100">
+
                 <tr className="text-left">
                   <th className="px-4 py-2">Client</th>
                   <th className="px-4 py-2">Address</th>
@@ -1722,301 +1690,6 @@ export default function Reports() {
         </section>
       </div>
 
-      {/* Add Visit Modal — bottom sheet (TENANT-SCOPED & CONCURRENCY-SAFE) */}
-      {addOpen && (
-        <div className="fixed inset-0 z-50">
-          <button
-            className="absolute inset-0 bg-black/45"
-            onClick={() => setAddOpen(false)}
-            aria-label="Close add modal"
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(640px,94vw)] bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-2xl sm:rounded-2xl h-[88svh] sm:h-auto max-h-[100svh] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] flex flex-col"
-          >
-            <div className="sm:hidden flex justify-center pt-2">
-              <div className="h-1.5 w-10 rounded-full bg-gray-300" />
-            </div>
-
-            <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b">
-              <div className="min-w-0">
-                <h2 className="text-base sm:text-lg font-semibold truncate">
-                  Add visit
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  to <span className="font-medium">{selectedDate}</span>
-                </p>
-              </div>
-              <button
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl hover:bg-gray-100 active:scale-[.98] transition"
-                onClick={() => setAddOpen(false)}
-                aria-label="Close"
-                title="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="px-4 sm:px-5 py-3 border-b">
-              <div className="grid gap-3 sm:grid-cols-3 items-center">
-                <label className="sm:col-span-2 block">
-                  <span className="text-[11px] font-medium text-gray-700">
-                    Find client
-                  </span>
-                  <div className="mt-1 relative">
-                    <input
-                      className="w-full rounded-2xl border px-4 pl-11 py-3 h-12 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand-400"
-                      placeholder="Search name or address…"
-                      value={addSearch}
-                      onChange={(e) => setAddSearch(e.target.value)}
-                      autoFocus
-                    />
-                    <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  </div>
-                </label>
-
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4">
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                      Household size:
-                    </label>
-                    <div className="inline-flex items-center rounded-full border bg-white overflow-hidden shadow-sm">
-                      <button
-                        className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
-                        onClick={() => setAddHH((n) => Math.max(1, Number(n) - 1))}
-                        aria-label="Decrease household size"
-                      >
-                        –
-                      </button>
-                      <div className="px-3 text-sm font-semibold tabular-nums min-w-[2ch] text-center select-none">
-                        {addHH}
-                      </div>
-                      <button
-                        className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
-                        onClick={() => setAddHH((n) => Math.min(20, Number(n) + 1))}
-                        aria-label="Increase household size"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={addUSDA}
-                      onChange={(e) => setAddUSDA(e.target.checked)}
-                      className="h-4 w-4 accent-brand-700 rounded focus:ring-2 focus:ring-brand-400"
-                    />
-                    <span className="select-none">First time this month</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="flex-1 overflow-auto"
-              style={{ WebkitOverflowScrolling: "touch" }}
-            >
-              {addBusy ? (
-                <div className="p-6 text-sm text-gray-600 flex items-center gap-2">
-                  <Spinner className="h-5 w-5" /> Loading…
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {addCandidates
-                    .filter((c) => {
-                      const q = addSearch.trim().toLowerCase();
-                      if (!q) return true;
-                      const full = `${c.firstName || ""} ${
-                        c.lastName || ""
-                      }`.toLowerCase();
-                      const addr = (c.address || "").toLowerCase();
-                      return (
-                        full.includes(q) ||
-                        addr.includes(q) ||
-                        (c.zip || "").includes(q)
-                      );
-                    })
-                    .slice(0, 120)
-                    .map((c) => {
-                      const initials = `${(c.firstName || "").slice(
-                        0,
-                        1
-                      )}${(c.lastName || "").slice(0, 1)}`.toUpperCase();
-                      return (
-                        <li key={c.id} className="p-3 sm:p-4 hover:bg-gray-50">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-10 w-10 rounded-full bg-brand-100 text-brand-900 flex items-center justify-center text-sm font-semibold shrink-0">
-                                {initials || "?"}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-medium truncate text-[15px]">
-                                  {(c.firstName || "") +
-                                    " " +
-                                    (c.lastName || "")}
-                                </div>
-                                <div className="text-xs text-gray-700 truncate">
-                                  {(c.address || "")}{" "}
-                                  {c.zip ? `• ${c.zip}` : ""}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-xs text-gray-500 hidden sm:inline">
-                                HH {addHH} • {addUSDA ? "USDA" : "Non-USDA"}
-                              </span>
-                              <button
-                                className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold bg-brand-700 text-white shadow-sm hover:bg-brand-800 active:bg-brand-900 active:scale-[.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                                onClick={async () => {
-                                  if (!c || !selectedDate || !org?.id) return;
-                                  setAddBusy(true);
-                                  try {
-                                    const mk = selectedMonthKey;
-                                    const now = new Date();
-                                    const when = new Date(
-                                      Number(selectedDate.slice(0, 4)),
-                                      Number(selectedDate.slice(5, 7)) - 1,
-                                      Number(selectedDate.slice(8, 10)),
-                                      now.getHours(),
-                                      now.getMinutes(),
-                                      now.getSeconds(),
-                                      now.getMilliseconds()
-                                    );
-                                    const latestHH = Math.max(
-                                      1,
-                                      Math.min(20, Number(addHH || 1))
-                                    );
-                                    const isFirst = !!addUSDA;
-                                    const currentUser =
-                                      auth.currentUser?.uid || null;
-                                    const locId = location?.id || null;
-
-                                    // BULLETPROOF CONCURRENCY:
-                                    await runTransaction(db, async (tx) => {
-                                      // unique sentinel for "first this month": usda_first/{clientId_monthKey}
-                                      const sentinelId = `${c.id}_${mk}`;
-                                      const usdaFirstRef = doc(
-                                        db,
-                                        "usda_first",
-                                        sentinelId
-                                      );
-                                      const usdaFirstSnap = await tx.get(
-                                        usdaFirstRef
-                                      );
-
-                                      // visit doc
-                                      const visitRef = doc(collection(db, "visits"));
-                                      tx.set(visitRef, {
-                                        clientId: c.id,
-                                        clientFirstName: c.firstName || "",
-                                        clientLastName: c.lastName || "",
-                                        orgId: org.id,
-                                        locationId: locId,
-                                        createdBy: currentUser,
-                                        visitAt: when,
-                                        dateKey: selectedDate,
-                                        monthKey: mk,
-                                        householdSize: latestHH,
-                                        usdaFirstTimeThisMonth: isFirst,
-                                        addedByReports: true,
-                                        addedAt: serverTimestamp(),
-                                      });
-
-                                      // idempotent-usda-first marker
-                                      if (isFirst && !usdaFirstSnap.exists()) {
-                                        tx.set(usdaFirstRef, {
-                                          clientId: c.id,
-                                          orgId: org.id,
-                                          monthKey: mk,
-                                          locationId: locId || null,
-                                          createdAt: serverTimestamp(),
-                                          createdByUserId: currentUser || null,
-                                        });
-                                      }
-
-                                      // partial client refresh (keep tenant scope stable)
-                                      const clientRef = doc(db, "clients", c.id);
-                                      tx.set(
-                                        clientRef,
-                                        {
-                                          orgId: c.orgId ?? org.id,
-                                          locationId: c.locationId ?? locId,
-                                          householdSize: latestHH,
-                                          usdaLastSeenMonth: mk,
-                                          lastVisitAt: serverTimestamp(),
-                                          updatedAt: serverTimestamp(),
-                                        },
-                                        { merge: true }
-                                      );
-                                    });
-
-                                    // Optimistic UI
-                                    setVisits((prev) => [
-                                      {
-                                        id: crypto.randomUUID(),
-                                        clientId: c.id,
-                                        clientFirstName: c.firstName || "",
-                                        clientLastName: c.lastName || "",
-                                        orgId: org.id,
-                                        locationId: locId,
-                                        visitAt: when,
-                                        dateKey: selectedDate,
-                                        monthKey: mk,
-                                        householdSize: Number(latestHH),
-                                        usdaFirstTimeThisMonth: isFirst,
-                                        addedByReports: true,
-                                        addedAt: new Date(),
-                                      },
-                                      ...prev,
-                                    ]);
-                                    setAddOpen(false);
-                                    toast.show("Visit added.", "info");
-                                  } catch (e) {
-                                    console.error(e);
-                                    alert(
-                                      "Failed to add visit. Please try again."
-                                    );
-                                  } finally {
-                                    setAddBusy(false);
-                                  }
-                                }}
-                                disabled={addBusy}
-                                title="Add this client"
-                              >
-                                <CheckIcon className="h-4 w-4" />
-                                Add
-                              </button>
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  {addCandidates.length === 0 && (
-                    <li className="p-6 text-sm text-gray-600">
-                      No clients found.
-                    </li>
-                  )}
-                </ul>
-              )}
-            </div>
-
-            <div className="px-4 sm:px-5 py-3 border-t bg-white">
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  className="h-11 px-5 rounded-xl border hover:bg-gray-50 active:scale-[.98] transition"
-                  onClick={() => setAddOpen(false)}
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Error helper (index enable hint if present) */}
       {!!error && (
@@ -2070,7 +1743,7 @@ const tooltipBoxStyle = {
 
 function Card({ title, children }) {
   return (
-    <div className="rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3 sm:p-4">
+    <div className="rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3 sm:p-4 sm:ring-1 ring-0">
       <div className="text-sm font-semibold mb-2">{title}</div>
       {children}
     </div>
@@ -2215,5 +1888,4 @@ function extractIndexHelp(err) {
   return "";
 }
 
-// tiny no-op used to clearly mark we applied the "addCandidates orderBy fix"
-function theAddCandidatesFix() {}
+
