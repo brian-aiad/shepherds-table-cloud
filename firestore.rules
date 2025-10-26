@@ -92,10 +92,10 @@ service cloud.firestore {
     }
 
     /** ============================== clients =================================
-     *  Admins: full CRUD inside their org (including hard delete).
-     *  Volunteers: READ-ONLY at assigned locations.
-     *  orgId and locationId immutable after create (except master via global override).
-     * ======================================================================= */
+ *  Admins: full CRUD inside their org (including hard delete).
+ *  Volunteers: READ at assigned locations; may update ONLY visit counters
+ *  and last-visit metadata (no tenant-scope changes, no profile edits).
+ * ======================================================================= */
     match /clients/{clientId} {
       // Read: admin of org OR volunteer assigned to client.locationId
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
@@ -106,15 +106,37 @@ service cloud.firestore {
         && hasLocationId()
         && isAdminOfOrg(request.resource.data.orgId);
 
-      // Update: admin of the EXISTING org; tenant scope immutable
+      // Update:
+      //  • Admins can update anything (tenant scope must remain unchanged).
+      //  • Volunteers at the client's location can ONLY change counter/last-visit fields.
       allow update: if isAuthed()
-        && isAdminOfOrg(resource.data.orgId)
         && request.resource.data.orgId      == resource.data.orgId
-        && request.resource.data.locationId == resource.data.locationId;
+        && request.resource.data.locationId == resource.data.locationId
+        && (
+          // Admin path
+          isAdminOfOrg(resource.data.orgId)
+          ||
+          // Volunteer path: restrict field changes to these keys only
+          (
+            volunteerHasLocation(resource.data.orgId, resource.data.locationId)
+            &&
+            request.resource.data.diff(resource.data).changedKeys()
+              .hasOnly([
+                "visitCountLifetime",
+                "visitCountByMonth",
+                "lastVisitAt",
+                "lastVisitMonthKey",
+                "updatedAt",
+                "updatedByUserId",
+                "householdSize" // optional: LogVisitForm writes latest HH
+              ])
+          )
+        );
 
       // Delete: admin of the org may hard delete
       allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
     }
+
 
     /** ============================== visits ================================== */
     match /visits/{visitId} {

@@ -3,5 +3,7 @@
     "default": "shepherds-table-cloud-dev",
     "dev": "shepherds-table-cloud-dev",
     "prod": "shepherds-table-cloud-prod"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

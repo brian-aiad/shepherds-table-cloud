@@ -145,13 +145,15 @@ export default function LogVisitForm({
           const markerSnap = await tx.get(markerRef);
           if (!markerSnap.exists()) {
             tx.set(markerRef, {
-              orgId,
-              clientId: client.id,
-              locationId,
-              monthKey: mKey,
-              createdAt: serverTimestamp(),
-              createdByUserId: currentUserId,
-            });
+            orgId,
+            clientId: client.id,
+            locationId,
+            monthKey: mKey,
+            createdAt: serverTimestamp(),
+            createdByUserId: currentUserId,
+          });
+
+
           }
           // If it already exists, we do nothing (no updates; rules will also disallow updates).
         }
@@ -190,21 +192,17 @@ export default function LogVisitForm({
         });
 
         // 4) Atomic client counters + last visit fields (NO org/location reassignment)
-        tx.set(
-          clientRef,
-          {
-            // Keep original tenant scope intact; only update visit-related fields.
-            lastVisitAt: serverTimestamp(),
-            lastVisitMonthKey: mKey,
-            updatedAt: serverTimestamp(),
-            updatedByUserId: currentUserId,
-            visitCountLifetime: increment(1),
-            [`visitCountByMonth.${mKey}`]: increment(1),
-            // Optionally keep the most recent *household size* used at intake
-            householdSize: Number(hhValue),
-          },
-          { merge: true }
-        );
+        // 4) Atomic client counters + last-visit fields (volunteer-safe)
+        tx.update(clientRef, {
+          lastVisitAt: serverTimestamp(),
+          lastVisitMonthKey: mKey,
+          updatedAt: serverTimestamp(),
+          updatedByUserId: currentUserId,
+          visitCountLifetime: increment(1),
+          [`visitCountByMonth.${mKey}`]: increment(1),
+          householdSize: Number(hhValue),
+        });
+
       });
 
       onSaved?.();

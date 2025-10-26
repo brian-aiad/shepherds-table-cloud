@@ -351,17 +351,41 @@ export default function NewClientForm({
   }
 
   async function preflightDedupe({ phoneDigits, nameDobHash }) {
+    // Build filters that match what the rules allow
+    const baseFilters = [where("orgId", "==", orgId)];
+    // Volunteers must be location-scoped
+    if (!authCtx?.isAdmin && locationId) {
+      baseFilters.push(where("locationId", "==", locationId));
+    }
+
     if (phoneDigits) {
       const qs = await getDocs(
-        query(collection(db, "clients"), where("phoneDigits", "==", phoneDigits), where("orgId", "==", orgId), qLimit(1))
+        query(
+          collection(db, "clients"),
+          ...baseFilters,
+          where("phoneDigits", "==", phoneDigits),
+          qLimit(1)
+        )
       );
-      if (!qs.empty) { const d = qs.docs[0]; return { id: d.id, ...(d.data() || {}) }; }
-    }
+      if (!qs.empty) {
+        const d = qs.docs[0];
+       return { id: d.id, ...(d.data() || {}) };
+      }
+   }
+
     if (nameDobHash) {
       const qs2 = await getDocs(
-        query(collection(db, "clients"), where("nameDobHash", "==", nameDobHash), where("orgId", "==", orgId), qLimit(1))
+        query(
+          collection(db, "clients"),
+          ...baseFilters,
+          where("nameDobHash", "==", nameDobHash),
+          qLimit(1)
+        )
       );
-      if (!qs2.empty) { const d = qs2.docs[0]; return { id: d.id, ...(d.data() || {}) }; }
+      if (!qs2.empty) {
+        const d = qs2.docs[0];
+        return { id: d.id, ...(d.data() || {}) };
+      }
     }
     return null;
   }
@@ -369,160 +393,180 @@ export default function NewClientForm({
   /* =========================
      Submit
   ========================== */
-  async function onSubmit(e) {
-    e.preventDefault();
-    if (busy) return;
+  // NEW: shared saver with force flag
+async function saveClient({ force = false } = {}) {
+  if (busy) return;
 
-    const v = validate();
-    if (v) { setMsg(v); return; }
+  const v = validate();
+  if (v) { setMsg(v); return; }
 
-    setBusy(true);
-    setMsg("");
-    setDup(null);
+  setBusy(true);
+  setMsg("");
+  if (!force) setDup(null); // if forcing, dup UI may still be visible until we clear it below
 
-    const phoneDigits = normalizePhone(form.phone);
+  const phoneDigits = normalizePhone(form.phone);
 
-    try {
-      const firstName = tcase(form.firstName.trim());
-      const lastName  = tcase(form.lastName.trim());
-      const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
-      const nameDobHash   = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
+  try {
+    const firstName = tcase(form.firstName.trim());
+    const lastName  = tcase(form.lastName.trim());
+    const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
+    const nameDobHash   = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
 
-      if (!editing) {
-        const existing = await preflightDedupe({ phoneDigits, nameDobHash });
-        if (existing) {
-          setDup(existing);
-          setMsg(t(lang, "dupFoundMsg"));
-          setBusy(false);
-          return;
-        }
+    // Only run preflight checks when creating AND not forcing
+    if (!editing && !force) {
+      const existing = await preflightDedupe({ phoneDigits, nameDobHash });
+      if (existing) {
+        setDup(existing);
+        setMsg(t(lang, "dupFoundMsg"));
+        setBusy(false);
+        return;
       }
+    }
 
-      const basePayload = {
-        firstName,
-        lastName,
-        dob: form.dob.trim(),
-        phone: form.phone.trim(),
-        phoneDigits,
-        address: form.address.trim(),
-        zip: (form.zip || "").trim(),
-        county: (form.county || "").trim(),
-        householdSize: Number(form.householdSize || 1),
-        firstTimeThisMonth: typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,
-        fullNameLower,
-        nameDobHash,
-        updatedAt: serverTimestamp(),
-        updatedByUserId: auth.currentUser?.uid || null,
-      };
+    const basePayload = {
+      firstName,
+      lastName,
+      dob: form.dob.trim(),
+      phone: form.phone.trim(),
+      phoneDigits,
+      address: form.address.trim(),
+      zip: (form.zip || "").trim(),
+      county: (form.county || "").trim(),
+      householdSize: Number(form.householdSize || 1),
+      firstTimeThisMonth: typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,
+      fullNameLower,
+      nameDobHash,
+      updatedAt: serverTimestamp(),
+      updatedByUserId: auth.currentUser?.uid || null,
+    };
 
-      let createdId = client?.id;
+    let createdId = client?.id;
 
-      if (!editing) {
-        // 1) CREATE CLIENT (separate commit)
-        const clientRef = doc(collection(db, "clients"));
-        await setDoc(clientRef, {
-          ...basePayload,
-          orgId,
-          locationId,
-          createdAt: serverTimestamp(),
-          createdByUserId: auth.currentUser?.uid || null,
-          inactive: false,
-          mergedIntoId: null,
-          visitCountLifetime: 0,
-          visitCountByMonth: {},
-          lastVisitAt: null,
-          lastVisitMonthKey: null,
-        });
+    if (!editing) {
+      // 1) CREATE CLIENT (separate commit)
+      const clientRef = doc(collection(db, "clients"));
+      await setDoc(clientRef, {
+        ...basePayload,
+        orgId,
+        locationId,
+        createdAt: serverTimestamp(),
+        createdByUserId: auth.currentUser?.uid || null,
+        inactive: false,
+        mergedIntoId: null,
+        visitCountLifetime: 0,
+        visitCountByMonth: {},
+        lastVisitAt: null,
+        lastVisitMonthKey: null,
+      });
 
-        // Optional USDA marker — best effort; rules enforce uniqueness
-        if (form.firstTimeThisMonth === true) {
-          const mk = monthKey(new Date());
-          const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
-          try {
-            await setDoc(markerRef, {
-              clientId: clientRef.id,
-              orgId,
-              locationId,
-              monthKey: mk,
-              createdAt: serverTimestamp(),
-              createdByUserId: auth.currentUser?.uid || null,
-            });
-          } catch { /* ignore collisions */ }
-        }
-
-        // 2) FIRST VISIT + COUNTERS (transaction, now that client exists)
-        await runTransaction(db, async (tx) => {
-          const now = new Date();
-          const mk = monthKey(now);
-          const dk = localDateKey(now);
-          const wk = isoWeekKey(now);
-          const weekday = now.getDay();
-
-          const visitRef = doc(collection(db, "visits"));
-          tx.set(visitRef, {
+      // Optional USDA marker — best effort; rules enforce uniqueness
+      if (form.firstTimeThisMonth === true) {
+        const mk = monthKey(new Date());
+        const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
+        try {
+          await setDoc(markerRef, {
             clientId: clientRef.id,
-            clientFirstName: basePayload.firstName,
-            clientLastName: basePayload.lastName,
             orgId,
             locationId,
-            householdSize: Number(form.householdSize || 1),
-            visitAt: serverTimestamp(),
-            createdAt: serverTimestamp(),
-            dateKey: dk,
             monthKey: mk,
-            weekKey: wk,
-            weekday,
-            usdaFirstTimeThisMonth: form.firstTimeThisMonth === true,
-            createdBy: auth.currentUser?.uid || null, // legacy
+            createdAt: serverTimestamp(),
             createdByUserId: auth.currentUser?.uid || null,
-            editedAt: null,
-            editedByUserId: null,
-            addedByReports: false,
           });
+        } catch { /* ignore collisions */ }
+      }
 
-          const clientRef2 = doc(db, "clients", clientRef.id);
-          tx.update(clientRef2, {
+      // 2) FIRST VISIT + COUNTERS (transaction)
+      await runTransaction(db, async (tx) => {
+        const now = new Date();
+        const mk = monthKey(now);
+        const dk = localDateKey(now);
+        const wk = isoWeekKey(now);
+        const weekday = now.getDay();
+
+        const visitRef = doc(collection(db, "visits"));
+        tx.set(visitRef, {
+          clientId: clientRef.id,
+          clientFirstName: basePayload.firstName,
+          clientLastName: basePayload.lastName,
+          orgId,
+          locationId,
+          householdSize: Number(form.householdSize || 1),
+          visitAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          dateKey: dk,
+          monthKey: mk,
+          weekKey: wk,
+          weekday,
+          usdaFirstTimeThisMonth: form.firstTimeThisMonth === true,
+          createdBy: auth.currentUser?.uid || null, // legacy
+          createdByUserId: auth.currentUser?.uid || null,
+          editedAt: null,
+          editedByUserId: null,
+          addedByReports: false,
+        });
+
+        const clientRef2 = doc(db, "clients", clientRef.id);
+        tx.set(
+          clientRef2,
+          {
             visitCountLifetime: increment(1),
             [`visitCountByMonth.${mk}`]: increment(1),
             lastVisitAt: serverTimestamp(),
             lastVisitMonthKey: mk,
             updatedAt: serverTimestamp(),
             updatedByUserId: auth.currentUser?.uid || null,
-          });
-        });
+          },
+          { merge: true }
+        );
+      });
 
+      createdId = clientRef.id;
+    } else {
+      // EDITING: preserve existing org/location
+      await runTransaction(db, async (tx) => {
+        if (!client?.id) throw new Error("Missing client id for edit.");
+        const clientRef = doc(db, "clients", client.id);
+        tx.set(
+          clientRef,
+          { ...basePayload },
+          { merge: true }
+        );
         createdId = clientRef.id;
-      } else {
-        // EDITING: preserve existing org/location
-        await runTransaction(db, async (tx) => {
-          if (!client?.id) throw new Error("Missing client id for edit.");
-          const clientRef = doc(db, "clients", client.id);
-          tx.set(
-            clientRef,
-            { ...basePayload }, // orgId/locationId preserved by rules; do not reassign silently
-            { merge: true }
-          );
-          createdId = clientRef.id;
-        });
-      }
-
-      const saved = { id: createdId, ...(editing ? { ...client } : { orgId, locationId }), ...basePayload };
-      onSaved?.(saved);
-      setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
-
-      if (!editing) {
-        setForm(initialForm);
-        setAddrLocked(false);
-        setLastPicked("");
-        firstRef.current?.focus();
-      }
-    } catch (err) {
-      console.error(err);
-      setMsg(t(lang, "errSave"));
-    } finally {
-      setBusy(false);
+      });
     }
+
+    const saved = { id: createdId, ...(editing ? { ...client } : { orgId, locationId }), ...basePayload };
+    onSaved?.(saved);
+    setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
+
+    // Clear dup banner if we came from it
+    setDup(null);
+
+    if (!editing) {
+      setForm(initialForm);
+      setAddrLocked(false);
+      setLastPicked("");
+      firstRef.current?.focus();
+    }
+  } catch (err) {
+    console.error(err);
+    setMsg(t(lang, "errSave"));
+  } finally {
+    setBusy(false);
   }
+}
+
+// form submit = normal path (runs dedupe)
+async function onSubmit(e) {
+  e.preventDefault();
+  await saveClient({ force: false });
+}
+
+// NEW: called by "Create new anyway" to bypass dedupe
+async function createAnyway() {
+  await saveClient({ force: true });
+}
+
 
   // Log visit for duplicate
   async function logVisitForDuplicate() {
@@ -764,79 +808,104 @@ export default function NewClientForm({
           </div>
 
           {/* Address + ZIP + County */}
-          <div className="flex flex-col gap-1 relative">
-            <span className="text-xs font-medium text-gray-700">
-              {dual(t(lang, "address"), "Address")}
-            </span>
-            <input
-              ref={addrBoxRef}
-              disabled={!addrEnabled}
-              className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)] disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
-              value={form.address}
-              onChange={onAddressInputChange}
-              enterKeyHint="next"
-              autoComplete="street-address"
-              onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
-            />
+          <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-gray-700">
+            {dual(t(lang, "address"), "Address")}
+          </span>
 
-            {/* Suggestions dropdown */}
-            {addrEnabled && showDropdown && (
-              <div
-                ref={dropdownRef}
-                className="absolute left-0 right-0 top-[100%] mt-1 z-50 rounded-2xl bg-white shadow-xl ring-1 ring-black/10 overflow-hidden"
-              >
-                <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">
-                  {addrLoading ? t(lang, "searching") : "Nearby results"}
-                </div>
-                <ul className="max-h-[280px] overflow-auto">
-                  {!addrLoading && suggestions.length === 0 ? (
-                    <li className="px-3 py-2 text-sm text-gray-500">{t(lang, "noMatches")}</li>
-                  ) : null}
-                  {suggestions.map((sug) => (
-                    <li key={sug.id}>
-                      <button
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 active:bg-gray-100"
-                        onClick={() => onPickSuggestion(sug)}
-                        title={sug.place_name}
-                      >
-                        {sug.place_name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+          {/* Address input */}
+          <input
+            ref={addrBoxRef}
+            disabled={!addrEnabled}
+            className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)] disabled:bg-gray-50 disabled:text-gray-500"
+            placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
+            value={form.address}
+            onChange={onAddressInputChange}
+            enterKeyHint="next"
+            autoComplete="street-address"
+            onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
+            aria-autocomplete="list"
+            aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
+            aria-controls="addr-nearby-panel"
+          />
+
+          {/* Inline nearby panel (NOT absolute) — sits right under input and pushes layout down */}
+          {addrEnabled && showDropdown && (
+            <div
+              id="addr-nearby-panel"
+              ref={dropdownRef}
+              className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
+              role="listbox"
+              aria-label="Nearby results"
+            >
+              <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
+                {addrLoading ? t(lang, "searching") : "Nearby results"}
               </div>
-            )}
 
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <label className="flex-1">
-                <span className="sr-only">{t(lang, "zip")}</span>
-                <input
-                  className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
-                  name="zip"
-                  placeholder={lang === "es" ? "Código postal" : "ZIP code"}
-                  value={form.zip}
-                  onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
-                  inputMode="numeric"
-                  pattern="\d{5}"
-                  autoComplete="postal-code"
-                  enterKeyHint="next"
-                />
-              </label>
-              <label className="flex-1">
-                <span className="sr-only">{t(lang, "county")}</span>
-                <input
-                  className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
-                  name="county"
-                  placeholder={lang === "es" ? "Condado" : "County"}
-                  value={form.county}
-                  onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
-                  enterKeyHint="next"
-                />
-              </label>
+              {/* Capped height + scroll for mobile */}
+              <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y">
+                {!addrLoading && suggestions.length === 0 && (
+                  <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
+                )}
+
+                {suggestions.map((sug) => (
+                  <li key={sug.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                      onClick={() => onPickSuggestion(sug)}
+                      title={sug.place_name}
+                    >
+                      <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
+                      <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Mobile-friendly close */}
+              <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
+                <button
+                  type="button"
+                  className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
+                  onClick={() => setShowDropdown(false)}
+                >
+                  Hide
+                </button>
+              </div>
             </div>
+          )}
+
+          {/* ZIP + County row (always clickable now because the panel is in-flow) */}
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <label className="flex-1">
+              <span className="sr-only">{t(lang, "zip")}</span>
+              <input
+                className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                name="zip"
+                placeholder={lang === "es" ? "Código postal" : "ZIP code"}
+                value={form.zip}
+                onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                inputMode="numeric"
+                pattern="\d{5}"
+                autoComplete="postal-code"
+                enterKeyHint="next"
+              />
+            </label>
+            <label className="flex-1">
+              <span className="sr-only">{t(lang, "county")}</span>
+              <input
+                className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                name="county"
+                placeholder={lang === "es" ? "Condado" : "County"}
+                value={form.county}
+                onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
+                enterKeyHint="next"
+              />
+            </label>
           </div>
+        </div>
 
           {/* Household + USDA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -932,12 +1001,13 @@ export default function NewClientForm({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setDup(null)}
+                  onClick={createAnyway}
                   className="h-10 px-3 rounded-xl border text-sm hover:bg-gray-50"
-                  title="Continue to create new client anyway"
+                  title="Create a brand-new client even if a match exists"
                 >
                   {t(lang, "dupUseAnyways")}
                 </button>
+
               </div>
             </div>
           )}

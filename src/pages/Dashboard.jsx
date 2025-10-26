@@ -98,20 +98,21 @@ export default function Dashboard() {
   }, [org?.id, location?.id]);
 
 
-  /* ---- live clients (FULL LIST) — ALWAYS scope by org; only non-admins are location-scoped ---- */
+/* ---- live clients (FULL LIST) ---- */
 useEffect(() => {
-  if (loading) return;
-  if (!org?.id) return;
+  if (loading || !org?.id) return;
 
-  // Always restrict by orgId to satisfy Firestore rules for queries.
-  const filters = [where("orgId", "==", org.id)];
-
-  // Only restrict by location for non-admins. Admins may see all locations in the org.
-  if (!isAdmin && location?.id) {
-    filters.push(where("locationId", "==", location.id));
+  // Volunteers MUST be location-scoped. If no location yet, don't attach a query.
+  if (!isAdmin && !location?.id) {
+    setClients([]);
+    setSelected(null);
+    setErr("Choose a location to view clients.");
+    return;
   }
 
-  // Stable ordering; spread the filters array (important!)
+  const filters = [where("orgId", "==", org.id)];
+  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ key line
+
   const q1 = query(
     collection(db, "clients"),
     ...filters,
@@ -122,18 +123,14 @@ useEffect(() => {
   const unsub = onSnapshot(
     q1,
     (snap) => {
-      // Hide deactivated/merged clients for legacy compatibility
       const rows = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((c) => c.inactive !== true && !c.mergedIntoId);
 
       setClients(rows);
+      setErr("");
 
-      // keep selection fresh or clear it if the client is gone/now inactive
-      setSelected((prev) => {
-        if (!prev) return null;
-        return rows.find((r) => r.id === prev.id) || null;
-      });
+      setSelected((prev) => (prev ? rows.find((r) => r.id === prev.id) || null : null));
     },
     (e) => {
       console.error("clients onSnapshot error:", e);
@@ -144,48 +141,68 @@ useEffect(() => {
   return () => unsub();
 }, [loading, org?.id, location?.id, isAdmin]);
 
+
   useEffect(() => {
     console.log("scope", { isAdmin, orgId: org?.id, locationId: location?.id });
   }, [isAdmin, org?.id, location?.id]);
 
 
-  /* ---- visit history for selected (client-specific) ---- */
-  useEffect(() => {
-    if (!selected?.id) {
+/* ---- visit history for selected (client-specific) ---- */
+useEffect(() => {
+  if (!selected?.id || !org?.id) {
+    setSelectedVisits([]);
+    return;
+  }
+
+  // Volunteers must be location-scoped; admins can see all locations in the org.
+  if (!isAdmin && !location?.id) {
+    setSelectedVisits([]);
+    return;
+  }
+
+  const filters = [where("clientId", "==", selected.id), where("orgId", "==", org.id)];
+  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ key line
+
+  const qv = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
+
+  const unsub = onSnapshot(
+    qv,
+    (snap) => setSelectedVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (e) => {
+      console.error("visits (selected) onSnapshot error:", e);
       setSelectedVisits([]);
-      return;
     }
-    const qv = query(
-      collection(db, "visits"),
-      where("clientId", "==", selected.id),
-      orderBy("visitAt", "desc")
-    );
-    return onSnapshot(qv, (snap) => {
-      setSelectedVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-  }, [selected?.id]);
+  );
+  return () => unsub();
+}, [selected?.id, org?.id, location?.id, isAdmin]);
 
-  /* ---- recent visits (latest 10) scoped ---- */
-  useEffect(() => {
-    if (!org?.id) return;
-    const filters = [where("orgId", "==", org.id)];
-    if (location?.id) filters.push(where("locationId", "==", location.id));
-    const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
-    return onSnapshot(q2, (snap) => {
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setRecentVisits(all.slice(0, 10)); // cap table to latest 10
-    });
-  }, [org?.id, location?.id]);
+/* ---- recent visits (latest 10) ---- */
+useEffect(() => {
+  if (!org?.id) return;
+  if (!isAdmin && !location?.id) { setRecentVisits([]); return; }
 
-  /* ---- visits today count, scoped ---- */
-  useEffect(() => {
-    if (!org?.id) return;
-    const today = localDateKey();
-    const filters = [where("orgId", "==", org.id), where("dateKey", "==", today)];
-    if (location?.id) filters.push(where("locationId", "==", location.id));
-    const q3 = query(collection(db, "visits"), ...filters);
-    return onSnapshot(q3, (snap) => setTodayCount(snap.size));
-  }, [org?.id, location?.id]);
+  const filters = [where("orgId", "==", org.id)];
+  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ force scope for volunteers
+
+  const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
+  return onSnapshot(q2, (snap) => {
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    setRecentVisits(all.slice(0, 10));
+  });
+}, [org?.id, location?.id, isAdmin]);
+
+/* ---- visits today count ---- */
+useEffect(() => {
+  if (!org?.id) return;
+  if (!isAdmin && !location?.id) { setTodayCount(0); return; }
+
+  const today = localDateKey();
+  const filters = [where("orgId", "==", org.id), where("dateKey", "==", today)];
+  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ scope for volunteers
+
+  const q3 = query(collection(db, "visits"), ...filters);
+  return onSnapshot(q3, (snap) => setTodayCount(snap.size));
+}, [org?.id, location?.id, isAdmin]);
 
   /* ---- keyboard shortcut: focus search with "/" ---- */
   useEffect(() => {
