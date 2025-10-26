@@ -148,6 +148,66 @@ export const AuthContext = createContext<AuthValue>({
   signOutNow: async () => {},
 });
 
+/* ──────────────────────────────────────────────────────────────────────────────
+   Branded loading screen (logo + subtle spinner)
+────────────────────────────────────────────────────────────────────────────── */
+function BrandedLoading() {
+  const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
+  return (
+    <div
+      className="min-h-screen w-full flex flex-col items-center justify-center text-white"
+      style={{
+        background:
+          "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+      }}
+    >
+      {/* highlight accents to match Navbar */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-20"
+        style={{
+          background:
+            "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
+        }}
+      />
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <img
+          src={logoSrc}
+          alt="Shepherd’s Table logo"
+          className="h-16 w-16 rounded-xl bg-white p-2 ring-1 ring-black/10 object-contain shadow-md"
+        />
+        <div className="text-xl font-semibold tracking-tight drop-shadow-[0_1px_0_rgba(0,0,0,.2)]">
+          Shepherd’s Table
+        </div>
+        <div className="mt-2 inline-flex items-center gap-2 text-white/95">
+          <svg
+            className="h-5 w-5 animate-spin"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+              fill="none"
+              opacity="0.25"
+            />
+            <path
+              d="M22 12a10 10 0 0 0-10-10"
+              stroke="currentColor"
+              strokeWidth="4"
+              fill="none"
+            />
+          </svg>
+          <span className="text-base font-medium">Loading…</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -187,25 +247,42 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     [uid, orgs, locations]
   );
 
-  // Switch location within current org: update memory + device mirror.
-  const setActiveLocation = useCallback(
-    async (locationId: string | null) => {
-      if (!uid) return;
-      const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
+// Switch location within current org: update memory + device mirror.
+// ACCEPTS "" (empty string) as "All locations" for admins only.
+const setActiveLocation = useCallback(
+  async (locationId: string | null) => {
+    if (!uid) return;
 
-      // Guard: only allow locations that match current org
-      if (next && org && next.orgId !== org.id) {
-        const fallback = locations.find((l) => org && l.orgId === org.id) ?? null;
-        setLocation(fallback);
-        writeDeviceScope({ activeLocationId: fallback?.id ?? null });
-        return;
-      }
+    const canAll = isMaster || role === "admin";
 
-      setLocation(next);
-      writeDeviceScope({ activeLocationId: next?.id ?? null });
-    },
-    [uid, locations, org]
-  );
+    // Admin-only sentinel: "" = All locations
+    if (locationId === "") {
+      if (!org) return;
+      if (!canAll) return; // volunteers cannot pick All
+      const allPseudo = { id: "", orgId: org.id, name: "All locations" } as LocationRec;
+      setLocation(allPseudo);
+      writeDeviceScope({ activeLocationId: "" });
+      return;
+    }
+
+    // Normal single-location selection
+    const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
+
+    // Guard: only allow locations that match current org
+    if (next && org && next.orgId !== org.id) {
+      const fallback = locations.find((l) => org && l.orgId === org.id) ?? null;
+      setLocation(fallback);
+      writeDeviceScope({ activeLocationId: fallback?.id ?? null });
+      return;
+    }
+
+    setLocation(next);
+    writeDeviceScope({ activeLocationId: next?.id ?? null });
+  },
+  [uid, locations, org, role, isMaster]
+);
+
+
 
   // Explicit “Make default on this device” → persists the current device scope to Firestore
   const saveDeviceDefaultScope = useCallback(async () => {
@@ -312,32 +389,53 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         const storedOrgId: string | null = stored?.activeOrgId ?? null;
         const storedLocId: string | null = stored?.activeLocationId ?? null;
 
-        const pickOrgId =
-          (device.activeOrgId && nextOrgs.find((o) => o.id === device.activeOrgId)?.id) ||
-          (storedOrgId && nextOrgs.find((o) => o.id === storedOrgId)?.id) ||
-          nextOrgs[0]?.id ||
-          null;
+        // Resolve initial selection with device/stored scope
+// Resolve initial selection with device/stored scope
+const pickOrgId =
+  (device.activeOrgId && nextOrgs.find((o) => o.id === device.activeOrgId)?.id) ||
+  (storedOrgId && nextOrgs.find((o) => o.id === storedOrgId)?.id) ||
+  nextOrgs[0]?.id ||
+  null;
 
-        const pickOrg = pickOrgId ? nextOrgs.find((o) => o.id === pickOrgId) ?? null : null;
+const pickOrg = pickOrgId ? nextOrgs.find((o) => o.id === pickOrgId) ?? null : null;
 
-        const pickLocId =
-          (device.activeLocationId &&
-            nextLocations.find((l) => l.id === device.activeLocationId && l.orgId === pickOrgId)?.id) ||
-          (storedLocId &&
-            nextLocations.find((l) => l.id === storedLocId && l.orgId === pickOrgId)?.id) ||
-          (pickOrgId ? nextLocations.find((l) => l.orgId === pickOrgId)?.id : null) ||
-          null;
+// Location: allow "" (All locations) only for admins
+let pickLocId: string | null =
+  typeof device.activeLocationId !== "undefined" ? device.activeLocationId
+  : (typeof storedLocId !== "undefined" ? storedLocId : null);
 
-        const pickLoc = pickLocId ? nextLocations.find((l) => l.id === pickLocId) ?? null : null;
+if (pickOrg) {
+  // Filter locations for that org
+  const locsForOrg = nextLocations.filter((l) => l.orgId === pickOrg.id);
 
-        setOrgs(nextOrgs);
-        setLocations(nextLocations);
-        setOrg(pickOrg ?? null);
-        setLocation(pickLoc ?? null);
-        setRole(nextRole);
+  // If admin and the saved value is "", keep it; otherwise pick first real location
+  if (pickLocId === "" && (masterNow || nextRole === "admin")) {
+    setOrg(pickOrg);
+    setLocation({ id: "", orgId: pickOrg.id, name: "All locations" } as LocationRec);
+    writeDeviceScope({ activeOrgId: pickOrg.id, activeLocationId: "" });
+  } else {
+    const resolved =
+      (pickLocId && locsForOrg.find((l) => l.id === pickLocId)) || locsForOrg[0] || null;
+    setOrg(pickOrg);
+    setLocation(resolved ?? null);
+    writeDeviceScope({
+      activeOrgId: pickOrg.id,
+      activeLocationId: resolved?.id ?? null,
+    });
+  }
+} else {
+  setOrg(null);
+  setLocation(null);
+  writeDeviceScope({ activeOrgId: null, activeLocationId: null });
+}
+
+setOrgs(nextOrgs);
+setLocations(nextLocations);
+setRole(nextRole);
+
+
 
         // Update device mirror so reloads are instant on this device
-        writeDeviceScope({ activeOrgId: pickOrg?.id ?? null, activeLocationId: pickLoc?.id ?? null });
       } finally {
         setLoading(false);
       }
@@ -380,6 +478,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       signOutNow,
     ]
   );
+
+  // IMPORTANT: Keep provider mounted; show branded loading screen until init completes.
+  if (loading) {
+    return (
+      <AuthContext.Provider value={value}>
+        <BrandedLoading />
+      </AuthContext.Provider>
+    );
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

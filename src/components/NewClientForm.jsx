@@ -256,11 +256,12 @@ export default function NewClientForm({
           typeof client?.firstTimeThisMonth === "boolean" ? client.firstTimeThisMonth : null,
       });
     } else {
-      setForm(initialForm);
+      setForm({ ...initialForm, firstTimeThisMonth: true });
     }
     setMsg("");
     setDup(null);
   }, [open, editing, client]);
+
 
   /* =========================
      Address autocomplete
@@ -650,6 +651,14 @@ async function createAnyway() {
     </span>
   );
 
+  const langBtnCls = (active) =>
+  `h-9 px-3 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+    active
+      ? "bg-white text-[color:var(--brand-700)] shadow-sm"               // ACTIVE
+      : "bg-transparent text-white/90 border border-white/40 hover:bg-white/10" // INACTIVE
+  }`;
+
+
   return (
     <div
       ref={containerRef}
@@ -675,57 +684,62 @@ async function createAnyway() {
       >
         {/* Header (sticky) */}
         <div className="sticky top-0 z-10">
-          <div
-            className="
-              px-4 md:px-6 py-3 border-b
-              bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
-              text-white flex items-center justify-between
-            "
-          >
-            <h2 className="text-base md:text-lg font-semibold">
-              {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
-            </h2>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setLang("en")}
-                className={`h-9 px-3 rounded-lg border text-sm transition-colors ${
-                  lang === "en"
-                    ? "bg-white/10 text-white border-white/30"
-                    : "bg-white text-[color:var(--brand-700)] border-white/30"
-                }`}
-                aria-pressed={lang === "en"}
-              >
-                English
-              </button>
-              <button
-                type="button"
-                onClick={() => setLang("es")}
-                className={`h-9 px-3 rounded-lg border text-sm transition-colors ${
-                  lang === "es"
-                    ? "bg-white/10 text-white border-white/30"
-                    : "bg-white text-[color:var(--brand-700)] border-white/30"
-                }`}
-                aria-pressed={lang === "es"}
-              >
-                Español
-              </button>
+          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+            <div className="px-4 md:px-6 py-3 md:py-4">
+              {/* Top row */}
+              <div className="flex items-start md:items-center justify-between gap-3 md:gap-6">
+                {/* Title + language pills */}
+                <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
+                  <h2 className="text-base md:text-xl font-semibold shrink-0">
+                    {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
+                  </h2>
 
-              <span className="ml-2 text-[11px] md:text-xs opacity-90">
-                Org: <b>{orgId ?? "—"}</b> • Loc: <b>{locationId ?? "—"}</b>
-              </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setLang("en")}
+                      className={langBtnCls(lang === "en")}
+                      aria-pressed={lang === "en"}
+                    >
+                      English
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLang("es")}
+                      className={langBtnCls(lang === "es")}
+                      aria-pressed={lang === "es"}
+                    >
+                      Español
+                    </button>
+                  </div>
+                </div>
 
-              <button
-                onClick={onClose}
-                className="ml-2 rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none"
-                aria-label="Close"
-                title="Close"
-              >
-                ✕
-              </button>
+                {/* Org / Loc (desktop) */}
+                <div className="hidden md:flex flex-col text-[12px] leading-4 text-white/90">
+                  <span>Org: <b>{orgId ?? "—"}</b></span>
+                  <span>Loc: <b>{locationId ?? "—"}</b></span>
+                </div>
+
+                {/* Close */}
+                <button
+                  onClick={onClose}
+                  className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  aria-label="Close"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Org / Loc (mobile) */}
+              <div className="mt-2 md:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
+                <span>Org: <b>{orgId ?? "—"}</b></span>
+                <span>Loc: <b>{locationId ?? "—"}</b></span>
+              </div>
             </div>
           </div>
         </div>
+
 
         {/* Body (scroll area) */}
         <form
@@ -733,9 +747,10 @@ async function createAnyway() {
           onSubmit={onSubmit}
           onKeyDown={handleFormKeyDown}
           noValidate
-          className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px]"
+          className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
+
           {/* Names */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1">
@@ -744,7 +759,7 @@ async function createAnyway() {
               </span>
               <input
                 ref={firstRef}
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 name="firstName"
                 placeholder="e.g., Brian"
                 autoCapitalize="words"
@@ -760,7 +775,7 @@ async function createAnyway() {
                 {dual(t(lang, "lastName"), "Last name")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 name="lastName"
                 placeholder="e.g., Aiad"
                 autoCapitalize="words"
@@ -780,7 +795,7 @@ async function createAnyway() {
                 {dual(t(lang, "dob"), "Date of birth")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 type="date"
                 name="dob"
                 autoComplete="bday"
@@ -795,7 +810,7 @@ async function createAnyway() {
                 {dual(t(lang, "phone"), "Phone")}
               </span>
               <input
-                className="border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 name="phone"
                 placeholder="(310) 254-1234"
                 inputMode="tel"
@@ -817,7 +832,7 @@ async function createAnyway() {
           <input
             ref={addrBoxRef}
             disabled={!addrEnabled}
-            className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)] disabled:bg-gray-50 disabled:text-gray-500"
+            className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400 disabled:bg-gray-50 disabled:text-gray-500"
             placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
             value={form.address}
             onChange={onAddressInputChange}
@@ -843,7 +858,7 @@ async function createAnyway() {
               </div>
 
               {/* Capped height + scroll for mobile */}
-              <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y">
+              <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
                 {!addrLoading && suggestions.length === 0 && (
                   <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
                 )}
@@ -882,7 +897,7 @@ async function createAnyway() {
             <label className="flex-1">
               <span className="sr-only">{t(lang, "zip")}</span>
               <input
-                className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 name="zip"
                 placeholder={lang === "es" ? "Código postal" : "ZIP code"}
                 value={form.zip}
@@ -896,7 +911,7 @@ async function createAnyway() {
             <label className="flex-1">
               <span className="sr-only">{t(lang, "county")}</span>
               <input
-                className="w-full border rounded-2xl p-3 h-12 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand-500)]"
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
                 name="county"
                 placeholder={lang === "es" ? "Condado" : "County"}
                 value={form.county}
@@ -917,18 +932,19 @@ async function createAnyway() {
                 <button
                   type="button"
                   aria-label="Decrease household size"
-                  className="h-12 w-12 rounded-2xl border grid place-items-center text-xl font-semibold hover:bg-gray-50 active:scale-95"
+                  className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() => setForm((f) => ({ ...f, householdSize: Math.max(1, Number(f.householdSize) - 1) }))}
                 >
                   –
                 </button>
-                <div className="h-12 min-w-[88px] px-4 rounded-2xl border grid place-items-center shadow-sm">
-                  <span className="text-lg tabular-nums">{form.householdSize}</span>
+                <div className="h-12 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
+                  <span className="text-lg font-semibold tabular-nums">{form.householdSize}</span>
                 </div>
+
                 <button
                   type="button"
                   aria-label="Increase household size"
-                  className="h-12 w-12 rounded-2xl border grid place-items-center text-xl font-semibold hover:bg-gray-50 active:scale-95"
+                  className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() => setForm((f) => ({ ...f, householdSize: Math.min(20, Number(f.householdSize) + 1) }))}
                 >
                   +
@@ -943,11 +959,12 @@ async function createAnyway() {
                 </legend>
                 <div className="grid grid-cols-2 gap-2">
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors ${
+                   className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
                       form.firstTimeThisMonth === true
-                        ? "bg-[color:var(--brand-700)] text-white border-[color:var(--brand-700)]"
-                        : "bg-white text-gray-800 border-gray-300 hover:bg-[color:var(--brand-50)]"
+                        ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                        : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
                     }`}
+
                   >
                     <input
                       type="radio"
@@ -959,11 +976,12 @@ async function createAnyway() {
                     {t(lang, "yes")}
                   </label>
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors ${
+                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
                       form.firstTimeThisMonth === false
-                        ? "bg-[color:var(--brand-700)] text-white border-[color:var(--brand-700)]"
-                        : "bg-white text-gray-800 border-gray-300 hover:bg-[color:var(--brand-50)]"
+                        ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                        : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
                     }`}
+
                   >
                     <input
                       type="radio"
@@ -1015,14 +1033,15 @@ async function createAnyway() {
 
         {/* Footer (sticky) */}
         <div
-          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 md:px-6 py-3"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 md:px-6 pt-3 pb-5 md:pb-6"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
         >
+
           <div className="flex flex-col-reverse md:flex-row md:items-center md:justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="h-12 px-5 rounded-2xl border hover:bg-gray-50"
+              className="h-12 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             >
               {t(lang, "cancel")}
             </button>

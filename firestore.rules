@@ -100,11 +100,15 @@ service cloud.firestore {
       // Read: admin of org OR volunteer assigned to client.locationId
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 
-      // Create: admin of the org, must include orgId & locationId
+      // Create: admin OR volunteer assigned to the target location.
+      // Must include orgId & locationId (comes from your form).
       allow create: if isAuthed()
         && hasOrgId()
         && hasLocationId()
-        && isAdminOfOrg(request.resource.data.orgId);
+        && (
+          isAdminOfOrg(request.resource.data.orgId) ||
+          volunteerHasLocation(request.resource.data.orgId, request.resource.data.locationId)
+        );
 
       // Update:
       //  • Admins can update anything (tenant scope must remain unchanged).

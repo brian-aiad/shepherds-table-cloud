@@ -1,5 +1,5 @@
 // src/components/LogVisitForm.jsx
-// Ship-safe LogVisitForm (Oct 2025 hardening)
+// Ship-safe LogVisitForm (Oct 2025 hardening + polished header/body/footer)
 // - Single Firestore transaction for: visit + client counters (+ optional USDA marker)
 // - Create-once usda_first marker (only if not exists) using deterministic id: `${orgId}_${clientId}_${monthKey}`
 // - Adds weekKey (YYYY-Www) and weekday (0–6) to visits
@@ -145,17 +145,14 @@ export default function LogVisitForm({
           const markerSnap = await tx.get(markerRef);
           if (!markerSnap.exists()) {
             tx.set(markerRef, {
-            orgId,
-            clientId: client.id,
-            locationId,
-            monthKey: mKey,
-            createdAt: serverTimestamp(),
-            createdByUserId: currentUserId,
-          });
-
-
+              orgId,
+              clientId: client.id,
+              locationId,
+              monthKey: mKey,
+              createdAt: serverTimestamp(),
+              createdByUserId: currentUserId,
+            });
           }
-          // If it already exists, we do nothing (no updates; rules will also disallow updates).
         }
 
         // 3) Create the visit
@@ -192,7 +189,6 @@ export default function LogVisitForm({
         });
 
         // 4) Atomic client counters + last visit fields (NO org/location reassignment)
-        // 4) Atomic client counters + last-visit fields (volunteer-safe)
         tx.update(clientRef, {
           lastVisitAt: serverTimestamp(),
           lastVisitMonthKey: mKey,
@@ -202,7 +198,6 @@ export default function LogVisitForm({
           [`visitCountByMonth.${mKey}`]: increment(1),
           householdSize: Number(hhValue),
         });
-
       });
 
       onSaved?.();
@@ -225,67 +220,83 @@ export default function LogVisitForm({
       {/* Backdrop */}
       <button
         aria-label="Close"
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
         onClick={onClose}
       />
 
-      {/* Sheet */}
+      {/* Modal shell (centered on desktop, bottom sheet on mobile) */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="log-visit-title"
-        className="absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(560px,94vw)]
-                   bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
-                   bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5
-                   overflow-hidden flex flex-col"
+        className="
+          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(620px,94vw)]
+          bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+          bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
+          overflow-hidden flex flex-col
+        "
         onKeyDown={onKey}
       >
-        {/* Handle (mobile) */}
-        <div className="sm:hidden flex justify-center pt-2">
-          <div className="h-1.5 w-12 rounded-full bg-gray-300" />
-        </div>
+        {/* Header — matches NewClientForm style */}
+        <div className="sticky top-0 z-10">
+          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+            <div className="px-4 sm:px-6 py-3 sm:py-4">
+              <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-6">
+                {/* Title + avatar */}
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                  <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
+                    {initials}
+                  </div>
+                  <div className="min-w-0">
+                    <h2 id="log-visit-title" className="text-base sm:text-xl font-semibold truncate">
+                      Log Visit
+                    </h2>
+                    <p className="text-[11px] sm:text-xs opacity-90 truncate">
+                      {name || "Client"}
+                    </p>
+                  </div>
+                </div>
 
-        {/* Header */}
-        <div className="px-4 sm:px-5 py-3 border-b flex items-center gap-3">
-          <div className="shrink-0 h-10 w-10 rounded-2xl bg-brand-600 text-white grid place-items-center font-semibold">
-            {initials}
+                {/* Org / Loc (desktop) */}
+                <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
+                  <span>Org: <b>{orgId ?? "—"}</b></span>
+                  <span>Loc: <b>{locationId ?? "—"}</b></span>
+                </div>
+
+                {/* Close */}
+                <button
+                  onClick={onClose}
+                  className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  aria-label="Close"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Org / Loc (mobile) */}
+              <div className="mt-2 sm:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
+                <span>Org: <b>{orgId ?? "—"}</b></span>
+                <span>Loc: <b>{locationId ?? "—"}</b></span>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 id="log-visit-title" className="text-base sm:text-lg font-semibold truncate">
-              Log visit
-            </h2>
-            <p className="text-xs text-gray-600 truncate">
-              {name || "Client"}
-            </p>
-          </div>
-          <div className="ml-auto hidden sm:flex items-center gap-2">
-            <Badge label={orgId || "Org —"} />
-            <Badge label={locationId || "Location —"} />
-          </div>
-          <button
-            className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-xl hover:bg-gray-100 active:scale-[.98] transition"
-            onClick={onClose}
-            aria-label="Close"
-            title="Close"
-          >
-            ✕
-          </button>
         </div>
 
         {/* Context warning */}
         {!orgId || !locationId ? (
           <div
             role="alert"
-            className="mx-4 sm:mx-5 mt-3 mb-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"
+            className="mx-4 sm:mx-6 mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"
           >
             Select an Organization and Location from the navbar before logging a visit.
           </div>
         ) : null}
 
         {/* Body */}
-        <div className="p-4 sm:p-5 grid gap-4">
-          {/* USDA toggle */}
-          <div className="rounded-2xl border p-3 sm:p-4">
+        <div className="p-4 sm:p-6 grid gap-4 pretty-scroll">
+          {/* USDA toggle — matches NewClientForm active gradient */}
+          <div className="rounded-2xl border border-brand-200 p-3 sm:p-4">
             <div className="text-sm font-medium text-gray-800 mb-2">
               USDA first time this month?
             </div>
@@ -293,12 +304,12 @@ export default function LogVisitForm({
               <button
                 type="button"
                 onClick={() => setUsdaFirstThisMonth(true)}
-                className={`h-11 rounded-xl border text-sm font-semibold transition
-                  ${
-                    usdaFirstThisMonth
-                      ? "bg-brand-700 text-white border-brand-700"
-                      : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
-                  }`}
+                className={[
+                  "h-11 rounded-2xl border text-sm font-semibold transition-colors",
+                  usdaFirstThisMonth
+                    ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                    : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
+                ].join(" ")}
                 aria-pressed={usdaFirstThisMonth}
               >
                 Yes
@@ -306,12 +317,12 @@ export default function LogVisitForm({
               <button
                 type="button"
                 onClick={() => setUsdaFirstThisMonth(false)}
-                className={`h-11 rounded-xl border text-sm font-semibold transition
-                  ${
-                    !usdaFirstThisMonth
-                      ? "bg-brand-700 text-white border-brand-700"
-                      : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"
-                  }`}
+                className={[
+                  "h-11 rounded-2xl border text-sm font-semibold transition-colors",
+                  !usdaFirstThisMonth
+                    ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                    : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
+                ].join(" ")}
                 aria-pressed={!usdaFirstThisMonth}
               >
                 No
@@ -323,7 +334,7 @@ export default function LogVisitForm({
           </div>
 
           {/* Household size — steppers + numeric input */}
-          <div className="rounded-2xl border p-3 sm:p-4">
+          <div className="rounded-2xl border border-brand-200 p-3 sm:p-4">
             <label htmlFor="hh-input" className="text-sm font-medium text-gray-800">
               Household size
             </label>
@@ -336,7 +347,7 @@ export default function LogVisitForm({
                 onClick={() =>
                   setHH((n) => Math.max(MIN_HH, (Number(n) || MIN_HH) - 1))
                 }
-                className="h-12 w-12 rounded-xl border border-brand-200 bg-white text-2xl leading-none font-semibold hover:bg-gray-50 active:scale-[.98] select-none"
+                className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
               >
                 −
               </button>
@@ -365,7 +376,7 @@ export default function LogVisitForm({
                   );
                   setHH(clamped);
                 }}
-                className="flex-1 h-12 rounded-xl border border-brand-200 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-brand-200 text-center tabular-nums"
+                className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
                 aria-describedby="hh-help"
               />
 
@@ -378,7 +389,7 @@ export default function LogVisitForm({
                     Math.max(MIN_HH, Math.min(MAX_HH, (Number(n) || MIN_HH) + 1))
                   )
                 }
-                className="h-12 w-12 rounded-xl border border-brand-200 bg-white text-2xl leading-none font-semibold hover:bg-gray-50 active:scale-[.98] select-none"
+                className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
               >
                 +
               </button>
@@ -399,20 +410,14 @@ export default function LogVisitForm({
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer — brand buttons to match the app */}
         <div
-          className="px-4 sm:px-5 py-3 border-t bg-white flex items-center justify-between gap-3
-                     [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)]"
+          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
         >
-          <div className="hidden sm:flex items-center gap-2 text-[11px] text-gray-600">
-            <Badge subtle label={orgId || "Org —"} />
-            <span>•</span>
-            <Badge subtle label={locationId || "Location —"} />
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             <button
-              className="h-11 px-5 rounded-xl border hover:bg-gray-50 active:scale-[.98] transition"
+              className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
               onClick={onClose}
               type="button"
               disabled={busy}
@@ -420,7 +425,7 @@ export default function LogVisitForm({
               Cancel
             </button>
             <button
-              className="h-11 px-5 rounded-xl bg-brand-700 text-white hover:bg-brand-800 active:scale-[.98] transition disabled:opacity-50 inline-flex items-center gap-2"
+              className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] transition disabled:opacity-50 inline-flex items-center gap-2"
               onClick={submit}
               type="button"
               disabled={busy}

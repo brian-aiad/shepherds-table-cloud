@@ -35,7 +35,7 @@ function hashDJB2(str = "") {
 
 /* =============== Component =============== */
 export default function EditForm({ open, client, onClose, onSaved }) {
-  const { isAdmin, uid } = useAuth() || {};
+  const { isAdmin, uid, org, location } = useAuth() || {};
 
   const [form, setForm] = useState({
     firstName: "",
@@ -53,7 +53,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
   const [error, setError] = useState("");
 
   // focus trap + click-outside
-  const dialogRef = useRef(null);
+  const shellRef = useRef(null);
   const firstFieldRef = useRef(null);
 
   /* ---------- effects ---------- */
@@ -66,7 +66,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => firstFieldRef.current?.focus(), 0);
+    const id = setTimeout(() => firstFieldRef.current?.focus(), 140);
     return () => clearTimeout(id);
   }, [open]);
 
@@ -145,7 +145,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   /* ---------- handlers ---------- */
   const onBackdropClick = (e) => {
-    if (dialogRef.current && !dialogRef.current.contains(e.target)) onClose?.();
+    if (shellRef.current && !shellRef.current.contains(e.target)) onClose?.();
   };
 
   const onChange = (e) => {
@@ -267,94 +267,127 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   const readOnlyBlock = !isAdmin;
 
+  /* ---------- UI helpers ---------- */
+  const headerName =
+    `${tcase(client?.firstName || "")} ${tcase(client?.lastName || "")}`.trim();
+
+  const fieldInputCls =
+    "w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400";
+
   /* ---------- render ---------- */
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-3"
+      className="fixed inset-0 z-[1000] flex items-stretch md:items-center justify-center"
       role="dialog"
       aria-modal="true"
       onMouseDown={onBackdropClick}
     >
+      {/* Backdrop */}
+      <button
+        aria-label="Close"
+        className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+
+      {/* Modal shell */}
       <div
-        ref={dialogRef}
-        className="w-full max-w-lg bg-white rounded-2xl shadow-xl ring-1 ring-black/10 overflow-hidden"
+        ref={shellRef}
+        className="
+          relative w-full h-full md:h-auto md:w-[min(820px,94vw)] max-h-[96vh]
+          bg-white md:rounded-3xl shadow-2xl ring-1 ring-brand-200/70
+          flex flex-col overflow-hidden
+        "
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-4 py-3 border-b bg-gradient-to-b from-white to-gray-50 flex items-center justify-between">
-          <div className="font-semibold">
-            Edit client
-            {client?.firstName || client?.lastName ? (
-              <span className="ml-2 text-gray-500 font-normal">
-                — {tcase(client.firstName)} {tcase(client.lastName)}
-                {client?.inactive ? (
-                  <span className="ml-2 inline-flex items-center text-[12px] px-2 py-[2px] rounded-full bg-gray-100 border text-gray-700">
-                    Inactive
-                  </span>
-                ) : null}
-              </span>
-            ) : null}
+        {/* Header (sticky) */}
+        <div className="sticky top-0 z-10">
+          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+            <div className="px-4 md:px-6 py-3 md:py-4">
+              <div className="flex items-start md:items-center justify-between gap-3 md:gap-6">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <h2 className="text-base md:text-xl font-semibold shrink-0">
+                      Edit Client
+                    </h2>
+                    {headerName ? (
+                      <span className="text-xs md:text-sm text-white/90 truncate">
+                        — <b className="font-medium">{headerName}</b>
+                      </span>
+                    ) : null}
+                    {client?.inactive && (
+                      <span className="inline-flex items-center h-6 px-2 rounded-lg bg-white/15 border border-white/25 text-[11px] font-semibold">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-[11px] text-white/80 hidden md:block">
+                    Org: <b>{org?.id ?? "—"}</b>
+                    <span className="opacity-60"> • </span>
+                    Loc: <b>{location?.id ?? "—"}</b>
+                  </div>
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  aria-label="Close"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 rounded-md px-2 py-1"
-            aria-label="Close"
-          >
-            ×
-          </button>
         </div>
 
-        {/* Body */}
-        {readOnlyBlock ? (
-          <div className="p-4">
+        {/* Body (scroll area) */}
+        <form
+          id="edit-client-form"          // <-- add this
+          onSubmit={submit}
+          noValidate
+          className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          {readOnlyBlock ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-sm">
               You don’t have permission to edit client profiles. Please ask an admin.
             </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-10 px-4 rounded-lg border bg-white hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="p-4 space-y-4">
-            {/* Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="text-sm">
-                <span className="text-gray-700">First name</span>
-                <input
-                  ref={firstFieldRef}
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="firstName"
-                  value={form.firstName}
-                  onChange={onChange}
-                  onBlur={() => setForm((f) => ({ ...f, firstName: tcase(f.firstName) }))}
-                  required
-                  autoComplete="given-name"
-                />
-              </label>
+          ) : (
+            <>
+              {/* Names */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">First name</span>
+                  <input
+                    ref={firstFieldRef}
+                    className={fieldInputCls}
+                    name="firstName"
+                    value={form.firstName}
+                    onChange={onChange}
+                    onBlur={() => setForm((f) => ({ ...f, firstName: tcase(f.firstName) }))}
+                    required
+                    autoComplete="given-name"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">Last name</span>
+                  <input
+                    className={fieldInputCls}
+                    name="lastName"
+                    value={form.lastName}
+                    onChange={onChange}
+                    onBlur={() => setForm((f) => ({ ...f, lastName: tcase(f.lastName) }))}
+                    required
+                    autoComplete="family-name"
+                  />
+                </label>
+              </div>
 
-              <label className="text-sm">
-                <span className="text-gray-700">Last name</span>
+              {/* Address */}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-700">Address</span>
                 <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="lastName"
-                  value={form.lastName}
-                  onChange={onChange}
-                  onBlur={() => setForm((f) => ({ ...f, lastName: tcase(f.lastName) }))}
-                  required
-                  autoComplete="family-name"
-                />
-              </label>
-
-              <label className="text-sm sm:col-span-2">
-                <span className="text-gray-700">Address</span>
-                <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  className={fieldInputCls}
                   name="address"
                   value={form.address}
                   onChange={onChange}
@@ -362,67 +395,82 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 />
               </label>
 
-              <label className="text-sm">
-                <span className="text-gray-700">Phone (digits)</span>
-                <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="phoneDigits"
-                  value={form.phoneDigits}
-                  onChange={(e) => setForm((f) => ({ ...f, phoneDigits: onlyDigits(e.target.value) }))}
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="e.g., 3102541234"
-                />
-                {form.phoneDigits && (
-                  <div className="mt-1 text-[12px] text-gray-500">
-                    Saved as: {formatPhoneFromDigits(form.phoneDigits)}
-                  </div>
-                )}
-              </label>
+              {/* Phone + ZIP */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">Phone (digits)</span>
+                 <input
+                    className={fieldInputCls}
+                    name="phoneDigits"
+                    value={form.phoneDigits}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        phoneDigits: onlyDigits(e.target.value).slice(0, 10), // limit to 10 digits
+                      }))
+                    }
+                    inputMode="tel"
+                    maxLength={10}
+                    autoComplete="tel"
+                    placeholder="e.g., 3102541234"
+                  />
 
-              <label className="text-sm">
-                <span className="text-gray-700">ZIP</span>
-                <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="zip"
-                  value={form.zip}
-                  onChange={(e) => setForm((f) => ({ ...f, zip: onlyDigits(e.target.value) }))}
-                  inputMode="numeric"
-                  placeholder="e.g., 90210"
-                  autoComplete="postal-code"
-                />
-              </label>
+                  {form.phoneDigits && (
+                    <div className="mt-1 text-[12px] text-gray-500">
+                      Saved as: {formatPhoneFromDigits(form.phoneDigits)}
+                    </div>
+                  )}
+                </label>
 
-              <label className="text-sm">
-                <span className="text-gray-700">DOB</span>
-                <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="dob"
-                  value={form.dob}
-                  onChange={onChange}
-                  placeholder="YYYY-MM-DD"
-                  inputMode="numeric"
-                />
-                {form.dob && !isYmd(form.dob) && (
-                  <div className="mt-1 text-[12px] text-red-600">Use format YYYY-MM-DD.</div>
-                )}
-              </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">ZIP</span>
+                  <input
+                    className={fieldInputCls}
+                    name="zip"
+                    value={form.zip}
+                    onChange={(e) => setForm((f) => ({ ...f, zip: onlyDigits(e.target.value) }))}
+                    inputMode="numeric"
+                    placeholder="e.g., 90210"
+                    autoComplete="postal-code"
+                  />
+                </label>
+              </div>
 
-              <label className="text-sm">
-                <span className="text-gray-700">Household size</span>
-                <input
-                  className="mt-1 w-full rounded-xl border border-brand-200 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                  name="householdSize"
-                  value={form.householdSize}
-                  onChange={(e) => setForm((f) => ({ ...f, householdSize: onlyDigits(e.target.value) }))}
-                  inputMode="numeric"
-                  placeholder="e.g., 3"
-                />
-              </label>
+              {/* DOB + Household size */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">DOB</span>
+                  <input
+                    className={fieldInputCls}
+                    type="date"
+                    name="dob"
+                    value={form.dob}
+                    onChange={onChange}
+                    max={new Date().toISOString().slice(0, 10)}
+                  />
+                  {form.dob && !isYmd(form.dob) && (
+                    <div className="mt-1 text-[12px] text-red-600">Use format YYYY-MM-DD.</div>
+                  )}
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-700">Household size</span>
+                  <input
+                    className={fieldInputCls}
+                    name="householdSize"
+                    value={form.householdSize}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, householdSize: onlyDigits(e.target.value) }))
+                    }
+                    inputMode="numeric"
+                    placeholder="e.g., 3"
+                  />
+                </label>
+              </div>
 
               {/* Active / Inactive (admin only) */}
               {isAdmin && (
-                <label className="text-sm flex items-center gap-2 mt-1 sm:col-span-2">
+                <label className="text-sm flex items-center gap-2 mt-1">
                   <input
                     type="checkbox"
                     name="inactive"
@@ -430,69 +478,84 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                     onChange={onChange}
                     className="h-4 w-4 rounded border-gray-300"
                   />
-                  <span className="text-gray-700">Mark client as inactive (hidden from search/intake)</span>
+                  <span className="text-gray-700">
+                    Mark client as inactive (hidden from search/intake)
+                  </span>
                 </label>
               )}
-            </div>
 
-            {/* Error */}
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm">
-                {error}
+              {/* Error */}
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm">
+                  {error}
+                </div>
+              )}
+            </>
+          )}
+        </form>
+
+        {/* Footer (sticky) */}
+        <div
+          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 md:px-6 pt-3 pb-5 md:pb-6"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+        >
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            {/* Danger / Reactivation zone (Admin only) */}
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                {!client?.inactive ? (
+                  <button
+                    type="button"
+                    onClick={deactivateClient}
+                    disabled={deactivating}
+                    className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
+                  >
+                    {deactivating ? "Working…" : "Deactivate client"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={reactivateClient}
+                    disabled={reactivating}
+                    className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
+                  >
+                    {reactivating ? "Working…" : "Reactivate client"}
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Actions row */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-              {/* Danger / Reactivation zone (Admin only) */}
-              {isAdmin && (
-                <div className="sm:order-1 flex items-center gap-2">
-                  {!client?.inactive ? (
-                    <button
-                      type="button"
-                      onClick={deactivateClient}
-                      disabled={deactivating}
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-                    >
-                      {deactivating ? "Working…" : "Deactivate client"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={reactivateClient}
-                      disabled={reactivating}
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
-                    >
-                      {reactivating ? "Working…" : "Reactivate client"}
-                    </button>
-                  )}
-                </div>
-              )}
+            {/* Save/Cancel */}
+            <div className="flex items-center gap-2 md:ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-10 px-4 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="edit-client-form"        // <-- add this
+                disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+                aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+                title={
+                  readOnlyBlock
+                    ? "Admins only"
+                    : !formValid
+                    ? "Fix the highlighted fields"
+                    : !hasChanges
+                    ? "No changes to save"
+                    : "Save changes"
+                }
+                className="h-10 px-4 rounded-2xl bg-[color:var(--brand-700)] text-white font-medium shadow-sm hover:bg-[color:var(--brand-600)] disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
 
-              {/* Save/Cancel */}
-              <div className="flex items-center gap-2 sm:order-2 sm:ml-auto">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="h-10 px-4 rounded-xl border border-brand-200 bg-white hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving || !formValid || !hasChanges}
-                  className="h-10 px-4 rounded-xl bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 disabled:opacity-60"
-                  aria-disabled={saving || !formValid || !hasChanges}
-                  title={
-                    !formValid ? "Fix the highlighted fields" : !hasChanges ? "No changes to save" : "Save changes"
-                  }
-                >
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              </div>
             </div>
-          </form>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   );

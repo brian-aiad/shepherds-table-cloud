@@ -607,9 +607,10 @@ export default function Reports() {
     const endKey = fmtDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0)); // last day of month
 
     const filters = [where("orgId", "==", org.id)];
-    // Volunteers are scoped to active location; admins may see all
-    const effectiveLocationId = location?.id && !isAdmin ? location.id : null;
+    // If a specific location is selected, scope to it (Admins included). Null/empty = all locations.
+    const effectiveLocationId = location?.id || null;
     if (effectiveLocationId) filters.push(where("locationId", "==", effectiveLocationId));
+
 
     // Use dateKey range
     const qv = query(

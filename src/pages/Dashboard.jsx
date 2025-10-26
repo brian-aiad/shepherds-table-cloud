@@ -75,6 +75,12 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(null);
   const [selectedVisits, setSelectedVisits] = useState([]);
 
+    // Derived scope helpers
+  const orgId = org?.id ?? null;
+  const locId = location?.id ?? null;
+  const isAll = isAdmin && locId === "";   // "" sentinel = All locations (admins only)
+
+
   // UI
   const [term, setTerm] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -110,8 +116,9 @@ useEffect(() => {
     return;
   }
 
-  const filters = [where("orgId", "==", org.id)];
-  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ key line
+const filters = [where("orgId", "==", orgId)];
+if (!isAll && locId) filters.push(where("locationId", "==", locId));
+
 
   const q1 = query(
     collection(db, "clients"),
@@ -160,8 +167,9 @@ useEffect(() => {
     return;
   }
 
-  const filters = [where("clientId", "==", selected.id), where("orgId", "==", org.id)];
-  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ key line
+  const filters = [where("clientId", "==", selected.id), where("orgId", "==", orgId)];
+  if (!isAll && locId) filters.push(where("locationId", "==", locId));
+
 
   const qv = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
 
@@ -181,8 +189,10 @@ useEffect(() => {
   if (!org?.id) return;
   if (!isAdmin && !location?.id) { setRecentVisits([]); return; }
 
-  const filters = [where("orgId", "==", org.id)];
-  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ force scope for volunteers
+    const filters = [where("orgId", "==", orgId)];
+    if (!isAll && locId) filters.push(where("locationId", "==", locId));
+
+
 
   const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
   return onSnapshot(q2, (snap) => {
@@ -192,17 +202,17 @@ useEffect(() => {
 }, [org?.id, location?.id, isAdmin]);
 
 /* ---- visits today count ---- */
-useEffect(() => {
-  if (!org?.id) return;
-  if (!isAdmin && !location?.id) { setTodayCount(0); return; }
+  useEffect(() => {
+    if (!org?.id) return;
 
-  const today = localDateKey();
-  const filters = [where("orgId", "==", org.id), where("dateKey", "==", today)];
-  if (!isAdmin) filters.push(where("locationId", "==", location.id)); // ⬅️ scope for volunteers
+    const today = localDateKey();
+    const filters = [where("orgId", "==", orgId), where("dateKey", "==", today)];
+    if (!isAll && locId) filters.push(where("locationId", "==", locId));
 
-  const q3 = query(collection(db, "visits"), ...filters);
-  return onSnapshot(q3, (snap) => setTodayCount(snap.size));
-}, [org?.id, location?.id, isAdmin]);
+
+    const q3 = query(collection(db, "visits"), ...filters);
+    return onSnapshot(q3, (snap) => setTodayCount(snap.size));
+  }, [org?.id, location?.id]);
 
   /* ---- keyboard shortcut: focus search with "/" ---- */
   useEffect(() => {
@@ -323,14 +333,20 @@ useEffect(() => {
       <div className="mb-2 text-xs text-gray-700">
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-brand-200 bg-white">
           <span className="font-semibold text-brand-900">Scope</span> • <span>{org?.name || "—"}</span>
-          {location?.name ? (
+          {isAll ? (
+            <>
+              <span className="opacity-60">/</span>
+              <span>All locations</span>
+            </>
+          ) : location?.name ? (
             <>
               <span className="opacity-60">/</span>
               <span>{location.name}</span>
             </>
           ) : (
-            <span className="opacity-70">(all locations)</span>
+            <span className="opacity-70">(select a location)</span>
           )}
+
         </span>
       </div>
 
@@ -360,11 +376,14 @@ useEffect(() => {
               type="button"
               aria-label="Clear search"
               onClick={() => setTerm("")}
-              className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-md px-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+              className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
+                        w-7 h-7 text-[18px] font-semibold text-gray-500 
+                        hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             >
               ×
             </button>
           )}
+
         </div>
 
         {/* actions */}
@@ -451,10 +470,12 @@ useEffect(() => {
                       <li
                         key={c.id}
                         onClick={() => setSelected(c)}
-                        className={`flex items-center justify-between gap-3 py-2.5 px-2 rounded cursor-pointer transition ${
-                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-100"                        }`}
+                        className={`group flex items-center gap-3 py-2.5 px-2 rounded transition flex-nowrap ${
+                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-100"
+                        }`}
                       >
-                        <div className="min-w-0">
+                        {/* Left: name + details (takes remaining width and truncates) */}
+                        <div className="flex-1 min-w-0">
                           <div className="font-medium truncate">
                             {tcase(c.firstName)} {tcase(c.lastName)}
                           </div>
@@ -463,16 +484,34 @@ useEffect(() => {
                           </div>
                         </div>
 
+                        {/* Right: fixed-width button that never wraps */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             logVisit(c);
                             setSelected(c);
                           }}
-                            className="btn btn-brand h-10 px-3.5 rounded-lg"
+                          className={[
+                            // size: smaller on mobile
+                            "inline-flex items-center justify-center",
+                            "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                            // responsive min-width so it never collapses, but stays compact
+                            "min-w-[64px] sm:min-w-[92px]",
+                            // brand look
+                            "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
+                            "text-[13px] sm:text-[14px] font-medium",
+                            "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
+                            "hover:from-brand-500 hover:to-brand-600",
+                            "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
+                            "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                          ].join(" ")}
+                          aria-label="Log visit"
+                          title="Log visit"
                         >
-                          Log Visit
+                          <span className="sm:hidden">Log Visit</span>
+                          <span className="hidden sm:inline">Log Visit</span>
                         </button>
+
                       </li>
                     ))}
                     {items.length === 0 && (
@@ -481,6 +520,7 @@ useEffect(() => {
                       </li>
                     )}
                   </ul>
+
                 </div>
               ))}
           </div>
@@ -489,19 +529,44 @@ useEffect(() => {
         {/* right: quick details */}
         <aside className={`${cardCls} overflow-hidden`}>
           <div className="sticky top-0 z-10 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 flex items-center justify-between px-4 py-2.5 border-b border-brand-100">
-            <div className="text-sm font-semibold">Quick details</div>
+            <div className="text-sm font-semibold">Client Details</div>
             {selected && (
               <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
+                {/* Log Visit — matches client list button */}
                 <button
                   onClick={() => logVisit(selected)}
-                  className="h-8 md:h-9 px-3 rounded-2xl bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
+                  className={[
+                    "inline-flex items-center justify-center",
+                    "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                    "min-w-[64px] sm:min-w-[92px]",
+                    "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
+                    "text-[13px] sm:text-[14px] font-medium",
+                    "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
+                    "hover:from-brand-500 hover:to-brand-600",
+                    "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  ].join(" ")}
+                  aria-label="Log visit"
+                  title="Log visit"
                 >
                   Log Visit
                 </button>
+
+                {/* Edit — outline mate */}
                 {isAdmin && (
                   <button
                     onClick={() => setEditor({ open: true, client: selected })}
-                    className="h-8 md:h-9 px-3 rounded-2xl border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
+                    className={[
+                      "inline-flex items-center justify-center",
+                      "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                      "min-w-[64px]",
+                      "bg-white text-brand-900",
+                      "text-[13px] sm:text-[14px] font-medium",
+                      "border border-brand-300 shadow-sm",
+                      "hover:bg-brand-50 hover:border-brand-400",
+                      "active:translate-y-[1px]",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                    ].join(" ")}
                   >
                     Edit
                   </button>
@@ -509,6 +574,7 @@ useEffect(() => {
               </div>
             )}
           </div>
+
 
           {selected ? (
             <div className="p-4 space-y-4">
@@ -650,7 +716,7 @@ useEffect(() => {
                 onClick={() => logVisit(selected)}
                 className="h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
               >
-                Log
+                Log Visit
               </button>
               {isAdmin && (
                 <button

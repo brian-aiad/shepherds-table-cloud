@@ -1,14 +1,12 @@
-// src/components/Navbar.jsx
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { NavLink, useNavigate, useLocation as useRouteLoc } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
 
 /**
- * Shepherds Table Cloud — Navbar (Oct 2025)
- * Fixes:
- *  - On org change, auto-select first location (in-memory) instead of persisting null.
- *  - Do NOT persist scope automatically; add explicit “Make default on this device”.
- *  - Safer popovers, a11y, and brand styles.
+ * Shepherd’s Table Cloud — Navbar (SEAMLESS VERSION)
+ * - KILLS the white line by removing ALL translucent highlight overlays/borders.
+ * - Uses a solid brand background (no white in the gradient).
+ * - Ensures the context panel renders above everything.
  */
 
 export default function Navbar() {
@@ -27,11 +25,10 @@ export default function Navbar() {
     setActiveOrg,
     setActiveLocation,
     signOutNow,
-    // New optional API on the hook; if absent we no-op in handlers.
     saveDeviceDefaultScope,
   } = useAuth() || {};
 
-  // ── UI state ───────────────────────────────────────────────────────────
+  // UI state
   const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => setMobileOpen(false), [route.pathname]);
 
@@ -47,9 +44,9 @@ export default function Navbar() {
   const locMenuRef = useRef(null);
 
   const orgId = org?.id || "";
-  const locId = location?.id || "";
+const locId = location?.id ?? null;  // "" is a valid value (All), null means no selection
 
-  // ── Identity chips ─────────────────────────────────────────────────────
+  // Identity / badges
   const initials = useMemo(() => {
     if (!email) return "ST";
     const left = email.split("@")[0];
@@ -67,37 +64,44 @@ export default function Navbar() {
     if (!role) return null;
     const label = role === "admin" ? "Admin" : "Volunteer";
     return (
-      <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/20 ring-1 ring-white/30 text-white select-none">
+      <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/15 text-white select-none">
         {label}
       </span>
     );
   }, [role]);
 
-  // ── Handlers ───────────────────────────────────────────────────────────
-  const handleOrgChange = useCallback(
-    async (nextOrgId) => {
-      // Change org (local context only)
-      await setActiveOrg(nextOrgId || null);
-      // Close menus
-      setOrgOpen(false);
-      setLocOpen(false);
-      // We auto-pick a location in an effect once locations hydrate for the new org.
-    },
-    [setActiveOrg]
-  );
+  // Handlers
+const handleOrgChange = useCallback(
+  async (nextOrgId) => {
+    await setActiveOrg(nextOrgId || null);
+    setOrgOpen(false);
+    setLocOpen(false);
+    setMobileOpen(false);                     // close mobile panel
+    // nudge current route so Dashboard effects re-run
+    nav(route.pathname + route.search, {
+      replace: true,
+      state: { scopeChangedAt: Date.now() },
+    });
+  },
+  [setActiveOrg, nav, route.pathname, route.search]
+);
 
-  const handleLocChange = useCallback(
-    async (nextLocId) => {
-      // Update local context only; do not persist to Firestore
-      if (!nextLocId && !isAdmin) {
-        // Never allow null for volunteers; silently ignore.
-        return;
-      }
-      await setActiveLocation(nextLocId || null);
-      setLocOpen(false);
-    },
-    [setActiveLocation, isAdmin]
-  );
+    const handleLocChange = useCallback(
+      async (nextLocId) => {
+        // Volunteers can’t clear scope; admins may send "" (All locations)
+        if ((nextLocId == null || nextLocId === "") && !isAdmin) return;
+        await setActiveLocation(nextLocId);  // IMPORTANT: pass through "" (don’t coerce to null)
+        setLocOpen(false);
+        setMobileOpen(false);
+        nav(route.pathname + route.search, {
+          replace: true,
+          state: { scopeChangedAt: Date.now() },
+        });
+      },
+      [setActiveLocation, isAdmin, nav, route.pathname, route.search]
+    );
+
+
 
   const handleSaveDefault = useCallback(async () => {
     try {
@@ -105,7 +109,6 @@ export default function Navbar() {
         await saveDeviceDefaultScope();
         showToast("Default saved for this device.");
       } else {
-        // Fallback no-op with user feedback
         showToast("Defaults not available yet in this build.");
       }
     } catch {
@@ -118,7 +121,7 @@ export default function Navbar() {
     nav("/login", { replace: true });
   };
 
-  // ── Click outside + ESC for popovers ───────────────────────────────────
+  // Dismiss popovers
   useEffect(() => {
     const onDocClick = (e) => {
       if (orgOpen) {
@@ -134,7 +137,7 @@ export default function Navbar() {
         setLocOpen(false);
       }
     };
-    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onEsc);
     return () => {
       document.removeEventListener("mousedown", onDocClick);
@@ -142,27 +145,24 @@ export default function Navbar() {
     };
   }, [orgOpen, locOpen]);
 
-  // ── Auto-select first location after org changes (no persistence) ──────
+  // Auto pick first location after org change
   useEffect(() => {
-    // If we have an org selected, and there are locations, and no location is currently set,
-    // auto-select the first location. This runs AFTER the locations array hydrates for the new org.
-    if (!loading && orgId && locations.length > 0 && !locId) {
-      // Choose the first active location (array already filtered by org in your auth context).
+    // Only auto-pick when there is truly NO location yet.
+    // If admin selected All locations (id === ""), leave it alone.
+    if (!loading && orgId && locations.length > 0 && location == null) {
       const first = locations[0];
-      if (first?.id) {
-        setActiveLocation(first.id); // local-only update; no Firestore writes here
-      }
+      if (first?.id) setActiveLocation(first.id);
     }
-  }, [loading, orgId, locId, locations, setActiveLocation]);
+  }, [loading, orgId, location, locations, setActiveLocation]);
 
-  // ── Desktop list (admins can choose “All locations”; volunteers can’t) ──
+
   const desktopLocations = useMemo(() => {
     if (!orgId) return [];
     const base = locations;
     return isAdmin ? [{ id: "", name: "All locations" }, ...base] : base;
   }, [locations, orgId, isAdmin]);
 
-  // ── Tiny toast for “saved default” message ─────────────────────────────
+  // Tiny toast
   const [toast, setToast] = useState(null);
   function showToast(msg, ms = 1800) {
     setToast(msg);
@@ -171,41 +171,37 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 shadow-md">
-      {/* Toast */}
+    <header className="sticky top-0 z-50 relative isolate">
+      {/* Seam killer for iOS top safe area */}
+      <div
+        aria-hidden
+        className="fixed top-0 left-0 right-0 h-[max(1px,env(safe-area-inset-top))] z-[9998] pointer-events-none"
+        style={{
+          background: "var(--brand-650, var(--brand-600))", // solid color, no white
+        }}
+      />
+
       {toast && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999]">
-          <div className="rounded-lg bg-gray-900 text-white text-sm px-3 py-1.5 shadow-lg border border-brand-300">
+          <div className="rounded-lg bg-gray-900 text-white text-sm px-3 py-1.5 shadow-lg border border-white/10">
             {toast}
           </div>
         </div>
       )}
 
-
-     {/* ===== Top brand bar ===== */}
+      {/* ===== Top bar — SOLID background, no borders, no white overlays ===== */}
       <div
-        className="relative w-full shadow-insetTop border-b border-black/10"
+        className="relative w-full"
         style={{
-          background:
-            "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+          // Solid (or very dark subtle) gradient with ZERO white in it
+          background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
         }}
       >
-        {/* soft highlight accents (match Login) */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-20"
-          style={{
-            background:
-              "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
-          }}
-        />
-
-        {/* Top bar content */}
-        <div className="mx-auto w-full max-w-7xl xl:max-w-[90rem] h-16 px-4 md:px-8 flex items-center gap-4">
+        <div className="relative z-10 mx-auto w-full max-w-7xl xl:max-w-[90rem] h-16 px-4 md:px-8 flex items-center gap-4">
           {/* Mobile hamburger */}
           <button
             type="button"
-            className="sm:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg ring-1 ring-white/25 hover:bg-white/10 active:bg-white/15 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="sm:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/0 text-white ring-1 ring-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
             aria-controls="nav-panel"
@@ -216,7 +212,7 @@ export default function Navbar() {
             </svg>
           </button>
 
-          {/* Brand (slightly lowered text) */}
+          {/* Brand */}
           <NavLink
             to="/"
             className="inline-flex items-center gap-3 rounded-lg px-2 py-1 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
@@ -227,46 +223,45 @@ export default function Navbar() {
               alt="Shepherd’s Table Cloud logo"
               className="h-10 w-10 rounded-md bg-white p-1.5 ring-1 ring-black/10 object-contain"
             />
-            <span className="relative top-[2px] text-[17px] sm:text-[19px] md:text-[21px] lg:text-[22px] font-semibold tracking-tight leading-[1.1] text-white drop-shadow-[0_1px_0_rgba(0,0,0,.15)]">
+            <span className="relative top-[2px] text-[17px] sm:text-[19px] md:text-[21px] lg:text-[22px] font-semibold tracking-tight leading-[1.1] text-white">
               Shepherd’s Table
             </span>
           </NavLink>
 
-          {/* Spacer pushes everything else to the right */}
-          <div className="flex-1" />
-
-          {/* Mobile-only Sign out (right side) */}
+          {/* Mobile Sign out */}
           <button
             onClick={onSignOut}
-            className="sm:hidden h-9 px-3 rounded-full border border-white/30 bg-white/10 text-white text-sm hover:bg-white/20 active:bg-white/25 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="sm:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/10 text-white text-sm hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             Sign out
           </button>
 
-          {/* Primary links (desktop) */}
-          <nav aria-label="Primary" className="hidden md:flex items-center gap-2 md:gap-3 ml-2">
-            <TopLink to="/" end>Dashboard</TopLink>
+
+          {/* Primary links */}
+          <nav aria-label="Primary" className="hidden md:flex items-center justify-center flex-1 gap-6">
+            <TopLink to="/" end className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+              Dashboard
+            </TopLink>
             {isAdmin && (
               <>
-                <TopLink to="/reports">Reports</TopLink>
-                <TopLink to="/usda-monthly">USDA</TopLink>
+                <TopLink to="/reports" className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+                  Reports
+                </TopLink>
+                <TopLink to="/usda-monthly" className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+                  USDA
+                </TopLink>
               </>
             )}
           </nav>
 
-          {/* Right group (desktop) */}
+          {/* Right group */}
           <div className="hidden sm:flex items-center gap-2 md:gap-2.5">
             <button
               type="button"
               onClick={() => setContextOpen((v) => !v)}
               aria-expanded={contextOpen}
               aria-controls="context-panel"
-              className={[
-                "inline-flex items-center gap-2 h-11 px-4 rounded-full",
-                "bg-white/15 text-white ring-1 ring-white/30",
-                "hover:bg-white/20 active:bg-white/25 transition",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
-              ].join(" ")}
+              className="inline-flex items-center gap-2 h-11 px-4 rounded-full bg-white/10 text-white hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
               title="Organization & Location"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -278,8 +273,8 @@ export default function Navbar() {
               </svg>
             </button>
 
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-white/15 ring-1 ring-white/25 select-none">
-              <span className="h-7 w-7 rounded-full bg-white/20 ring-1 ring-white/30 grid place-items-center text-[11px] font-semibold">
+            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-white/10 select-none">
+              <span className="h-7 w-7 rounded-full bg-white/20 grid place-items-center text-[11px] font-semibold">
                 {initials}
               </span>
               <span className="max-w-[240px] truncate text-xs text-white/95">{email || "—"}</span>
@@ -288,14 +283,14 @@ export default function Navbar() {
 
             <button
               onClick={onSignOut}
-              className="h-10 px-4 rounded-full border border-white/30 bg-white/10 text-white text-sm hover:bg-white/20 active:bg-white/25 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              className="h-10 px-4 rounded-full bg-white/10 text-white text-sm hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             >
               Sign out
             </button>
           </div>
         </div>
 
-        {/* ===== Desktop context strip ===== */}
+        {/* ===== Desktop context strip (above everything) ===== */}
         <DesktopContextStrip
           open={contextOpen}
           orgId={orgId}
@@ -318,30 +313,23 @@ export default function Navbar() {
         />
       </div>
 
-
       {/* ===== Mobile panel ===== */}
       <div
         id="nav-panel"
         className={[
-          "sm:hidden transition-[max-height,opacity] duration-300 overflow-hidden",
-          mobileOpen ? "max-h-[560px] opacity-100" : "max-h-0 opacity-0",
+          "sm:hidden transition-[max-height,opacity] duration-300",
+          mobileOpen
+            ? "max-h-[80vh] opacity-100 overflow-visible" // let dropdowns render past the panel
+            : "max-h-0 opacity-0 overflow-hidden",
         ].join(" ")}
       >
-<div
-  className="px-4 pb-4 relative"
-  style={{
-    background:
-      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-  }}
->
-  <span
-    aria-hidden
-    className="pointer-events-none absolute inset-0 opacity-20"
-    style={{
-      background:
-        "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
-    }}
-  />
+
+        <div
+          className="px-4 pb-4"
+          style={{
+            background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
+          }}
+        >
           <div className="flex gap-2 pt-3">
             <QuickLink to="/" end>Dashboard</QuickLink>
             {isAdmin && (
@@ -353,40 +341,51 @@ export default function Navbar() {
           </div>
 
           {/* Mobile selectors */}
-          <div className="mt-3 rounded-2xl bg-white text-gray-900 p-3 ring-1 ring-brand-200 shadow-sm">
-            <SelectorRow
-              id="org"
+          <div className="mt-3 rounded-2xl bg-white text-gray-900 p-3 shadow-sm">
+            <MobileSelectPopover
+              id="m-org"
               label="Organization"
-              value={orgId}
-              options={orgs}
-              optionLabel="name"
-              onChange={handleOrgChange}
+              valueLabel={orgs.find(o => o.id === orgId)?.name || "Select an org"}
               disabled={loading || orgs.length === 0}
-            />
-            <div className="h-2" />
-            <SelectorRow
-              id="location"
-              label="Location"
-              value={locId}
-              options={[...(orgId && isAdmin ? [{ id: "", name: "All locations" }] : []), ...locations]}
-              optionLabel="name"
-              onChange={handleLocChange}
-              disabled={loading || (!orgId && locations.length === 0)}
+              open={orgOpen}
+              setOpen={setOrgOpen}
+              items={orgs}
+              activeId={orgId}
+              onSelect={(o) => handleOrgChange(o.id)}
+              getKey={(o) => o.id}
+              getLabel={(o) => o.name}
             />
 
-            <p className="mt-3 text-[11px] text-gray-500">
-              Changes are local (per device).
-            </p>
+            <div className="h-2" />
+
+            <MobileSelectPopover
+              id="m-loc"
+              label="Location"
+              valueLabel={
+                orgId
+                  ? ((isAdmin && locId === "") ? "All locations"
+                    : (locations.find(l => l.id === locId)?.name || (isAdmin ? "All locations" : "Select a location")))
+                  : "—"
+              }
+              disabled={loading || !orgId || locations.length === 0}
+              open={locOpen}
+              setOpen={setLocOpen}
+              items={orgId ? (isAdmin ? [{ id: "", name: "All locations" }, ...locations] : locations) : []}
+              activeId={locId}
+              onSelect={(l) => handleLocChange(l.id)}
+              getKey={(l) => l.id}
+              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
+            />
+
+            <p className="mt-3 text-[11px] text-gray-500">Changes are local (per device).</p>
           </div>
 
-          {/* User summary (right-aligned; no sign out here on mobile now) */}
           <div className="mt-3 flex items-center justify-end text-white">
             <div className="inline-flex items-center gap-2 text-[12px]">
               <span className="truncate max-w-[220px]">{email || "—"}</span>
               {roleBadge}
             </div>
           </div>
-
         </div>
       </div>
     </header>
@@ -423,30 +422,19 @@ function DesktopContextStrip({
     <div
       id="context-panel"
       className={[
-        "hidden sm:block transition-[max-height,opacity] duration-300",
-
+        "hidden sm:block relative z-20 transition-[max-height,opacity] duration-300",
         open ? "max-h-[80vh] opacity-100 overflow-visible" : "max-h-0 opacity-0 overflow-hidden",
       ].join(" ")}
       aria-hidden={!open}
     >
-<div
-  className="mx-auto w-full max-w-7xl xl:max-w-[90rem] px-4 md:px-8 py-4 relative"
-  style={{
-    background:
-      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-  }}
->
-  <span
-    aria-hidden
-    className="pointer-events-none absolute inset-0 opacity-20"
-    style={{
-      background:
-        "radial-gradient(600px 260px at -8% -10%, rgba(255,255,255,.45), transparent 60%), radial-gradient(520px 240px at 108% 120%, rgba(255,255,255,.35), transparent 60%)",
-    }}
-  />
-        <div className="relative rounded-2xl bg-white/10 ring-1 ring-white/20 backdrop-blur-[2px] p-4 md:p-5">
+      <div
+        className="mx-auto w-full max-w-7xl xl:max-w-[90rem] px-4 md:px-8 py-4"
+        style={{
+          background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
+        }}
+      >
+        <div className="rounded-2xl bg-white/10 p-4 md:p-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-            {/* Org popover */}
             <SelectorCard
               id="org-d"
               label="Organization"
@@ -462,7 +450,6 @@ function DesktopContextStrip({
               getKey={(o) => o.id}
               getLabel={(o) => o.name}
             />
-            {/* Location popover */}
             <SelectorCard
               id="loc-d"
               label="Location"
@@ -485,7 +472,6 @@ function DesktopContextStrip({
               Changes are local (per device). Use “All locations” for org-wide admin data.
             </p>
           </div>
-
         </div>
       </div>
     </div>
@@ -502,7 +488,7 @@ function TopLink({ to, end, className = "", children }) {
       className={({ isActive }) =>
         [
           "relative h-9 px-3 rounded-full text-[14px] tracking-tight font-medium inline-flex items-center justify-center transition",
-          isActive ? "bg-white/15 text-white shadow-inner" : "text-white/95 hover:bg-white/10 active:bg-white/15",
+          isActive ? "bg-white/15 text-white" : "text-white/95 hover:bg-white/10",
           className,
         ].join(" ")
       }
@@ -524,8 +510,6 @@ function TopLink({ to, end, className = "", children }) {
   );
 }
 
-
-
 function QuickLink({ to, end, children }) {
   return (
     <NavLink
@@ -534,7 +518,7 @@ function QuickLink({ to, end, children }) {
       className={({ isActive }) =>
         [
           "relative flex-1 h-11 rounded-full text-[15px] font-medium inline-flex items-center justify-center transition",
-          isActive ? "bg-white/15 text-white shadow-inner" : "text-white/95 hover:bg-white/10 active:bg-white/15",
+          isActive ? "bg-white/15 text-white" : "text-white/95 hover:bg-white/10",
         ].join(" ")
       }
     >
@@ -554,32 +538,6 @@ function QuickLink({ to, end, children }) {
     </NavLink>
   );
 }
-
-function SelectorRow({ id, label, value, options, optionLabel, onChange, disabled }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label htmlFor={id} className="w-28 text-xs text-gray-700">
-        {label}
-      </label>
-      <select
-        id={id}
-        className="h-12 flex-1 rounded-full border border-brand-200 px-4 text-sm bg-white focus:outline-none focus:ring-4 focus:ring-brand-200/70 focus:border-brand-400"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-      >
-        {(!options || options.length === 0) && <option value="">No options</option>}
-        {options?.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o[optionLabel] ?? o.name ?? String(o.id)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-/* ======= Desktop SelectorCard (popover) ======= */
 
 function SelectorCard({
   id,
@@ -610,7 +568,11 @@ function SelectorCard({
           disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
               e.preventDefault();
@@ -622,13 +584,13 @@ function SelectorCard({
             }
           }}
           className={[
-            "group h-11 w-full rounded-full bg-white text-gray-900",
-            "px-4 text-sm shadow-sm ring-1 ring-brand-200",
-            "hover:ring-brand-300 active:ring-brand-400",
-            "focus:outline-none focus:ring-2 focus:ring-brand-400",
-            "text-left flex items-center justify-between",
+            "group h-11 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
+            "border border-brand-200 hover:border-brand-300",
+            "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
+            open ? "ring-2 ring-brand-300 border-brand-300" : ""
           ].join(" ")}
         >
+
           <span className="truncate">{valueLabel}</span>
           <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M5.75 7.75L10 12l4.25-4.25" />
@@ -657,17 +619,9 @@ function SelectorCard({
                     tabIndex={0}
                     onClick={() => onSelect(it)}
                     onKeyDown={(e) => e.key === "Enter" && onSelect(it)}
-                    className={[
-                      "w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors",
-                      isActive ? "bg-brand-50 text-brand-900" : "hover:bg-gray-50 active:bg-gray-100",
-                    ].join(" ")}
+                    className={["w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors", isActive ? "bg-brand-50 text-brand-900" : "hover:bg-gray-50"].join(" ")}
                   >
-                    <span
-                      className={[
-                        "h-2.5 w-2.5 rounded-full ring-1",
-                        isActive ? "bg-brand-500 ring-brand-400" : "bg-gray-200 ring-gray-300",
-                      ].join(" ")}
-                    />
+                    <span className={["h-2.5 w-2.5 rounded-full", isActive ? "bg-brand-500" : "bg-brand-200"].join(" ")} />
                     <span className={isActive ? "font-medium truncate" : "truncate"}>{getLabel(it)}</span>
                   </button>
                 </li>
@@ -679,3 +633,88 @@ function SelectorCard({
     </div>
   );
 }
+
+function MobileSelectPopover({
+  id,
+  label,
+  valueLabel,
+  disabled,
+  open,
+  setOpen,
+  items,
+  activeId,
+  onSelect,
+  getKey,
+  getLabel,
+  buttonRef,     // NEW
+  menuRef,       // NEW
+}) {
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-3">
+        <label htmlFor={id} className="w-28 text-xs text-gray-700">{label}</label>
+
+       <button
+        id={id}
+        ref={buttonRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className={[
+          "h-12 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
+          "border border-brand-200 hover:border-brand-300",
+          "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
+          open ? "ring-2 ring-brand-300 border-brand-300" : ""
+        ].join(" ")}
+      >
+
+          <span className="truncate">{valueLabel}</span>
+          <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M5.75 7.75L10 12l4.25-4.25" />
+          </svg>
+        </button>
+      </div>
+
+      {open && (
+        <div
+          ref={menuRef}                       // NEW: lets the outside-click logic detect “inside”
+          role="listbox"
+          tabIndex={-1}
+          className="absolute left-28 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
+        >
+          <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">{label}</div>
+          <ul className="max-h-[60vh] overflow-auto py-1">
+            {items.length === 0 && <li className="px-3 py-2 text-sm text-gray-500 select-none">No options</li>}
+            {items.map(it => {
+              const k = String(getKey(it));
+              const isActive = String(activeId) === k;
+              return (
+                <li key={k}>
+                  <button
+                    role="option"
+                    aria-selected={isActive}
+                    onClick={() => { onSelect(it); setOpen(false); }}
+                    className={[
+                      "w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors",
+                      isActive ? "bg-brand-50 text-brand-900" : "hover:bg-gray-50"
+                    ].join(" ")}
+                  >
+                    <span className={["h-2.5 w-2.5 rounded-full", isActive ? "bg-brand-500" : "bg-brand-200"].join(" ")} />
+                    <span className={isActive ? "font-medium truncate" : "truncate"}>{getLabel(it)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
