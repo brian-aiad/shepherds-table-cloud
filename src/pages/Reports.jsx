@@ -21,13 +21,11 @@ import {
   endAt,
 } from "firebase/firestore";
 
-
 // 🔐 project paths
-import { db, auth } from "../lib/firebase";
+import { db } from "../lib/firebase";
 // NOTE: useAuth is a DEFAULT export in your app
 import useAuth from "../auth/useAuth";
 import AddVisitButton from "../components/AddVisitButton";
-
 
 // EFAP / USDA builders (fixed names)
 import {
@@ -442,30 +440,23 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
   }, [jump, goToday]);
 
   const iconBtn =
-    "inline-flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border bg-white hover:bg-gray-50 active:bg-gray-100 transition";
+    "inline-flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition";
 
   return (
-    <div className="inline-flex items-center gap-2 sm:gap-3 rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm px-2.5 sm:px-3 py-1.5 sm:py-2">
+    <div className="inline-flex items-center gap-2 sm:gap-3 rounded-2xl border border-brand-200 bg-white shadow-sm px-2.5 sm:px-3 py-1.5 sm:py-2">
       <button
         onClick={() => jump(-1)}
         className={iconBtn}
         aria-label="Previous month"
         title="Previous month"
       >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          fill="none"
-          aria-hidden="true"
-        >
+        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
           <path d="M15 6l-6 6 6 6" strokeWidth="2" />
         </svg>
       </button>
 
       <div className="min-w-[150px] text-center">
-        <span className="text-base sm:text-lg font-semibold tracking-tight">
+        <span className="text-base sm:text-lg font-semibold tracking-tight text-brand-900">
           {label}
         </span>
       </div>
@@ -476,21 +467,14 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
         aria-label="Next month"
         title="Next month"
       >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          fill="none"
-          aria-hidden="true"
-        >
+        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
           <path d="M9 6l6 6-6 6" strokeWidth="2" />
         </svg>
       </button>
 
       <button
         onClick={goToday}
-        className="hidden md:inline-flex h-9 sm:h-10 items-center justify-center rounded-xl border bg-white px-3 hover:bg-gray-50 active:bg-gray-100 transition ml-1"
+        className="hidden md:inline-flex h-9 sm:h-10 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition ml-1"
         title="Jump to current month (T)"
       >
         Today
@@ -511,9 +495,7 @@ export default function Reports() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedMonthKey, setSelectedMonthKey] = useState(
-    monthKeyFor(new Date())
-  );
+  const [selectedMonthKey, setSelectedMonthKey] = useState(monthKeyFor(new Date()));
   const [selectedDate, setSelectedDate] = useState(fmtDateKey(new Date()));
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
@@ -524,10 +506,7 @@ export default function Reports() {
   useEffect(() => {
     const tick = () => {
       if (!lastSyncedAt) return setSyncAgo("");
-      const secs = Math.max(
-        0,
-        Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000)
-      );
+      const secs = Math.max(0, Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000));
       if (secs < 60) setSyncAgo(`${secs}s ago`);
       else setSyncAgo(`${Math.floor(secs / 60)}m ago`);
     };
@@ -543,8 +522,6 @@ export default function Reports() {
   const [usdaFilter, setUsdaFilter] = useState("all"); // all|yes|no
   const [sortKey, setSortKey] = useState("time"); // time|name|hh
   const [sortDir, setSortDir] = useState("desc"); // asc|desc
-
- 
 
   const toast = useToast();
 
@@ -600,12 +577,9 @@ export default function Reports() {
     const endKey = fmtDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0)); // last day of month
 
     const filters = [where("orgId", "==", org.id)];
-    // If a specific location is selected, scope to it (Admins included). Null/empty = all locations.
     const effectiveLocationId = location?.id || null;
     if (effectiveLocationId) filters.push(where("locationId", "==", effectiveLocationId));
 
-
-    // Use dateKey range
     const qv = query(
       collection(db, "visits"),
       ...filters,
@@ -653,18 +627,14 @@ export default function Reports() {
   useEffect(() => {
     (async () => {
       try {
-        const ids = Array.from(
-          new Set(visits.map((v) => v.clientId).filter(Boolean))
-        );
+        const ids = Array.from(new Set(visits.map((v) => v.clientId).filter(Boolean)));
         if (!ids.length) {
           setClientsById(new Map());
           return;
         }
         const m = new Map();
         for (const part of chunk(ids, 10)) {
-          const qs = await getDocs(
-            query(collection(db, "clients"), where("__name__", "in", part))
-          );
+          const qs = await getDocs(query(collection(db, "clients"), where("__name__", "in", part)));
           for (const d of qs.docs) m.set(d.id, { id: d.id, ...d.data() });
         }
         setClientsById(m);
@@ -709,10 +679,8 @@ export default function Reports() {
     requestAnimationFrame(() => {
       const list = dayListRef.current;
       if (!list) return;
-      // Query inside the list so we don’t scroll the whole window
       const el = list.querySelector(`#${CSS.escape(id)}`);
       if (!el) return;
-      // Scroll the list so the item is near the top (with a small padding)
       const padding = 8;
       const elTop = el.offsetTop - list.offsetTop;
       list.scrollTo({ top: Math.max(0, elTop - padding), behavior: "auto" });
@@ -728,9 +696,8 @@ export default function Reports() {
       const d = toJSDate(v.visitAt);
       const person = clientsById.get(v.clientId) || {};
       const labelName =
-        `${person.firstName || v.clientFirstName || ""} ${
-          person.lastName || v.clientLastName || ""
-        }`.trim() || v.clientId;
+        `${person.firstName || v.clientFirstName || ""} ${person.lastName || v.clientLastName || ""}`.trim() ||
+        v.clientId;
 
       const address =
         person.address ||
@@ -794,11 +761,8 @@ export default function Reports() {
     const cmp = (a, b) => {
       let d = 0;
       if (sortKey === "time") d = a.visitAtISO.localeCompare(b.visitAtISO);
-      else if (sortKey === "name")
-        d = (a.labelName || "").localeCompare(b.labelName || "");
-      else if (sortKey === "hh")
-        d =
-          Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
+      else if (sortKey === "name") d = (a.labelName || "").localeCompare(b.labelName || "");
+      else if (sortKey === "hh") d = Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
       return sortDir === "asc" ? d : -d;
     };
     return [...rows].sort(cmp);
@@ -809,14 +773,8 @@ export default function Reports() {
      -------------------------------- */
   const dayTotals = useMemo(() => {
     const count = filteredSortedRows.length;
-    const hh = filteredSortedRows.reduce(
-      (s, r) => s + Number(r.visitHousehold || 0),
-      0
-    );
-    const usdaYes = filteredSortedRows.reduce(
-      (s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0),
-      0
-    );
+    const hh = filteredSortedRows.reduce((s, r) => s + Number(r.visitHousehold || 0), 0);
+    const usdaYes = filteredSortedRows.reduce((s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
     return { count, hh, usdaYes };
   }, [filteredSortedRows]);
 
@@ -824,10 +782,7 @@ export default function Reports() {
      Month aggregates (KPI + charts)
      -------------------------------- */
   const monthAgg = useMemo(() => {
-    const totalHH = visits.reduce(
-      (s, v) => s + Number(v.householdSize || 0),
-      0
-    );
+    const totalHH = visits.reduce((s, v) => s + Number(v.householdSize || 0), 0);
     const usdaUnits = visits.reduce((s, v) => s + usdaUnitsOf(v), 0);
 
     const byDay = new Map();
@@ -845,20 +800,12 @@ export default function Reports() {
       .map(([dateKey, arr]) => ({
         date: dateKey.slice(5), // "MM-DD"
         visits: arr.length,
-        people: arr.reduce(
-          (s, v) => s + Number(v.householdSize || 0),
-          0
-        ),
-        usdaYes: arr.reduce(
-          (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
-          0
-        ),
+        people: arr.reduce((s, v) => s + Number(v.householdSize || 0), 0),
+        usdaYes: arr.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0),
       }))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const usdaYesTotal = visits.filter(
-      (v) => v.usdaFirstTimeThisMonth === true
-    ).length;
+    const usdaYesTotal = visits.filter((v) => v.usdaFirstTimeThisMonth === true).length;
     const usdaNoTotal = visits.length - usdaYesTotal;
 
     return {
@@ -904,13 +851,7 @@ export default function Reports() {
         const d = toJSDate(v.visitAt);
         const p = clientsById.get(v.clientId) || {};
         const address =
-          p.address ||
-          p.addr ||
-          p.street ||
-          p.street1 ||
-          p.line1 ||
-          p.address1 ||
-          "";
+          p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
         return {
           dateKey: v.dateKey || fmtDateKey(d),
           monthKey: v.monthKey || "",
@@ -939,18 +880,8 @@ export default function Reports() {
         const src = visitsByDay.get(dayKey) || [];
         const rows = src.map((v) => {
           const p = clientsById.get(v.clientId) || {};
-          const name =
-            `${p.firstName || ""} ${p.lastName || ""}`.trim() ||
-            v.clientId ||
-            "";
-          const address =
-            p.address ||
-            p.addr ||
-            p.street ||
-            p.street1 ||
-            p.line1 ||
-            p.address1 ||
-            "";
+          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
+          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
           return {
             name,
             address,
@@ -982,18 +913,8 @@ export default function Reports() {
         const src = visitsByDay.get(dayKey) || [];
         const rows = src.map((v) => {
           const p = clientsById.get(v.clientId) || {};
-          const name =
-            `${p.firstName || ""} ${p.lastName || ""}`.trim() ||
-            v.clientId ||
-            "";
-          const address =
-            p.address ||
-            p.addr ||
-            p.street ||
-            p.street1 ||
-            p.line1 ||
-            p.address1 ||
-            "";
+          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
+          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
           return {
             name,
             address,
@@ -1033,13 +954,10 @@ export default function Reports() {
 
       const agg = aggregateMonthForPdf(visits);
 
-      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(
-        undefined,
-        {
-          month: "long",
-          year: "numeric",
-        }
-      );
+      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(undefined, {
+        month: "long",
+        year: "numeric",
+      });
 
       await downloadEfapMonthlyPdf(
         {
@@ -1063,42 +981,85 @@ export default function Reports() {
     }
   }, [selectedMonthKey, visits, org?.name, email]);
 
+  // Export Month CSV
+  const handleExportMonthCsv = useCallback(() => {
+    const rows = (visits || []).map((v) => ({
+      dateKey: v.dateKey,
+      monthKey: v.monthKey || selectedMonthKey,
+      visitId: v.id,
+      clientId: v.clientId || "",
+      householdSize: v.householdSize ?? "",
+      usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
+      usdaCount: v.usdaCount ?? "",
+      locationId: v.locationId || "",
+    }));
+    const csv = buildUsdaMonthlyCsv({ rows });
+    downloadText(csv, `USDA_Month_${selectedMonthKey}.csv`);
+  }, [visits, selectedMonthKey]);
+
   /* =======================================================================================
      RENDER
      ======================================================================================= */
+    // Scope chip: use the USDA-style pill (good on the red header only)
+    // replace your scopeChip with this
+      const scopeChip = (
+        <span className="
+          inline-flex items-center gap-1.5
+          rounded-full bg-white text-brand-900
+          ring-1 ring-black/5 shadow-sm
+          px-3 py-1 text-[12px]
+        ">
+          <span className="text-gray-600">Scope</span>
+          <span className="text-gray-400">•</span>
+          <span className="font-semibold">{org?.name || "—"}</span>
+          {location?.name ? (
+            <>
+              <span className="text-gray-400">/</span>
+              <span className="text-gray-700">{location.name}</span>
+            </>
+          ) : (
+            <span className="text-gray-600">(all locations)</span>
+          )}
+        </span>
+      );
+
+
+    // Sync chip: keep the green “Synced …” chip (element, not object)
+    const syncChip = (
+      <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 px-2.5 py-1 text-[12px]">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Synced {syncAgo || "—"}
+      </span>
+    );
+
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
-      {/* ===== Toolbar ===== */}
-        <div className="border-b border-brand-100 bg-white">
-        <div className="px-3 sm:px-0 py-2 sm:py-3">
-          <div className="grid items-center gap-3 lg:grid-cols-[1fr,auto,1fr]">
-            {/* Left: Title + scope */}
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">
-                Reports
-              </h1>
-              <span
-                className="hidden sm:inline h-5 w-px bg-brand-200"
-                aria-hidden="true"
-              />
-              <span className="hidden sm:inline text-xs text-gray-600">
-                <strong className="font-semibold">
-                  {org?.name || "—"}
-                </strong>
-                {location?.name ? (
-                  <>
-                    <span className="opacity-60"> / </span>
-                    <strong className="font-semibold">
-                      {location.name}
-                    </strong>
-                  </>
-                ) : (
-                  <span className="opacity-70"> (all locations)</span>
-                )}
-              </span>
+      {/* ===== THEMED TOOLBAR (matching USDA Monthly) ===== */}
+      <div className="rounded-3xl overflow-hidden shadow-sm ring-1 ring-black/5">
+        {/* Brand gradient header */}
+        <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+              Reports
+            </h1>
+            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+          </div>
+          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+            {scopeChip}
+          </div>
+
+        </div>
+
+        {/* Controls surface */}
+        <div className="bg-white/95 backdrop-blur px-3 sm:px-5 py-3">
+          <div className="grid gap-3 md:grid-cols-[1fr,auto,1fr] md:items-center">
+            {/* LEFT spacer (future filters area) */}
+            <div className="flex justify-center md:justify-start">
+              {/* empty on purpose to mirror USDA layout */}
             </div>
 
-            {/* Center: month nav */}
+            {/* CENTER: Month nav */}
             <div className="justify-self-center">
               <ReportsMonthNav
                 monthKey={selectedMonthKey}
@@ -1107,16 +1068,8 @@ export default function Reports() {
               />
             </div>
 
-            {/* Right: export monthly */}
-            <div className="justify-self-end">
-              <div className="flex items-center gap-2">
-                
-
-                <span className="hidden md:inline text-xs text-gray-500">
-                  Synced {syncAgo || "—"}
-                </span>
-              </div>
-            </div>
+            {/* RIGHT: Actions */}
+            
           </div>
         </div>
       </div>
@@ -1127,38 +1080,25 @@ export default function Reports() {
           <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar px-4 py-1">
             <div
               className="
-                  px-0
-                  grid grid-flow-col
-                  auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
-                  md:grid-flow-row md:grid-cols-4
-                  gap-3 sm:gap-4 md:gap-5
-                  snap-x md:snap-none
-                "
-              >
-
+                px-0
+                grid grid-flow-col
+                auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
+                md:grid-flow-row md:grid-cols-4
+                gap-3 sm:gap-4 md:gap-5
+                snap-x md:snap-none
+              "
+            >
               <div className="snap-start md:snap-none flex-none">
                 <KpiModern title="Total Visits (Month)" value={visits.length} />
               </div>
-
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern
-                  title="Households Totals (Month)"
-                  value={monthAgg.households}
-                />
+                <KpiModern title="Households Totals (Month)" value={monthAgg.households} />
               </div>
-
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern
-                  title="USDA Yes First-Time (Month)"
-                  value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0}
-                />
+                <KpiModern title="USDA Yes First-Time (Month)" value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0} />
               </div>
-
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern
-                  title="Active Service Days (Month)"
-                  value={Array.from(monthAgg.byDay.keys()).length}
-                />
+                <KpiModern title="Active Service Days (Month)" value={Array.from(monthAgg.byDay.keys()).length} />
               </div>
             </div>
           </div>
@@ -1173,21 +1113,14 @@ export default function Reports() {
         <Card title="Visits per Day">
           <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
-              <LineChart
-                data={monthAgg.charts.visitsPerDay}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-              >
+              <LineChart data={monthAgg.charts.visitsPerDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f1f5f9"
-                  vertical={false}
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 11, fill: "#6b7280" }}
@@ -1202,10 +1135,7 @@ export default function Reports() {
                   tickLine={false}
                   width={30}
                 />
-                <Tooltip
-                  contentStyle={tooltipBoxStyle}
-                  cursor={{ stroke: "#ef4444", opacity: 0.25 }}
-                />
+                <Tooltip contentStyle={tooltipBoxStyle} cursor={{ stroke: "#ef4444", opacity: 0.25 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Line
                   type="monotone"
@@ -1213,12 +1143,7 @@ export default function Reports() {
                   stroke="url(#lineGradient)"
                   strokeWidth={3}
                   dot={false}
-                  activeDot={{
-                    r: 5,
-                    stroke: "#fff",
-                    strokeWidth: 2,
-                    fill: "#991b1b",
-                  }}
+                  activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2, fill: "#991b1b" }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -1237,18 +1162,11 @@ export default function Reports() {
                   innerRadius="55%"
                   outerRadius="78%"
                   paddingAngle={2}
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   labelLine={false}
                 >
                   {monthAgg.charts.usdaPie.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={i === 0 ? "#991b1b" : "#fecaca"}
-                      stroke="#fff"
-                      strokeWidth={1.5}
-                    />
+                    <Cell key={i} fill={i === 0 ? "#991b1b" : "#fecaca"} stroke="#fff" strokeWidth={1.5} />
                   ))}
                 </Pie>
                 <Tooltip contentStyle={tooltipBoxStyle} />
@@ -1261,22 +1179,14 @@ export default function Reports() {
         <Card title="Household # Served by Day">
           <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
-              <BarChart
-                data={monthAgg.charts.visitsPerDay}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                barCategoryGap={10}
-              >
+              <BarChart data={monthAgg.charts.visitsPerDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap={10}>
                 <defs>
                   <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f1f5f9"
-                  vertical={false}
-                />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 11, fill: "#6b7280" }}
@@ -1292,11 +1202,7 @@ export default function Reports() {
                   width={30}
                 />
                 <Tooltip cursor={false} contentStyle={tooltipBoxStyle} />
-                <Bar
-                  dataKey="people"
-                  fill="url(#barGradient)"
-                  radius={[10, 10, 0, 0]}
-                />
+                <Bar dataKey="people" fill="url(#barGradient)" radius={[10, 10, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1306,11 +1212,9 @@ export default function Reports() {
       {/* ===== Layout: days list + table ===== */}
       <div className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 print:block">
         {/* Days list */}
-        <aside className="rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
+        <aside className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div className="font-semibold">
-              Days in {monthLabel(selectedMonthKey)}
-            </div>
+            <div className="font-semibold">Days in {monthLabel(selectedMonthKey)}</div>
             <input
               className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
               placeholder="Filter (YYYY-MM-DD)"
@@ -1329,14 +1233,8 @@ export default function Reports() {
             <ul className="space-y-2">
               {sortedDayKeys.map((k) => {
                 const items = visitsByDay.get(k) || [];
-                const dayHH = items.reduce(
-                  (s, v) => s + Number(v.householdSize || 0),
-                  0
-                );
-                const dayUsda = items.reduce(
-                  (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
-                  0
-                );
+                const dayHH = items.reduce((s, v) => s + Number(v.householdSize || 0), 0);
+                const dayUsda = items.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
                 const isSelected = selectedDate === k;
                 const isToday = k === todayKey;
 
@@ -1356,7 +1254,8 @@ export default function Reports() {
                         e.preventDefault();
                         setSelectedDate(k);
                       }
-                    }}
+                    }}      // <-- close function + prop, no extra ")"
+
                     className={`group cursor-pointer flex items-stretch gap-2 p-2 rounded-xl border transition ${
                       isSelected
                         ? "bg-brand-50 border-brand-200 shadow-sm"
@@ -1371,8 +1270,7 @@ export default function Reports() {
                       )}
                       <div className="font-medium">{k}</div>
                       <div className="text-xs text-gray-500">
-                        {items.length} visit{items.length === 1 ? "" : "s"} •
-                        HH {dayHH} • USDA {dayUsda}
+                        {items.length} visit{items.length === 1 ? "" : "s"} • HH {dayHH} • USDA {dayUsda}
                       </div>
                     </div>
 
@@ -1403,16 +1301,14 @@ export default function Reports() {
               })}
 
               {!sortedDayKeys.length && (
-                <li className="py-3 px-2 text-sm text-gray-600">
-                  No days found for this month.
-                </li>
+                <li className="py-3 px-2 text-sm text-gray-600">No days found for this month.</li>
               )}
             </ul>
           </div>
         </aside>
 
         {/* Table / details */}
-        <section className="lg:col-span-2 rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3">
+        <section className="lg:col-span-2 rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3">
           {/* Header: date + actions */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
             <div className="font-semibold text-base sm:text-lg">
@@ -1445,15 +1341,14 @@ export default function Reports() {
                 CSV (This day)
               </button>
 
-             {selectedDate && isAdmin && (
-              <AddVisitButton
-                org={org}
-                location={location}
-                selectedDate={selectedDate}
-                onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
-              />
-            )}
-
+              {selectedDate && isAdmin && (
+                <AddVisitButton
+                  org={org}
+                  location={location}
+                  selectedDate={selectedDate}
+                  onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                />
+              )}
             </div>
           </div>
 
@@ -1497,9 +1392,7 @@ export default function Reports() {
               </label>
               <button
                 className="rounded-lg border px-2 py-1 text-sm bg-gray-50 hover:bg-gray-100"
-                onClick={() =>
-                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-                }
+                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
                 title="Toggle sort direction"
                 aria-label="Toggle sort direction"
               >
@@ -1511,15 +1404,10 @@ export default function Reports() {
           {/* Summary stripe */}
           <div className="mb-2 text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
             <span className="inline-flex items-center gap-1">
-              <strong>{dayTotals.count}</strong> visit
-              {dayTotals.count === 1 ? "" : "s"}
+              <strong>{dayTotals.count}</strong> visit{dayTotals.count === 1 ? "" : "s"}
             </span>
-            <span className="inline-flex items-center gap-1">
-              HH <strong>{dayTotals.hh}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1">
-              USDA yes <strong>{dayTotals.usdaYes}</strong>
-            </span>
+            <span className="inline-flex items-center gap-1">HH <strong>{dayTotals.hh}</strong></span>
+            <span className="inline-flex items-center gap-1">USDA yes <strong>{dayTotals.usdaYes}</strong></span>
           </div>
 
           {/* DESKTOP TABLE */}
@@ -1536,7 +1424,6 @@ export default function Reports() {
               </colgroup>
 
               <thead className="bg-gray-100">
-
                 <tr className="text-left">
                   <th className="px-4 py-2">Client</th>
                   <th className="px-4 py-2">Address</th>
@@ -1550,33 +1437,20 @@ export default function Reports() {
 
               <tbody className="divide-y divide-gray-200 align-top">
                 {filteredSortedRows.map((r) => (
-                  <tr
-                    key={r.visitId}
-                    className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
-                  >
+                  <tr key={r.visitId} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100">
                     <td className="px-4 py-3 break-words">
                       <div className="font-medium">{r.labelName}</div>
                       {r.addedByReports && r.addedLocalTime ? (
-                        <div className="mt-0.5 text-xs text-gray-500">
-                          added {r.addedLocalTime}
-                        </div>
+                        <div className="mt-0.5 text-xs text-gray-500">added {r.addedLocalTime}</div>
                       ) : null}
                     </td>
                     <td className="px-4 py-3 break-words">{r.address}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
-                    <td className="px-4 py-3 tabular-nums">
-                      {r.visitHousehold}
-                    </td>
+                    <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
                     <td className="px-4 py-3">
-                      {r.usdaFirstTimeThisMonth === ""
-                        ? ""
-                        : r.usdaFirstTimeThisMonth
-                        ? "Yes"
-                        : "No"}
+                      {r.usdaFirstTimeThisMonth === "" ? "" : r.usdaFirstTimeThisMonth ? "Yes" : "No"}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700">
-                      {r.localTime}
-                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700">{r.localTime}</td>
                     <td className="px-4 py-3">
                       {isAdmin ? (
                         <button
@@ -1588,9 +1462,7 @@ export default function Reports() {
                           <TrashIcon className="h-5 w-5" />
                         </button>
                       ) : (
-                        <span className="text-[11px] text-gray-500">
-                          view-only
-                        </span>
+                        <span className="text-[11px] text-gray-500">view-only</span>
                       )}
                     </td>
                   </tr>
@@ -1598,10 +1470,7 @@ export default function Reports() {
 
                 {filteredSortedRows.length === 0 && (
                   <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-6 text-center text-gray-500"
-                    >
+                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
                       {loading ? "Loading…" : "No visits on this day."}
                     </td>
                   </tr>
@@ -1616,9 +1485,7 @@ export default function Reports() {
                   <td className="px-4 py-2">{dayTotals.hh}</td>
                   <td className="px-4 py-2">{dayTotals.usdaYes} Yes</td>
                   <td className="px-4 py-2" />
-                  <td className="px-4 py-2">
-                    {filteredSortedRows.length} rows
-                  </td>
+                  <td className="px-4 py-2">{filteredSortedRows.length} rows</td>
                 </tr>
               </tfoot>
             </table>
@@ -1627,10 +1494,7 @@ export default function Reports() {
           {/* MOBILE LIST */}
           <ul className="md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden">
             {filteredSortedRows.map((r, i) => (
-              <li
-                key={r.visitId}
-                className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}
-              >
+              <li key={r.visitId} className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.labelName}</div>
@@ -1642,9 +1506,7 @@ export default function Reports() {
                     ) : null}
 
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
-                      <span className="px-1.5 py-0.5 rounded border bg-white">
-                        HH {r.visitHousehold || 0}
-                      </span>
+                      <span className="px-1.5 py-0.5 rounded border bg-white">HH {r.visitHousehold || 0}</span>
                       {r.usdaFirstTimeThisMonth !== "" && (
                         <span className="px-1.5 py-0.5 rounded border bg-white">
                           {r.usdaFirstTimeThisMonth ? "USDA Yes" : "USDA No"}
@@ -1653,9 +1515,7 @@ export default function Reports() {
                     </div>
 
                     {r.addedByReports && r.addedLocalTime ? (
-                      <div className="text-[11px] text-gray-500 mt-0.5">
-                        Added {r.addedLocalTime}
-                      </div>
+                      <div className="text-[11px] text-gray-500 mt-0.5">Added {r.addedLocalTime}</div>
                     ) : null}
                   </div>
 
@@ -1682,21 +1542,14 @@ export default function Reports() {
             ))}
 
             {filteredSortedRows.length === 0 && (
-              <li className="p-6 text-center text-gray-500">
-                {loading ? "Loading…" : "No visits on this day."}
-              </li>
+              <li className="p-6 text-center text-gray-500">{loading ? "Loading…" : "No visits on this day."}</li>
             )}
           </ul>
         </section>
       </div>
 
-
       {/* Error helper (index enable hint if present) */}
-      {!!error && (
-        <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">
-          {error}
-        </div>
-      )}
+      {!!error && <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">{error}</div>}
 
       {/* Toast */}
       {toast.open && (
@@ -1743,7 +1596,7 @@ const tooltipBoxStyle = {
 
 function Card({ title, children }) {
   return (
-    <div className="rounded-2xl ring-1 ring-brand-200 bg-white shadow-sm p-3 sm:p-4 sm:ring-1 ring-0">
+    <div className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 sm:p-4">
       <div className="text-sm font-semibold mb-2">{title}</div>
       {children}
     </div>
@@ -1752,17 +1605,11 @@ function Card({ title, children }) {
 
 function KpiModern({ title, value, sub }) {
   return (
-    <div className="rounded-2xl ring-1 ring-rose-200 bg-white shadow-sm p-4 sm:p-5">
+    <div className="rounded-2xl border border-rose-200 ring-1 ring-rose-100 bg-white shadow-sm p-4 sm:p-5">
       <div className="text-xs sm:text-sm text-gray-600 mb-2">{title}</div>
       <div className="flex items-end gap-2">
-        <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">
-          {value ?? "—"}
-        </div>
-        {sub ? (
-          <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">
-            {sub}
-          </div>
-        ) : null}
+        <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">{value ?? "—"}</div>
+        {sub ? <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">{sub}</div> : null}
       </div>
     </div>
   );
@@ -1771,14 +1618,7 @@ function KpiModern({ title, value, sub }) {
 /* ---------- icons ---------- */
 function ShareIcon({ className = "h-5 w-5" }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden="true"
-    >
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
       <path d="M12 16V4" />
       <path d="M7 9l5-5 5 5" />
@@ -1808,16 +1648,7 @@ function TrashIcon({ className = "h-5 w-5" }) {
 
 function PlusIcon({ className = "h-4 w-4" }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M12 5v14M5 12h14" />
     </svg>
   );
@@ -1825,16 +1656,7 @@ function PlusIcon({ className = "h-4 w-4" }) {
 
 function SearchIcon({ className = "h-4 w-4" }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.3-4.3" />
     </svg>
@@ -1852,16 +1674,7 @@ function Spinner({ className = "h-4 w-4" }) {
 
 function CheckIcon({ className = "h-4 w-4" }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M20 6L9 17l-5-5" />
     </svg>
   );
@@ -1879,7 +1692,6 @@ function DownloadIcon({ className = "h-4 w-4" }) {
 
 /* ---------- helpers ---------- */
 function extractIndexHelp(err) {
-  // Firestore throws a 'failed-precondition' with an "create index" URL.
   const msg = String(err?.message || "");
   const urlMatch = msg.match(/https:\/\/console\.firebase\.google\.com\/[^\s)]+/i);
   if (err?.code === "failed-precondition" && urlMatch) {
@@ -1887,5 +1699,3 @@ function extractIndexHelp(err) {
   }
   return "";
 }
-
-
