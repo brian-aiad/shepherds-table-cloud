@@ -3,7 +3,7 @@
 // - Protected shell for all authenticated pages
 // - AdminRoute guards admin-only pages (respects useAuth().isAdmin)
 // - Lazy-loaded route components with a safe <Suspense> fallback
-// - Catch-alls route back to "/"
+// - Catch-alls route back to "/login" for public area, "/" for authed shell
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
@@ -11,6 +11,7 @@ import { Suspense, lazy } from "react";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import { useAuth } from "./auth/useAuth"; // ← named export (consistent with the rest of the app)
 import Layout from "./components/Layout";
+import UsagePolicy from "./pages/UsagePolicy.jsx";
 
 // Lazy pages (Vite-friendly dynamic imports)
 const Login = lazy(() => import("./pages/Login"));
@@ -46,8 +47,9 @@ export default function App() {
   return (
     <Suspense fallback={Fallback}>
       <Routes>
-        {/* Public Route */}
+        {/* Public routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/usage" element={<UsagePolicy />} />
 
         {/* Authenticated Shell */}
         <Route
@@ -70,7 +72,6 @@ export default function App() {
               </AdminRoute>
             }
           />
-
           <Route
             path="usda-monthly"
             element={
@@ -80,14 +81,12 @@ export default function App() {
             }
           />
 
-          
-
-          {/* In-shell catch-all */}
+          {/* In-shell catch-all → home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
 
-        {/* Outside-shell catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Outside-shell catch-all → login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
   );

@@ -106,22 +106,26 @@ function StatCard({ title, children }) {
   );
 }
 
+// ----------------------- MonthNav (white pill, Reports style, no native month input) -----------------------
 function MonthNav({ month, setMonth }) {
   const [y, m] = month.split("-").map(Number);
-  const cur = new Date(y, m - 1, 1);
+  const label = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-  const jump = useCallback(
-    (delta) => {
-      const d = new Date(cur);
-      d.setMonth(d.getMonth() + delta);
-      setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    },
-    [cur, setMonth]
-  );
+  const [open, setOpen] = useState(false);
+  const [yearView, setYearView] = useState(y);
+
+  const monthKeyFor = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+  const jump = useCallback((delta) => {
+    const d = new Date(y, m - 1, 1);
+    d.setMonth(d.getMonth() + delta);
+    setMonth(monthKeyFor(d));
+  }, [y, m, setMonth]);
 
   const goToday = useCallback(() => {
     const t = new Date();
-    setMonth(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`);
+    setMonth(monthKeyFor(t));
+    setYearView(t.getFullYear());
   }, [setMonth]);
 
   useEffect(() => {
@@ -134,35 +138,174 @@ function MonthNav({ month, setMonth }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [jump, goToday]);
 
-  const label = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const iconBtn =
-    "inline-flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition";
+  // close popover on outside click
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      const pop = document.querySelector('[role="dialog"][aria-label="Select month and year"]');
+      const trigger = e.target.closest?.('[aria-haspopup="dialog"][data-month-trigger]');
+      if (pop && !pop.contains(e.target) && !trigger) setOpen(false);
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [open]);
+
+  const commit = useCallback((yy, monthIndex0) => {
+    const d = new Date(yy, monthIndex0, 1);
+    setMonth(monthKeyFor(d));
+    setYearView(yy);
+    setOpen(false);
+  }, [setMonth]);
+
+  const MonthCell = ({ mIndex0 }) => {
+  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const isCurrent = y === yearView && m === mIndex0 + 1;
+  return (
+    <button
+      onClick={() => commit(yearView, mIndex0)}
+      className={
+        "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
+        (isCurrent
+          ? "bg-brand-700 text-white"
+          : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
+      }
+    >
+      {names[mIndex0]}
+    </button>
+  );
+};
+
+
+  const baseBtn = "inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50";
+  const size = "h-10 w-10 md:h-11 md:w-11";
 
   return (
-    <div className="flex w-full max-w-[22rem] mx-auto items-center gap-2 sm:gap-3 rounded-2xl border border-brand-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
-      <button onClick={() => jump(-1)} className={iconBtn} aria-label="Previous month" title="Previous month">
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
-          <path d="M15 6l-6 6 6 6" strokeWidth="2" />
-        </svg>
-      </button>
-     <div className="min-w-0 flex-1 text-center">
-     <span className="text-base sm:text-lg font-semibold tracking-tight text-brand-900 truncate">{label}</span>
+    <div className="relative z-[1000]">
+
+      {/* unified capsule */}
+      <div className="inline-flex items-center gap-0 rounded-2xl bg-white border border-gray-300 ring-1 ring-gray-200 shadow-[0_6px_16px_-6px_rgba(0,0,0,0.15)] px-1.5 py-1">
+        {/* Prev */}
+        <button
+          onClick={() => jump(-1)}
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-black`}
+          aria-label="Previous month"
+          title="Previous month"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6" strokeWidth="2" />
+          </svg>
+        </button>
+
+        {/* divider */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+
+        {/* Month button */}
+        <div className="relative">
+          <button
+            data-month-trigger
+            onClick={() => { setYearView(y); setOpen(v => !v); }}
+            className="inline-flex items-center justify-center gap-2 rounded-full px-4 md:px-5 h-10 md:h-11 text-black font-semibold tracking-tight hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            title="Jump to a specific month/year"
+          >
+            <span className="text-[15px] md:text-[16px]">{label}</span>
+            <svg className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" stroke="currentColor" fill="none">
+              <path d="M6 9l6 6 6-6" strokeWidth="2" />
+            </svg>
+          </button>
+
+          {/* Popover (no native month input to avoid OS overlay) */}
+          {open && (
+            <div
+              className="absolute left-1/2 top-full z-[1100] mt-2 w-[320px] -translate-x-1/2 rounded-2xl border border-black/20 bg-white shadow-xl p-3"
+              role="dialog"
+              aria-label="Select month and year"
+            >
+              {/* Year header */}
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-50 text-black"
+                  onClick={() => setYearView(yy => yy - 1)}
+                  aria-label="Previous year"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                    <path d="M15 6l-6 6 6 6" strokeWidth="2" />
+                  </svg>
+                </button>
+
+                <div className="font-semibold text-black">{yearView}</div>
+
+                <button
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-50 text-black"
+                  onClick={() => setYearView(yy => yy + 1)}
+                  aria-label="Next year"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                    <path d="M9 6l6 6-6 6" strokeWidth="2" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Month grid */}
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <MonthCell key={i} mIndex0={i} />
+                ))}
+              </div>
+
+              {/* Footer: Today button only (prevents native date picker overlay) */}
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex-1 rounded-lg border border-black/10 px-2 py-2 text-sm text-black bg-gray-50/60">
+                  {label}
+                </div>
+                <button
+                  className="rounded-lg border border-black/20 bg-white px-3 py-2 text-sm hover:bg-gray-50 text-black"
+                  onClick={goToday}
+                  title="Jump to current month"
+                >
+                  Today
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* divider */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+
+        {/* Next */}
+        <button
+          onClick={() => jump(1)}
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-black`}
+          aria-label="Next month"
+          title="Next month"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" strokeWidth="2" />
+          </svg>
+        </button>
+
+        {/* divider (md+) */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10 hidden md:block" aria-hidden="true" />
+
+        {/* Today (md+) */}
+        <button
+          onClick={goToday}
+          className="hidden md:inline-flex items-center justify-center rounded-full px-3 h-10 md:h-11 text-black hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+          title="Jump to current month (T)"
+        >
+          Today
+        </button>
       </div>
-      <button onClick={() => jump(1)} className={iconBtn} aria-label="Next month" title="Next month">
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
-          <path d="M9 6l6 6-6 6" strokeWidth="2" />
-        </svg>
-      </button>
-      <button
-        onClick={goToday}
-        className="hidden md:inline-flex h-11 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition ml-1"
-        title="Jump to current month (T)"
-      >
-        Today
-      </button>
     </div>
   );
 }
+
+
+
+
+
 
 /* =========================
    Page
@@ -371,65 +514,66 @@ export default function UsdaMonthly() {
 
   return (
     <div className="p-3 sm:p-4 md:p-6" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-      {/* ===== THEMED TOOLBAR ===== */}
-      <div className="mb-4 sm:mb-6 rounded-3xl shadow-sm ring-1 ring-black/5">
-        {/* Brand gradient header */}
-        <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 rounded-t-3xl">
-          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
-            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
-              USDA Monthly Report
-            </h1>
-            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
-          </div>
-          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-            {scopeChip}
-          </div>
-        </div>
+   {/* ===== THEMED TOOLBAR — floating month pill like Reports ===== */}
+<div className="mb-4 sm:mb-6 rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+  {/* Brand gradient header (pill sits on the seam) */}
+  <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-8 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+    <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+      <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+        USDA Monthly Report
+      </h1>
+      <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+    </div>
+    <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+      {scopeChip}
+    </div>
 
-        {/* Controls surface */}
-        <div className="bg-white/95 backdrop-blur px-3 sm:px-5 py-3 rounded-b-3xl overflow-visible">
-          {/* Desktop: 3 columns (Shade | Month | Actions). Mobile: 1 column centered */}
-          <div className="grid gap-3 md:grid-cols-[1fr,minmax(0,1fr),1fr] md:items-center">
-            {/* LEFT (desktop): Shade selector. On mobile it moves to the top & center */}
-            <div className="flex justify-center md:justify-start">
-              <label htmlFor="shadeBy" className="sr-only">Shade calendar cells by</label>
-              <select
-                id="shadeBy"
-                className="min-h-[44px] rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-                value={shadeBy}
-                onChange={(e) => setShadeBy(e.target.value)}
-                title="Shade calendar cells by"
-              >
-                <option value="visits">Shade by Visits</option>
-                <option value="persons">Shade by Persons</option>
-              </select>
-            </div>
+    {/* MonthNav floats between header and controls */}
+    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
+      <MonthNav month={month} setMonth={setMonth} />
+    </div>
+  </div>
 
-            {/* CENTER: Month navigator */}
-            <div className="justify-self-center w-full max-w-full">
-              <MonthNav month={month} setMonth={setMonth} />
-            </div>
-
-            {/* RIGHT: Actions */}
-            <div className="flex justify-center md:justify-end">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  onClick={exportMonthlyPdf}
-                  className="min-h-[44px] rounded-xl bg-red-700 px-4 py-2 text-white shadow hover:bg-red-800 active:bg-red-900"
-                >
-                  USDA Monthly Form
-                </button>
-                <button
-                  onClick={exportCsv}
-                  className="min-h-[44px] rounded-xl bg-brand-700 px-4 py-2 text-white shadow hover:bg-brand-800 active:bg-brand-900"
-                >
-                  Export CSV
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+  {/* Controls surface – stacked on mobile, aligned L/R on desktop */}
+<div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-9 md:pt-6 pb-4 overflow-visible">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      {/* LEFT: Shade select */}
+      <div className="w-full md:w-auto max-w-[480px]">
+        <label htmlFor="shadeBy" className="sr-only">Shade calendar cells by</label>
+        <select
+          id="shadeBy"
+          className="w-full min-h-[44px] rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          value={shadeBy}
+          onChange={(e) => setShadeBy(e.target.value)}
+          title="Shade calendar cells by"
+        >
+          <option value="visits">Shade by Visits</option>
+          <option value="persons">Shade by Persons</option>
+        </select>
       </div>
+
+      {/* RIGHT: Actions */}
+      <div className="w-full md:w-auto md:ml-auto">
+        <button
+          onClick={exportMonthlyPdf}
+          className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl
+                     bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-5 py-2.5 text-white font-semibold shadow
+                     hover:from-brand-800 hover:via-brand-700 hover:to-brand-600
+                     active:from-brand-900 active:via-brand-800 active:to-brand-700
+                     focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
+        >
+          <span>Download USDA Monthly</span>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-bounce-slow" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-6-6m6 6l6-6" />
+            <line x1="4" y1="21" x2="20" y2="21" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 
       {error && <div className="mb-3 rounded-lg border bg-red-50 p-3 text-red-700">{error}</div>}
       {loading && <div className="mb-3 text-sm text-gray-600">Loading…</div>}
@@ -462,7 +606,9 @@ export default function UsdaMonthly() {
           >
             {/* weekday header */}
             <div
-              className="grid sticky top-0 bg-white/95 backdrop-blur z-10 pb-2"
+             
+              className="grid sticky top-0 bg-white/95 backdrop-blur z-0 pb-2"
+
               style={{ gridTemplateColumns: `repeat(7, ${MOBILE_COL_PX}px)`, columnGap: MOBILE_GAP_PX }}
             >
               {weekdays.map((d) => (
@@ -539,7 +685,7 @@ export default function UsdaMonthly() {
         <div className="hidden sm:block">
           <div className="relative rounded-3xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm">
             <div className="px-2 pb-2">
-              <div className="grid grid-cols-7 gap-2 sticky top-0 bg-white/95 backdrop-blur pt-3 pb-2 z-10">
+              <div className="grid grid-cols-7 gap-2 sticky top-0 bg-white/95 backdrop-blur pt-3 pb-2 z-0">
                 {weekdays.map((d) => (
                   <div key={d} className="text-center text-xs font-medium text-brand-900/70">
                     {d}

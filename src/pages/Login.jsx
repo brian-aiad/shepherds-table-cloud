@@ -93,7 +93,8 @@ export default function Login() {
   const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
 
   return (
-    <div className="min-h-screen bg-[color:var(--surface-100)] text-gray-900">
+    <div className="min-h-screen text-gray-900 bg-[#FFE6EB]">
+
       <div className="grid lg:grid-cols-2 min-h-screen">
         {/* Left brand panel — same gradient as Navbar + soft sheen */}
         <aside className="hidden lg:flex relative overflow-hidden text-white">
@@ -282,11 +283,12 @@ export default function Login() {
                 <p className="text-xs text-gray-500">
                   By signing in you agree to Shepherds Table Cloud’s{" "}
                   <Link
-                    to="#"
+                    to="/usage"
                     className="text-[color:var(--brand-700)] hover:text-[color:var(--brand-800)]"
                   >
                     usage policy
                   </Link>
+
                   .
                 </p>
               </footer>

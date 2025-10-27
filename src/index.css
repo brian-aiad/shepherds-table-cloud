@@ -54,6 +54,13 @@
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(2px); }
+}
+.animate-bounce-slow { animation: bounce-slow 1.2s infinite; }
+
+
 /* ================== Pretty custom scrollbar ================== */
 /* Apply by adding `pretty-scroll` to any scroll container */
 .pretty-scroll {

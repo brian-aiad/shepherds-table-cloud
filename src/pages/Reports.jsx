@@ -250,7 +250,7 @@ function aggregateMonthForPdf(visits) {
   };
 }
 
-/* ---------- Lightweight Monthly PDF using pdf-lib (kept for share action) ---------- */
+/* ---------- Lightweight Monthly PDF for share-all action ---------- */
 async function buildUsdaMonthlyPdf({ monthKey, visits, org, generatedBy }) {
   const { PDFDocument, StandardFonts } = await import("pdf-lib");
 
@@ -406,9 +406,10 @@ async function shareUsdaMonthlyReport(monthKey, { visits, org, generatedBy }) {
     URL.revokeObjectURL(url);
   }
 }
-
-/* ---------- Month navigator (centered pill) ---------- */
+/* ---------- Month navigator (refined professional capsule w/ black outline) ---------- */
 function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
+  const [open, setOpen] = useState(false);
+  const [yearView, setYearView] = useState(() => Number(monthKey.slice(0, 4)));
   const label = monthLabel(monthKey);
 
   const jump = useCallback(
@@ -439,49 +440,205 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [jump, goToday]);
 
-  const iconBtn =
-    "inline-flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition";
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      const pop = document.querySelector('[role="dialog"][aria-label="Select month and year"]');
+      const trigger = e.target.closest?.('[aria-haspopup="dialog"]');
+      if (pop && !pop.contains(e.target) && !trigger) setOpen(false);
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [open]);
+
+  const commit = useCallback(
+    (y, mIndex0) => {
+      const d = new Date(y, mIndex0, 1);
+      const mk = monthKeyFor(d);
+      setMonthKey(mk);
+      setSelectedDate(fmtDateKey(d));
+      setYearView(y);
+      setOpen(false);
+    },
+    [setMonthKey, setSelectedDate]
+  );
+
+const MonthCell = ({ mIndex0 }) => {
+  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const isCurrent =
+    Number(monthKey.slice(0, 4)) === yearView &&
+    Number(monthKey.slice(5, 7)) === mIndex0 + 1;
 
   return (
-    <div className="inline-flex items-center gap-2 sm:gap-3 rounded-2xl border border-brand-200 bg-white shadow-sm px-2.5 sm:px-3 py-1.5 sm:py-2">
-      <button
-        onClick={() => jump(-1)}
-        className={iconBtn}
-        aria-label="Previous month"
-        title="Previous month"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
-          <path d="M15 6l-6 6 6 6" strokeWidth="2" />
-        </svg>
-      </button>
+    <button
+      onClick={() => commit(yearView, mIndex0)}
+      className={
+        "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition " +
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
+        (isCurrent
+          ? "bg-brand-700 text-white"
+          : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
+      }
+    >
+      {names[mIndex0]}
+    </button>
+  );
+};
 
-      <div className="min-w-[150px] text-center">
-        <span className="text-base sm:text-lg font-semibold tracking-tight text-brand-900">
-          {label}
-        </span>
+
+  const baseBtn =
+    "inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50";
+  const size = "h-10 w-10 md:h-11 md:w-11";
+
+  return (
+    <div className="relative z-50">
+      {/* unified capsule with black outline */}
+      <div
+        className="
+          inline-flex items-center gap-0
+          rounded-2xl bg-white
+          border border-gray-300 ring-1 ring-gray-200
+          shadow-[0_6px_16px_-6px_rgba(0,0,0,0.15)]
+          px-1.5 py-1
+        "
+      >
+        {/* Prev */}
+        <button
+          onClick={() => jump(-1)}
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}          aria-label="Previous month"
+          title="Previous month"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6" strokeWidth="2" />
+          </svg>
+        </button>
+
+        {/* divider */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+
+        {/* Month button */}
+        <div className="relative z-50">
+          <button
+            onClick={() => {
+              setYearView(Number(monthKey.slice(0, 4)));
+              setOpen((v) => !v);
+            }}
+            className="
+              inline-flex items-center justify-center gap-2
+              rounded-full px-4 md:px-5
+              h-10 md:h-11
+              text-gray-900 font-semibold tracking-tight              hover:bg-gray-50 active:bg-gray-100
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50
+            "
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            title="Jump to a specific month/year"
+          >
+            <span className="text-[15px] md:text-[16px]">{label}</span>
+            <svg className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" stroke="currentColor" fill="none">
+              <path d="M6 9l6 6 6-6" strokeWidth="2" />
+            </svg>
+          </button>
+
+          {/* Popover */}
+          {open && (
+            <div
+              className="
+                absolute left-1/2 top-full z-[80] mt-2 w-[320px] -translate-x-1/2
+                rounded-2xl border border-black/20 bg-white shadow-xl p-3
+              "
+              role="dialog"
+              aria-label="Select month and year"
+            >
+              {/* Year header */}
+              <div className="flex items-center justify-between mb-2">
+                <button
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-50"
+                  onClick={() => setYearView((y) => y - 1)}
+                  aria-label="Previous year"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                    <path d="M15 6l-6 6 6 6" strokeWidth="2" />
+                  </svg>
+                </button>
+
+                <div className="font-semibold">{yearView}</div>
+
+                <button
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/20 bg-white hover:bg-gray-50"
+                  onClick={() => setYearView((y) => y + 1)}
+                  aria-label="Next year"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                    <path d="M9 6l6 6-6 6" strokeWidth="2" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Month grid */}
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <MonthCell key={i} mIndex0={i} />
+                ))}
+              </div>
+
+              {/* Native month input */}
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="month"
+                  className="w-full rounded-lg border border-black/20 px-2 py-2 text-sm"
+                  value={`${String(yearView)}-${String(Number(monthKey.slice(5,7))).padStart(2, "0")}`}
+                  onChange={(e) => {
+                    const [y, m] = e.target.value.split("-").map(Number);
+                    if (!y || !m) return;
+                    commit(y, m - 1);
+                  }}
+                  aria-label="Pick month and year"
+                />
+                <button
+                  className="rounded-lg border border-black/20 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                  onClick={goToday}
+                  title="Jump to current month"
+                >
+                  Today
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* divider */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+
+        {/* Next */}
+        <button
+          onClick={() => jump(1)}
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}          aria-label="Next month"
+          title="Next month"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" strokeWidth="2" />
+          </svg>
+        </button>
+
+        {/* divider */}
+        <span className="mx-1 h-7 md:h-8 w-px bg-black/10 hidden md:block" aria-hidden="true" />
+
+        {/* Today (md+) */}
+        <button
+          onClick={goToday}
+          className="hidden md:inline-flex items-center justify-center rounded-full px-3 h-10 md:h-11 text-gray-900 hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+          title="Jump to current month (T)"
+        >
+          Today
+        </button>
       </div>
-
-      <button
-        onClick={() => jump(1)}
-        className={iconBtn}
-        aria-label="Next month"
-        title="Next month"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
-          <path d="M9 6l6 6-6 6" strokeWidth="2" />
-        </svg>
-      </button>
-
-      <button
-        onClick={goToday}
-        className="hidden md:inline-flex h-9 sm:h-10 items-center justify-center rounded-xl border border-brand-200 bg-white px-3 text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition ml-1"
-        title="Jump to current month (T)"
-      >
-        Today
-      </button>
     </div>
   );
 }
+
+
+
 
 /* =======================================================================================
    PAGE COMPONENT
@@ -523,6 +680,21 @@ export default function Reports() {
   const [sortKey, setSortKey] = useState("time"); // time|name|hh
   const [sortDir, setSortDir] = useState("desc"); // asc|desc
 
+  // menu state (split-button + kebab)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [kebabOpen, setKebabOpen] = useState(false);
+  const menuRef = useRef(null);
+  const kebabRef = useRef(null);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+      if (kebabRef.current && !kebabRef.current.contains(e.target)) setKebabOpen(false);
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
+
   const toast = useToast();
 
   // Disable native scroll restoration while Reports is mounted
@@ -556,9 +728,6 @@ export default function Reports() {
 
   /* --------------------------------
      Scoped live query: visits for month (RANGE BY dateKey)
-     Index-friendly with existing composites:
-       - visits: (orgId, locationId, dateKey ASC)
-       - visits: (orgId, dateKey ASC)
      -------------------------------- */
   useEffect(() => {
     if (authLoading) return;
@@ -824,7 +993,7 @@ export default function Reports() {
   }, [visits]);
 
   /* --------------------------------
-     Actions (scoped + admin guarding)
+     Actions
      -------------------------------- */
   const removeVisit = useCallback(
     async (visitId) => {
@@ -874,28 +1043,35 @@ export default function Reports() {
     [visitsByDay, clientsById, toast]
   );
 
+  const buildEfapBytesForDay = useCallback(
+    (dayKey) => {
+      const src = visitsByDay.get(dayKey) || [];
+      const rows = src.map((v) => {
+        const p = clientsById.get(v.clientId) || {};
+        const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
+        const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
+        return {
+          name,
+          address,
+          zip: p.zip || "",
+          householdSize: Number(v.householdSize || 0),
+          firstTime:
+            v.usdaFirstTimeThisMonth === true
+              ? true
+              : v.usdaFirstTimeThisMonth === false
+              ? false
+              : "",
+        };
+      });
+      return buildEfapDailyPdf(rows, { dateStamp: dayKey });
+    },
+    [visitsByDay, clientsById]
+  );
+
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
-        const src = visitsByDay.get(dayKey) || [];
-        const rows = src.map((v) => {
-          const p = clientsById.get(v.clientId) || {};
-          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
-          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
-          return {
-            name,
-            address,
-            zip: p.zip || "",
-            householdSize: Number(v.householdSize || 0),
-            firstTime:
-              v.usdaFirstTimeThisMonth === true
-                ? true
-                : v.usdaFirstTimeThisMonth === false
-                ? false
-                : "",
-          };
-        });
-        const pdfBytes = await buildEfapDailyPdf(rows, { dateStamp: dayKey });
+        const pdfBytes = await buildEfapBytesForDay(dayKey);
         const fileName = efapSuggestedFileName(dayKey);
         downloadBytes(pdfBytes, fileName, "application/pdf");
         toast.show("EFAP PDF downloaded.", "info");
@@ -904,31 +1080,13 @@ export default function Reports() {
         alert("Couldn’t build the EFAP PDF for that day.");
       }
     },
-    [visitsByDay, clientsById, toast]
+    [buildEfapBytesForDay, toast]
   );
 
   const shareEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
-        const src = visitsByDay.get(dayKey) || [];
-        const rows = src.map((v) => {
-          const p = clientsById.get(v.clientId) || {};
-          const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
-          const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
-          return {
-            name,
-            address,
-            zip: p.zip || "",
-            householdSize: Number(v.householdSize || 0),
-            firstTime:
-              v.usdaFirstTimeThisMonth === true
-                ? true
-                : v.usdaFirstTimeThisMonth === false
-                ? false
-                : "",
-          };
-        });
-        const pdfBytes = await buildEfapDailyPdf(rows, { dateStamp: dayKey });
+        const pdfBytes = await buildEfapBytesForDay(dayKey);
         const fileName = efapSuggestedFileName(dayKey);
         const file = new File([toUint8Array(pdfBytes)], fileName, {
           type: "application/pdf",
@@ -940,7 +1098,7 @@ export default function Reports() {
         alert("Couldn’t share the EFAP PDF for that day.");
       }
     },
-    [visitsByDay, clientsById, toast]
+    [buildEfapBytesForDay, toast]
   );
 
   /* ---------- Export USDA Monthly (dedicated builder) ---------- */
@@ -981,121 +1139,98 @@ export default function Reports() {
     }
   }, [selectedMonthKey, visits, org?.name, email]);
 
-  // Export Month CSV
-  const handleExportMonthCsv = useCallback(() => {
-    const rows = (visits || []).map((v) => ({
-      dateKey: v.dateKey,
-      monthKey: v.monthKey || selectedMonthKey,
-      visitId: v.id,
-      clientId: v.clientId || "",
-      householdSize: v.householdSize ?? "",
-      usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
-      usdaCount: v.usdaCount ?? "",
-      locationId: v.locationId || "",
-    }));
-    const csv = buildUsdaMonthlyCsv({ rows });
-    downloadText(csv, `USDA_Month_${selectedMonthKey}.csv`);
-  }, [visits, selectedMonthKey]);
-
   /* =======================================================================================
      RENDER
      ======================================================================================= */
-    // Scope chip: use the USDA-style pill (good on the red header only)
-    // replace your scopeChip with this
-      const scopeChip = (
-        <span className="
-          inline-flex items-center gap-1.5
-          rounded-full bg-white text-brand-900
-          ring-1 ring-black/5 shadow-sm
-          px-3 py-1 text-[12px]
-        ">
-          <span className="text-gray-600">Scope</span>
-          <span className="text-gray-400">•</span>
-          <span className="font-semibold">{org?.name || "—"}</span>
-          {location?.name ? (
-            <>
-              <span className="text-gray-400">/</span>
-              <span className="text-gray-700">{location.name}</span>
-            </>
-          ) : (
-            <span className="text-gray-600">(all locations)</span>
-          )}
-        </span>
-      );
 
+  // Scope chip
+  const scopeChip = (
+    <span
+      className="
+        inline-flex items-center gap-1.5
+        rounded-full bg-white text-brand-900
+        ring-1 ring-black/5 shadow-sm
+        px-3 py-1 text-[12px]
+      "
+    >
+      <span className="text-gray-600">Scope</span>
+      <span className="text-gray-400">•</span>
+      <span className="font-semibold">{org?.name || "—"}</span>
+      {location?.name ? (
+        <>
+          <span className="text-gray-400">/</span>
+          <span className="text-gray-700">{location.name}</span>
+        </>
+      ) : (
+        <span className="text-gray-600">(all locations)</span>
+      )}
+    </span>
+  );
 
-    // Sync chip: keep the green “Synced …” chip (element, not object)
-    const syncChip = (
-      <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 px-2.5 py-1 text-[12px]">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        Synced {syncAgo || "—"}
-      </span>
-    );
+  // Sync chip
+  const syncChip = (
+    <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 px-2.5 py-1 text-[12px]">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      Synced {syncAgo || "—"}
+    </span>
+  );
 
+  // Accessible aria-sort helper for table headers
+  const ariaSortFor = (key) => (sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none");
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
-      {/* ===== THEMED TOOLBAR (matching USDA Monthly) ===== */}
-      <div className="rounded-3xl overflow-hidden shadow-sm ring-1 ring-black/5">
-        {/* Brand gradient header */}
-        <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4">
-          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
-            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
-              Reports
-            </h1>
-            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
-          </div>
-          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-            {scopeChip}
-          </div>
+     {/* ===== THEMED TOOLBAR ===== */}
+<div className="rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+  {/* Brand gradient header (pill sits on the seam) */}
+  <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-10 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+    <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+      <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+        Reports
+      </h1>
+      <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+    </div>
+    <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+      {scopeChip}
+    </div>
 
-        </div>
+    {/* Month nav floats between header and controls */}
+    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
+      <ReportsMonthNav
+        monthKey={selectedMonthKey}
+        setMonthKey={setSelectedMonthKey}
+        setSelectedDate={setSelectedDate}
+      />
+    </div>
+  </div>
 
-        {/* Controls surface */}
-        <div className="bg-white/95 backdrop-blur px-3 sm:px-5 py-3">
-          <div className="grid gap-3 md:grid-cols-[1fr,auto,1fr] md:items-center">
-            {/* LEFT spacer (future filters area) */}
-            <div className="flex justify-center md:justify-start">
-              {/* empty on purpose to mirror USDA layout */}
-            </div>
+  {/* Controls surface – just reserves space under the pill */}
+  <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-8 pb-3" />
+</div>
 
-            {/* CENTER: Month nav */}
-            <div className="justify-self-center">
-              <ReportsMonthNav
-                monthKey={selectedMonthKey}
-                setMonthKey={setSelectedMonthKey}
-                setSelectedDate={setSelectedDate}
-              />
-            </div>
 
-            {/* RIGHT: Actions */}
-            
-          </div>
-        </div>
-      </div>
-
-      {/* ===== KPI Row ===== */}
+      {/* ===== KPI Row (wording tightened) ===== */}
       <div className="mt-4">
         <div className="-mx-4 sm:mx-0">
           <div className="overflow-x-auto overflow-y-visible md:overflow-visible no-scrollbar px-4 py-1">
             <div
               className="
-                px-0
                 grid grid-flow-col
                 auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
                 md:grid-flow-row md:grid-cols-4
                 gap-3 sm:gap-4 md:gap-5
                 snap-x md:snap-none
+                pr-2
               "
             >
               <div className="snap-start md:snap-none flex-none">
                 <KpiModern title="Total Visits (Month)" value={visits.length} />
               </div>
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern title="Households Totals (Month)" value={monthAgg.households} />
+                <KpiModern title="Households (Month)" value={monthAgg.households} />
               </div>
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern title="USDA Yes First-Time (Month)" value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0} />
+                <KpiModern title="USDA First-Time (Month)" value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0} />
               </div>
               <div className="snap-start md:snap-none flex-none">
                 <KpiModern title="Active Service Days (Month)" value={Array.from(monthAgg.byDay.keys()).length} />
@@ -1107,7 +1242,7 @@ export default function Reports() {
 
       <div className="mt-8 lg:mt-10" />
 
-      {/* ===== Charts ===== */}
+      {/* ===== Charts (titles tightened) ===== */}
       <div className="grid gap-4 sm:gap-5 lg:gap-6 md:grid-cols-3 mb-6 sm:mb-8">
         {/* Visits per Day */}
         <Card title="Visits per Day">
@@ -1175,8 +1310,8 @@ export default function Reports() {
           </div>
         </Card>
 
-        {/* People Served by Day */}
-        <Card title="Household # Served by Day">
+        {/* People Served per Day */}
+        <Card title="People Served per Day">
           <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
               <BarChart data={monthAgg.charts.visitsPerDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap={10}>
@@ -1254,8 +1389,7 @@ export default function Reports() {
                         e.preventDefault();
                         setSelectedDate(k);
                       }
-                    }}      // <-- close function + prop, no extra ")"
-
+                    }}
                     className={`group cursor-pointer flex items-stretch gap-2 p-2 rounded-xl border transition ${
                       isSelected
                         ? "bg-brand-50 border-brand-200 shadow-sm"
@@ -1274,10 +1408,11 @@ export default function Reports() {
                       </div>
                     </div>
 
+                    {/* Quick action: tiny Share only (no heavy Download here) */}
                     <div className="ml-1 flex items-center gap-2 shrink-0">
                       <button
                         data-day-action
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-800 hover:bg-brand-50 disabled:opacity-50 transition-colors"
+                        className={BTN.smallIcon}
                         onClick={() => shareEfapDailyPdfForDay(k)}
                         disabled={!k}
                         aria-label={`Share EFAP PDF for ${k}`}
@@ -1285,23 +1420,15 @@ export default function Reports() {
                       >
                         <ShareIcon className="h-4 w-4" />
                       </button>
-
-                      <button
-                        data-day-action
-                        className="inline-flex h-8 items-center justify-center rounded-lg px-2 bg-brand-700 text-white hover:bg-brand-800 text-[11px] transition-colors"
-                        onClick={() => exportEfapDailyPdfForDay(k)}
-                        title="Download EFAP PDF"
-                        aria-label={`Download EFAP PDF for ${k}`}
-                      >
-                        EFAP
-                      </button>
                     </div>
                   </li>
                 );
               })}
 
               {!sortedDayKeys.length && (
-                <li className="py-3 px-2 text-sm text-gray-600">No days found for this month.</li>
+                <li className="py-6 px-2 text-sm text-gray-600 text-center">
+                  {loading ? "Loading…" : "No days found for this month."}
+                </li>
               )}
             </ul>
           </div>
@@ -1309,95 +1436,197 @@ export default function Reports() {
 
         {/* Table / details */}
         <section className="lg:col-span-2 rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3">
-          {/* Header: date + actions */}
+          {/* Header: date + actions (ONE primary + split menu) */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
             <div className="font-semibold text-base sm:text-lg">
               {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Button group: [ EFAP PDF ] [ ▼ menu ]  */}
+            <div className="flex items-center gap-1.5">
               <button
-                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-800 hover:bg-brand-50 disabled:opacity-50 transition-colors"
-                onClick={() => shareEfapDailyPdfForDay(selectedDate)}
-                disabled={!selectedDate}
-                aria-label="Share EFAP PDF"
-                title="Share EFAP PDF"
-              >
-                <ShareIcon className="h-5 w-5" />
-              </button>
-
-              <button
-                className="inline-flex h-10 items-center justify-center rounded-lg px-3 bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-50 transition-colors"
+                className={BTN.primary + " min-w-[110px] aria-[busy=true]:opacity-60"}
                 onClick={() => exportEfapDailyPdfForDay(selectedDate)}
                 disabled={!selectedDate}
+                title="Download EFAP PDF for this day"
+                aria-label="EFAP PDF"
+                aria-busy={false}
               >
-                EFAP (This day)
-              </button>
-              <button
-                className="inline-flex h-10 items-center justify-center rounded-lg px-3 bg-brand-700 text-white hover:bg-brand-800 disabled:opacity-50 transition-colors"
-                onClick={() => exportOneDayCsv(selectedDate)}
-                disabled={!selectedDate}
-              >
-                CSV (This day)
+                <span>EFAP PDF</span>
               </button>
 
+              {/* Split menu for Share + CSV (desktop) */}
+              <div className="relative hidden sm:block" ref={menuRef}>
+                <button
+                  className={BTN.secondary + " px-2.5"}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label="Export options"
+                  title="More options"
+                  onClick={() => setMenuOpen((v) => !v)}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+                  >
+                    <button
+                      role="menuitem"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        shareEfapDailyPdfForDay(selectedDate);
+                      }}
+                      disabled={!selectedDate}
+                      aria-label="Share EFAP"
+                    >
+                      <ShareIcon className="h-4 w-4" />
+                      <span>Share EFAP</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        exportOneDayCsv(selectedDate);
+                      }}
+                      disabled={!selectedDate}
+                      aria-label="Export CSV"
+                    >
+                      <DownloadIcon className="h-4 w-4" />
+                      <span>Export CSV</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile: kebab opens Share + CSV, and Add Visit nearby */}
+              <div className="relative sm:hidden" ref={kebabRef}>
+                <button
+                  className={BTN.icon}
+                  aria-haspopup="menu"
+                  aria-expanded={kebabOpen}
+                  aria-label="More actions"
+                  title="More actions"
+                  onClick={() => setKebabOpen((v) => !v)}
+                >
+                  <KebabIcon className="h-5 w-5" />
+                </button>
+                {kebabOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+                  >
+                    <button
+                      role="menuitem"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                      onClick={() => {
+                        setKebabOpen(false);
+                        shareEfapDailyPdfForDay(selectedDate);
+                      }}
+                      disabled={!selectedDate}
+                      aria-label="Share EFAP"
+                    >
+                      <ShareIcon className="h-4 w-4" />
+                      <span>Share EFAP</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                      onClick={() => {
+                        setKebabOpen(false);
+                        exportOneDayCsv(selectedDate);
+                      }}
+                      disabled={!selectedDate}
+                      aria-label="Export CSV"
+                    >
+                      <DownloadIcon className="h-4 w-4" />
+                      <span>Export CSV</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Add Visit next to EFAP on mobile as ghost/secondary */}
               {selectedDate && isAdmin && (
-                <AddVisitButton
-                  org={org}
-                  location={location}
-                  selectedDate={selectedDate}
-                  onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
-                />
+                <div className="sm:hidden">
+                  <AddVisitButton
+                    org={org}
+                    location={location}
+                    selectedDate={selectedDate}
+                    onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                    className={BTN.secondary + " !h-10"}
+                  />
+                </div>
               )}
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <input
-              id="table-search"
-              className="rounded-lg border px-3 py-2 text-sm w-[220px] sm:w-[260px]"
-              placeholder="Search name / address / zip"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              aria-label="Search table"
-            />
+          {/* Subheading separator above filters (visual polish) */}
+          <div className="border-t border-gray-200 pt-3 mb-3">
+            {/* Filters, compressed: search + two selects + single sort toggle */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex-1 min-w-[180px]">
+                <div className="relative">
+                  <input
+                    id="table-search"
+                    className="w-full rounded-lg border pl-9 pr-3 py-2 text-sm"
+                    placeholder="Search…"
+                    value={term}
+                    onChange={(e) => setTerm(e.target.value)}
+                    aria-label="Search"
+                  />
+                  <div className="absolute inset-y-0 left-2 flex items-center pointer-events-none">
+                    <SearchIcon className="h-4 w-4 text-gray-500" />
+                  </div>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600">
-                USDA:
-                <select
-                  className="ml-2 rounded-lg border px-2 py-1 bg-white"
-                  value={usdaFilter}
-                  onChange={(e) => setUsdaFilter(e.target.value)}
-                  aria-label="Filter USDA"
-                >
-                  <option value="all">All</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
-              </label>
-              <label className="text-sm text-gray-600">
-                Sort:
-                <select
-                  className="ml-2 rounded-lg border px-2 py-1 bg-white"
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value)}
-                  aria-label="Sort by"
-                >
-                  <option value="time">Time</option>
-                  <option value="name">Name</option>
-                  <option value="hh">HH</option>
-                </select>
-              </label>
+              <select
+                className="rounded-lg border px-2 py-2 text-sm bg-white"
+                value={usdaFilter}
+                onChange={(e) => setUsdaFilter(e.target.value)}
+                aria-label="USDA filter"
+              >
+                <option value="all">USDA</option>
+                <option value="yes">USDA Yes</option>
+                <option value="no">USDA No</option>
+              </select>
+
+              <select
+                className="rounded-lg border px-2 py-2 text-sm bg-white"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value)}
+                aria-label="Sort column"
+              >
+                <option value="time">Sort</option>
+                <option value="time">Time</option>
+                <option value="name">Name</option>
+                <option value="hh">HH</option>
+              </select>
+
               <button
-                className="rounded-lg border px-2 py-1 text-sm bg-gray-50 hover:bg-gray-100"
+                className={BTN.secondary + " px-2 py-2"}
                 onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
                 title="Toggle sort direction"
                 aria-label="Toggle sort direction"
               >
-                {sortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+                {sortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
               </button>
+
+              {/* Desktop Add Visit sits with filters, mobile version is above */}
+              {selectedDate && isAdmin && (
+                <div className="hidden sm:block">
+                  <AddVisitButton
+                    org={org}
+                    location={location}
+                    selectedDate={selectedDate}
+                    onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -1406,31 +1635,33 @@ export default function Reports() {
             <span className="inline-flex items-center gap-1">
               <strong>{dayTotals.count}</strong> visit{dayTotals.count === 1 ? "" : "s"}
             </span>
-            <span className="inline-flex items-center gap-1">HH <strong>{dayTotals.hh}</strong></span>
-            <span className="inline-flex items-center gap-1">USDA yes <strong>{dayTotals.usdaYes}</strong></span>
+            <span className="inline-flex items-center gap-1">HH <strong className="tabular-nums">{dayTotals.hh}</strong></span>
+            <span className="inline-flex items-center gap-1">
+              USDA first-time <strong className="tabular-nums">{dayTotals.usdaYes}</strong>
+            </span>
           </div>
 
           {/* DESKTOP TABLE */}
-          <div className="hidden md:block overflow-hidden rounded-xl border">
+          <div className={`hidden md:block overflow-hidden rounded-xl border ${loading ? "opacity-60" : ""}`}>
             <table className="w-full table-auto text-sm">
               <colgroup>
                 <col className="w-[22%]" />
                 <col className="w-[34%]" />
                 <col className="w-[9%]" />
                 <col className="w-[7%]" />
-                <col className="w-[10%]" />
-                <col className="w-[10%]" />
+                <col className="w-[13%]" />
+                <col className="w-[7%]" />
                 <col className="w-[8%]" />
               </colgroup>
 
               <thead className="bg-gray-100">
                 <tr className="text-left">
-                  <th className="px-4 py-2">Client</th>
+                  <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>Client</th>
                   <th className="px-4 py-2">Address</th>
                   <th className="px-4 py-2">Zip</th>
                   <th className="px-4 py-2">HH</th>
-                  <th className="px-4 py-2">USDA (mo)</th>
-                  <th className="px-4 py-2">Time</th>
+                  <th className="px-4 py-2">USDA First-Time</th>
+                  <th className="px-4 py-2 text-right">Time</th>
                   <th className="px-4 py-2">Actions</th>
                 </tr>
               </thead>
@@ -1448,9 +1679,23 @@ export default function Reports() {
                     <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
                     <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
                     <td className="px-4 py-3">
-                      {r.usdaFirstTimeThisMonth === "" ? "" : r.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                      {r.usdaFirstTimeThisMonth === "" ? (
+                        ""
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ring-1 ${
+                            r.usdaFirstTimeThisMonth
+                              ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                              : "bg-gray-50 text-gray-700 ring-gray-200"
+                          }`}
+                        >
+                          {r.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                        </span>
+                      )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700">{r.localTime}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700 text-right tabular-nums">
+                      {r.localTime}
+                    </td>
                     <td className="px-4 py-3">
                       {isAdmin ? (
                         <button
@@ -1470,8 +1715,27 @@ export default function Reports() {
 
                 {filteredSortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
-                      {loading ? "Loading…" : "No visits on this day."}
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                      {loading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Spinner className="h-4 w-4" /> Loading…
+                        </span>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="text-2xl">🗓️</div>
+                          <div>No visits on this day.</div>
+                          {isAdmin && selectedDate ? (
+                            <div className="mt-1">
+                              <AddVisitButton
+                                org={org}
+                                location={location}
+                                selectedDate={selectedDate}
+                                onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -1492,7 +1756,7 @@ export default function Reports() {
           </div>
 
           {/* MOBILE LIST */}
-          <ul className="md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden">
+          <ul className={`md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden ${loading ? "opacity-60" : ""}`}>
             {filteredSortedRows.map((r, i) => (
               <li key={r.visitId} className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
                 <div className="flex items-start justify-between gap-3">
@@ -1521,7 +1785,7 @@ export default function Reports() {
 
                   <div className="shrink-0 flex flex-col items-end gap-1">
                     <div
-                      className="px-2 py-0.5 rounded border border-gray-300 text-[11px] whitespace-nowrap bg-gray-100 text-gray-800 font-medium"
+                      className="px-2 py-0.5 rounded border border-gray-300 text-[11px] whitespace-nowrap bg-gray-100 text-gray-800 font-medium tabular-nums"
                       title={r.localTime}
                     >
                       {r.localTime}
@@ -1542,7 +1806,28 @@ export default function Reports() {
             ))}
 
             {filteredSortedRows.length === 0 && (
-              <li className="p-6 text-center text-gray-500">{loading ? "Loading…" : "No visits on this day."}</li>
+              <li className="p-6 text-center text-gray-500">
+                {loading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Spinner className="h-4 w-4" /> Loading…
+                  </span>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="text-2xl">🗓️</div>
+                    <div>No visits on this day.</div>
+                    {isAdmin && selectedDate ? (
+                      <div className="mt-1">
+                        <AddVisitButton
+                          org={org}
+                          location={location}
+                          selectedDate={selectedDate}
+                          onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </li>
             )}
           </ul>
         </section>
@@ -1565,9 +1850,11 @@ export default function Reports() {
 
       {/* Print & small helpers */}
       <style>{`
-        @media (max-width: 380px) {
-          .sm\\:hidden + .grid button { font-size: 14px; }
-        }
+        @keyframes bounce-slow { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(2px) } }
+        .animate-bounce-slow { animation: bounce-slow 1.6s infinite; }
+      `}</style>
+
+      <style>{`
         @media print {
           nav, header, aside, .print\\:hidden { display: none !important; }
           main, section { border: none !important; box-shadow: none !important; }
@@ -1592,6 +1879,31 @@ const tooltipBoxStyle = {
   border: "1px solid #e5e7eb",
   boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
   padding: "8px 12px",
+};
+
+// Unified button styles
+const BTN = {
+  primary:
+    "inline-flex items-center justify-center gap-2 rounded-xl " +
+    "bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 " +
+    "px-3.5 py-2.5 text-white font-semibold shadow " +
+    "hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 " +
+    "active:from-brand-900 active:via-brand-800 active:to-brand-700 " +
+    "focus:outline-none focus:ring-2 focus:ring-brand-300 transition",
+
+  secondary:
+    "inline-flex items-center justify-center gap-2 rounded-xl border border-brand-200 " +
+    "bg-white px-3.5 py-2.5 text-brand-900 shadow-sm " +
+    "hover:bg-brand-50 active:bg-brand-100 " +
+    "focus:outline-none focus:ring-2 focus:ring-brand-300 transition",
+
+  icon:
+    "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-brand-200 " +
+    "bg-white text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition",
+
+  smallIcon:
+    "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 " +
+    "bg-white text-brand-900 hover:bg-brand-50 active:bg-brand-100 transition",
 };
 
 function Card({ title, children }) {
@@ -1625,7 +1937,6 @@ function ShareIcon({ className = "h-5 w-5" }) {
     </svg>
   );
 }
-
 function TrashIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -1645,15 +1956,6 @@ function TrashIcon({ className = "h-5 w-5" }) {
     </svg>
   );
 }
-
-function PlusIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
 function SearchIcon({ className = "h-4 w-4" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -1662,7 +1964,6 @@ function SearchIcon({ className = "h-4 w-4" }) {
     </svg>
   );
 }
-
 function Spinner({ className = "h-4 w-4" }) {
   return (
     <svg className={`${className} animate-spin`} viewBox="0 0 24 24" aria-hidden="true">
@@ -1671,21 +1972,44 @@ function Spinner({ className = "h-4 w-4" }) {
     </svg>
   );
 }
-
-function CheckIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
-}
-
 function DownloadIcon({ className = "h-4 w-4" }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M12 3v12" />
       <path d="M7 10l5 5 5-5" />
       <path d="M5 21h14" />
+    </svg>
+  );
+}
+function ChevronDown({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+function KebabIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
+function ArrowUp({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M12 19V5" />
+      <path d="M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+function ArrowDown({ className = "h-4 w-4" }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M12 5v14" />
+      <path d="M5 12l7 7 7-7" />
     </svg>
   );
 }
