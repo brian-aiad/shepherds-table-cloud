@@ -57,9 +57,9 @@ export type AuthValue = {
   orgs: Org[];
   locations: LocationRec[];
 
-  role: Role;
-  isAdmin: boolean;   // true for org admins and master
-  isMaster: boolean;  // explicit master flag (email match)
+  role: Role;        // coarse (has ANY admin across memberships)
+  isAdmin: boolean;  // true only if admin of ACTIVE org, or master
+  isMaster: boolean; // explicit master flag (email match)
 
   loading: boolean;
 
@@ -217,19 +217,29 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const [org, setOrg] = useState<Org | null>(null);
   const [location, setLocation] = useState<LocationRec | null>(null);
 
-  const [role, setRole] = useState<Role>(null);
+  const [role, setRole] = useState<Role>(null); // coarse (any admin anywhere)
   const [isMaster, setIsMaster] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // NEW: per-org role and allowed location maps (for client-side enforcement)
+  const [rolesByOrg, setRolesByOrg] = useState<Record<string, Role>>({});
+  const [allowedLocsByOrg, setAllowedLocsByOrg] = useState<Record<string, string[]>>({});
+
   /* ── Derived ─────────────────────────────────────────────────────────────── */
-  const isAdmin = useMemo(() => isMaster || role === "admin", [isMaster, role]);
+  // isAdmin is scoped to the ACTIVE org (unless master)
+  const isAdmin = useMemo(() => {
+    if (isMaster) return true;
+    const activeOrgId = org?.id || null;
+    if (!activeOrgId) return false;
+    return rolesByOrg[activeOrgId] === "admin";
+  }, [isMaster, org?.id, rolesByOrg]);
 
   /* ── Actions ─────────────────────────────────────────────────────────────── */
   const signOutNow = useCallback(async () => {
     await signOut(auth);
   }, []);
 
-  // Switch org: update memory + device mirror; auto-pick first location for that org.
+  // Switch org: update memory + device mirror; pick first VALID location for that org.
   const setActiveOrg = useCallback(
     async (orgId: string | null) => {
       if (!uid) return;
@@ -237,52 +247,84 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       const nextOrg = orgId ? (orgs.find((o) => o.id === orgId) ?? null) : null;
       setOrg(nextOrg);
 
-      // filter locations for this org
-      const locsForOrg = nextOrg ? locations.filter((l) => l.orgId === nextOrg.id) : [];
-      const nextLoc = nextOrg ? (locsForOrg[0] ?? null) : null;
-      setLocation(nextLoc);
+      let nextLoc: LocationRec | null = null;
+      if (nextOrg) {
+        const locsForOrg = locations.filter((l) => l.orgId === nextOrg.id);
+        const adminHere = isMaster || rolesByOrg[nextOrg.id] === "admin";
 
-      writeDeviceScope({ activeOrgId: nextOrg?.id ?? null, activeLocationId: nextLoc?.id ?? null });
+        if (adminHere) {
+          // admins can see any location in this org; default to first
+          nextLoc = locsForOrg[0] ?? null;
+        } else {
+          // volunteers limited to explicit allow-list; if none, no selection
+          const allow = allowedLocsByOrg[nextOrg.id] || [];
+          nextLoc = locsForOrg.find((l) => allow.includes(l.id)) ?? null;
+        }
+      }
+
+      setLocation(nextLoc);
+      writeDeviceScope({
+        activeOrgId: nextOrg?.id ?? null,
+        activeLocationId: nextLoc?.id ?? null,
+      });
     },
-    [uid, orgs, locations]
+    [uid, orgs, locations, isMaster, rolesByOrg, allowedLocsByOrg]
   );
 
-// Switch location within current org: update memory + device mirror.
-// ACCEPTS "" (empty string) as "All locations" for admins only.
-const setActiveLocation = useCallback(
-  async (locationId: string | null) => {
-    if (!uid) return;
+  // Switch location within current org: update memory + device mirror.
+  // ACCEPTS "" (empty string) as "All locations" for admins of ACTIVE org only.
+  const setActiveLocation = useCallback(
+    async (locationId: string | null) => {
+      if (!uid) return;
 
-    const canAll = isMaster || role === "admin";
+      const activeOrgId = org?.id || null;
+      if (!activeOrgId) return;
 
-    // Admin-only sentinel: "" = All locations
-    if (locationId === "") {
-      if (!org) return;
-      if (!canAll) return; // volunteers cannot pick All
-      const allPseudo = { id: "", orgId: org.id, name: "All locations" } as LocationRec;
-      setLocation(allPseudo);
-      writeDeviceScope({ activeLocationId: "" });
-      return;
-    }
+      const adminHere = isMaster || rolesByOrg[activeOrgId] === "admin";
 
-    // Normal single-location selection
-    const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
+      // Admin-only sentinel: "" = All locations
+      if (locationId === "") {
+        if (!adminHere) return; // volunteers cannot pick All
+        const allPseudo = { id: "", orgId: activeOrgId, name: "All locations" } as LocationRec;
+        setLocation(allPseudo);
+        writeDeviceScope({ activeLocationId: "" });
+        return;
+      }
 
-    // Guard: only allow locations that match current org
-    if (next && org && next.orgId !== org.id) {
-      const fallback = locations.find((l) => org && l.orgId === org.id) ?? null;
-      setLocation(fallback);
-      writeDeviceScope({ activeLocationId: fallback?.id ?? null });
-      return;
-    }
+      // Normal single-location selection
+      const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
 
-    setLocation(next);
-    writeDeviceScope({ activeLocationId: next?.id ?? null });
-  },
-  [uid, locations, org, role, isMaster]
-);
+      // Guard org match
+      if (next && next.orgId !== activeOrgId) {
+        const locsForOrg = locations.filter((l) => l.orgId === activeOrgId);
+        const fallback = adminHere
+          ? (locsForOrg[0] ?? null)
+          : (() => {
+              const allow = allowedLocsByOrg[activeOrgId] || [];
+              return locsForOrg.find((l) => allow.includes(l.id)) ?? null;
+            })();
+        setLocation(fallback);
+        writeDeviceScope({ activeLocationId: fallback?.id ?? null });
+        return;
+      }
 
+      // Volunteers: must be assigned
+      if (!adminHere && next) {
+        const allow = allowedLocsByOrg[activeOrgId] || [];
+        if (!allow.includes(next.id)) {
+          const locsForOrg = locations.filter((l) => l.orgId === activeOrgId);
+          const fallback = locsForOrg.find((l) => allow.includes(l.id)) ?? null;
+          setLocation(fallback);
+          writeDeviceScope({ activeLocationId: fallback?.id ?? null });
+          return;
+        }
+      }
 
+      setLocation(next);
+      writeDeviceScope({ activeLocationId: next?.id ?? null });
+    },
+    [uid, org?.id, locations, isMaster, rolesByOrg, allowedLocsByOrg]
+  );
 
   // Explicit “Make default on this device” → persists the current device scope to Firestore
   const saveDeviceDefaultScope = useCallback(async () => {
@@ -306,6 +348,8 @@ const setActiveLocation = useCallback(
           setLocations([]);
           setRole(null);
           setIsMaster(false);
+          setRolesByOrg({});
+          setAllowedLocsByOrg({});
           setLoading(false);
           return;
         }
@@ -334,6 +378,10 @@ const setActiveLocation = useCallback(
         let nextLocations: LocationRec[] = [];
         let nextRole: Role = null;
 
+        // Maps we will commit to state at the end
+        let mapRolesByOrg: Record<string, Role> = {};
+        let mapAllowedLocsByOrg: Record<string, string[]> = {};
+
         if (masterNow) {
           // Master: can see all orgs & locations
           const orgQs = await getDocs(collection(db, "organizations"));
@@ -343,6 +391,8 @@ const setActiveLocation = useCallback(
           nextLocations = locQs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
 
           nextRole = "admin";
+          mapRolesByOrg = {};            // not needed for master
+          mapAllowedLocsByOrg = {};      // not needed for master
         } else {
           // Non-master: memberships from orgUsers
           const ouQs = await getDocs(
@@ -350,17 +400,22 @@ const setActiveLocation = useCallback(
           );
 
           const orgIds = new Set<string>();
-          const allowedLocsByOrg: Record<string, string[]> = {};
-          let anyAdmin = false;
+          mapRolesByOrg = {};
+          mapAllowedLocsByOrg = {};
 
           ouQs.forEach((row) => {
             const rec = row.data() as any;
             if (!rec?.orgId) return;
+
             orgIds.add(rec.orgId);
-            if (Array.isArray(rec?.locationIds) && rec.locationIds.length) {
-              allowedLocsByOrg[rec.orgId] = rec.locationIds;
-            }
-            if (rec?.role === "admin") anyAdmin = true;
+
+            // role per org
+            const r: Role = rec?.role === "admin" ? "admin" : "volunteer";
+            mapRolesByOrg[rec.orgId] = r;
+
+            // volunteers: explicit allow-list; admins see all (handled below)
+            const locs = Array.isArray(rec?.locationIds) ? rec.locationIds.filter(Boolean) : [];
+            mapAllowedLocsByOrg[rec.orgId] = locs;
           });
 
           // Load orgs
@@ -374,12 +429,21 @@ const setActiveLocation = useCallback(
           const locFetches = nextOrgs.map(async (o) => {
             const qs = await getDocs(query(collection(db, "locations"), where("orgId", "==", o.id)));
             const all = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
-            const allow = allowedLocsByOrg[o.id];
-            return allow?.length ? all.filter((l) => allow.includes(l.id)) : all;
+
+            const roleForOrg = mapRolesByOrg[o.id] || "volunteer";
+            if (roleForOrg === "admin") {
+              return all; // admin for that org = all its locations
+            }
+
+            // volunteer: only explicitly assigned locations; if none assigned, they see none
+            const allow = mapAllowedLocsByOrg[o.id] || [];
+            return all.filter((l) => allow.includes(l.id));
           });
           nextLocations = (await Promise.all(locFetches)).flat();
 
-          nextRole = anyAdmin ? "admin" : "volunteer";
+          // Coarse UX role: if user is admin in ANY org, mark as admin (UI badge only)
+          const hasAnyAdmin = Object.values(mapRolesByOrg).includes("admin");
+          nextRole = hasAnyAdmin ? "admin" : "volunteer";
         }
 
         // Resolve initial selection with device-first preference (no Firestore writes here)
@@ -389,53 +453,50 @@ const setActiveLocation = useCallback(
         const storedOrgId: string | null = stored?.activeOrgId ?? null;
         const storedLocId: string | null = stored?.activeLocationId ?? null;
 
-        // Resolve initial selection with device/stored scope
-// Resolve initial selection with device/stored scope
-const pickOrgId =
-  (device.activeOrgId && nextOrgs.find((o) => o.id === device.activeOrgId)?.id) ||
-  (storedOrgId && nextOrgs.find((o) => o.id === storedOrgId)?.id) ||
-  nextOrgs[0]?.id ||
-  null;
+        const pickOrgId =
+          (device.activeOrgId && nextOrgs.find((o) => o.id === device.activeOrgId)?.id) ||
+          (storedOrgId && nextOrgs.find((o) => o.id === storedOrgId)?.id) ||
+          nextOrgs[0]?.id ||
+          null;
 
-const pickOrg = pickOrgId ? nextOrgs.find((o) => o.id === pickOrgId) ?? null : null;
+        const pickOrg = pickOrgId ? nextOrgs.find((o) => o.id === pickOrgId) ?? null : null;
 
-// Location: allow "" (All locations) only for admins
-let pickLocId: string | null =
-  typeof device.activeLocationId !== "undefined" ? device.activeLocationId
-  : (typeof storedLocId !== "undefined" ? storedLocId : null);
+        // Location: allow "" (All locations) only for admins of that org (or master)
+        let pickLocId: string | null =
+          typeof device.activeLocationId !== "undefined" ? device.activeLocationId
+          : (typeof storedLocId !== "undefined" ? storedLocId : null);
 
-if (pickOrg) {
-  // Filter locations for that org
-  const locsForOrg = nextLocations.filter((l) => l.orgId === pickOrg.id);
+        if (pickOrg) {
+          const locsForOrg = nextLocations.filter((l) => l.orgId === pickOrg.id);
+          const adminHere = masterNow || mapRolesByOrg[pickOrg.id] === "admin";
 
-  // If admin and the saved value is "", keep it; otherwise pick first real location
-  if (pickLocId === "" && (masterNow || nextRole === "admin")) {
-    setOrg(pickOrg);
-    setLocation({ id: "", orgId: pickOrg.id, name: "All locations" } as LocationRec);
-    writeDeviceScope({ activeOrgId: pickOrg.id, activeLocationId: "" });
-  } else {
-    const resolved =
-      (pickLocId && locsForOrg.find((l) => l.id === pickLocId)) || locsForOrg[0] || null;
-    setOrg(pickOrg);
-    setLocation(resolved ?? null);
-    writeDeviceScope({
-      activeOrgId: pickOrg.id,
-      activeLocationId: resolved?.id ?? null,
-    });
-  }
-} else {
-  setOrg(null);
-  setLocation(null);
-  writeDeviceScope({ activeOrgId: null, activeLocationId: null });
-}
+          if (pickLocId === "" && adminHere) {
+            setOrg(pickOrg);
+            setLocation({ id: "", orgId: pickOrg.id, name: "All locations" } as LocationRec);
+            writeDeviceScope({ activeOrgId: pickOrg.id, activeLocationId: "" });
+          } else {
+            const resolved =
+              (pickLocId && locsForOrg.find((l) => l.id === pickLocId)) || locsForOrg[0] || null;
+            setOrg(pickOrg);
+            setLocation(resolved ?? null);
+            writeDeviceScope({
+              activeOrgId: pickOrg.id,
+              activeLocationId: resolved?.id ?? null,
+            });
+          }
+        } else {
+          setOrg(null);
+          setLocation(null);
+          writeDeviceScope({ activeOrgId: null, activeLocationId: null });
+        }
 
-setOrgs(nextOrgs);
-setLocations(nextLocations);
-setRole(nextRole);
+        setOrgs(nextOrgs);
+        setLocations(nextLocations);
+        setRole(nextRole);
 
-
-
-        // Update device mirror so reloads are instant on this device
+        // commit maps to state
+        setRolesByOrg(mapRolesByOrg);
+        setAllowedLocsByOrg(mapAllowedLocsByOrg);
       } finally {
         setLoading(false);
       }

@@ -1,4 +1,12 @@
 // src/components/AddVisitButton.jsx
+// Shepherds Table Cloud — Add Visit (Oct 2025 UI parity)
+// - Bottom sheet on mobile / centered card on desktop
+// - Sticky gradient header + sticky controls strip + pretty-scroll results
+// - HH steppers and USDA toggle styled like NewClientForm/LogVisitForm
+// - Single transaction per add: visit + client counters (+ optional USDA monthly marker)
+// - Deterministic USDA marker id: `${org.id}_${client.id}_${monthKey}`
+// - Guards: cross-org, blocks inactive clients, preserves client scope (no reassignment)
+
 import {
   useCallback,
   useEffect,
@@ -19,12 +27,12 @@ import {
   increment,
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
+import { Users, Soup, Search, Plus, Check, X } from "lucide-react";
 
 /* =========================
    Helpers
 ========================= */
 function isoWeekKey(d = new Date()) {
-  // ISO week (Mon-based; Thursday trick)
   const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
@@ -35,6 +43,14 @@ const monthKeyFor = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 const cx = (...xs) => xs.filter(Boolean).join(" ");
+
+const MIN_HH = 1;
+const MAX_HH = 20;
+
+const ICONS = {
+  hh: <Users size={16} className="text-brand-600 inline mr-1" />,
+  usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
+};
 
 export default function AddVisitButton({
   org,
@@ -104,7 +120,7 @@ export default function AddVisitButton({
   // autofocus + ESC close
   useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => inputRef.current?.focus(), 50);
+    const id = setTimeout(() => inputRef.current?.focus(), 80);
     const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
     };
@@ -129,9 +145,14 @@ export default function AddVisitButton({
   const addVisit = useCallback(
     async (client) => {
       if (!client || !org?.id || !selectedDate) return;
+      // Hard guard: block inactive clients
+      if (client.inactive === true) {
+        alert("This client is deactivated. Reactivate before logging a visit.");
+        return;
+      }
       setBusy(true);
       try {
-        // Compose a concrete timestamp on the chosen day, current time of day
+        // Compose concrete timestamp on the chosen day, at current time-of-day
         const now = new Date();
         const when = new Date(
           Number(selectedDate.slice(0, 4)),
@@ -148,7 +169,7 @@ export default function AddVisitButton({
         const wKey = isoWeekKey(when);
         const weekday = when.getDay(); // 0..6
 
-        const latestHH = Math.max(1, Math.min(20, Number(hh || 1)));
+        const latestHH = Math.max(MIN_HH, Math.min(MAX_HH, Number(hh || MIN_HH)));
         const isFirst = !!usda;
         const currentUser = auth.currentUser?.uid || null;
         const locId = location?.id || null;
@@ -162,9 +183,12 @@ export default function AddVisitButton({
           if (cur.orgId && cur.orgId !== org.id) {
             throw new Error("Client belongs to a different organization.");
           }
+          if (cur.inactive === true) {
+            throw new Error("This client is deactivated. Reactivate before logging a visit.");
+          }
 
-          // 2) USDA first marker (id includes org for safety)
-          if (isFirst) {
+          // 2) USDA first marker (create-once)
+          if (isFirst && mk) {
             const markerId = `${org.id}_${client.id}_${mk}`;
             const markerRef = doc(db, "usda_first", markerId);
             const markerSnap = await tx.get(markerRef);
@@ -188,7 +212,7 @@ export default function AddVisitButton({
             clientId: client.id,
             clientFirstName: client.firstName || cur.firstName || "",
             clientLastName: client.lastName || cur.lastName || "",
-            visitAt: when,
+            visitAt: when, // intentional (historical add)
             createdAt: serverTimestamp(),
             monthKey: mk,
             dateKey: dKey,
@@ -202,7 +226,7 @@ export default function AddVisitButton({
             addedByReports: true,
           });
 
-          // 4) Client counters / last-visit (no silent reassignment of org/location)
+          // 4) Client counters / last-visit (no silent reassignment)
           tx.update(clientRef, {
             lastVisitAt: serverTimestamp(),
             lastVisitMonthKey: mk,
@@ -263,16 +287,16 @@ export default function AddVisitButton({
             "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
         }}
       >
-        <PlusIcon className="h-4 w-4 shrink-0" />
+        <Plus className="h-4 w-4 shrink-0" />
         Add Visit
       </button>
 
       {/* Sheet */}
       {open && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-[1000]">
           {/* Backdrop */}
           <button
-            className="absolute inset-0 bg-black/45"
+            className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
             onClick={() => setOpen(false)}
             aria-label="Close add modal"
           />
@@ -285,23 +309,16 @@ export default function AddVisitButton({
             aria-labelledby="add-visit-title"
             className="
               absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(760px,94vw)]
-              bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden
               bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+              bg-white shadow-2xl ring-1 ring-brand-200/70 overflow-hidden
               rounded-t-3xl sm:rounded-3xl
-              h-[92svh] sm:h-auto max-h-[100svh]
-              pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]
               flex flex-col
             "
+            style={{ maxHeight: "calc(100vh - 28px)", marginTop: "env(safe-area-inset-top, 8px)" }}
           >
-            {/* Header — brand gradient bar */}
+            {/* Header — brand gradient bar (sticky) */}
             <div className="sticky top-0 z-10">
-              <div
-                className="text-white border-b shadow-sm"
-                style={{
-                  background:
-                    "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-                }}
-              >
+              <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
                 <div className="px-4 sm:px-6 py-3 sm:py-4">
                   <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-6">
                     {/* Title */}
@@ -320,115 +337,111 @@ export default function AddVisitButton({
                     {/* Context (desktop) */}
                     <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
                       <span>
-                        Org: <b>{org?.name ?? "—"}</b>
+                        Org: <b>{org?.name ?? org?.id ?? "—"}</b>
                       </span>
                       <span>
-                        Loc: <b>{location?.name ?? "—"}</b>
+                        Loc: <b>{location?.name ?? location?.id ?? "—"}</b>
                       </span>
                     </div>
 
                     {/* Close */}
                     <button
                       onClick={() => setOpen(false)}
-                      className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                      className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
                       aria-label="Close"
                       title="Close"
                     >
-                      ✕
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
 
                   {/* Context (mobile) */}
                   <div className="mt-2 sm:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
                     <span>
-                      Org: <b>{org?.name ?? "—"}</b>
+                      Org: <b>{org?.name ?? org?.id ?? "—"}</b>
                     </span>
                     <span>
-                      Loc: <b>{location?.name ?? "—"}</b>
+                      Loc: <b>{location?.name ?? location?.id ?? "—"}</b>
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Controls strip — airy spacing */}
-              <div className="px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-b">
+              {/* Controls strip — sticky under header */}
+              <div className="sticky top-[--header-bottom] px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-b z-10">
                 <div className="grid gap-3 lg:grid-cols-[1fr,auto] items-center">
                   {/* Search */}
                   <div className="relative">
                     <input
                       ref={inputRef}
-                      className="w-full rounded-2xl border px-4 pl-11 py-3 h-12 text-[15px] shadow-sm bg-white placeholder:text-gray-400 focus:outline-none focus:border-[color:var(--brand-500)] focus:ring-4 focus:ring-[color:var(--brand-200)]"
-                      placeholder="Search name, address or zip…"
+                      className="w-full rounded-2xl border border-brand-200 px-4 pl-11 py-3 h-12 text-[15px] shadow-sm bg-white placeholder:text-gray-400 focus:outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-200"
+                      placeholder="Search name, address or ZIP…"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       aria-label="Find client"
                     />
-                    <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                   </div>
 
-                  {/* Quick controls */}
+                  {/* Quick controls — HH + USDA */}
                   <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-                    {/* HH preset chips */}
-                    <div className="hidden md:flex items-center gap-1.5">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <button
-                          key={n}
-                          className={cx(
-                            "h-9 px-2 rounded-lg border text-sm transition",
-                            Number(hh) === n
-                              ? "bg-[color:var(--brand-700)] text-white border-[color:var(--brand-700)]"
-                              : "bg-white hover:bg-gray-50 border-gray-300"
-                          )}
-                          onClick={() => setHH(n)}
-                          aria-label={`Set household size to ${n}`}
-                        >
-                          HH {n}
-                        </button>
-                      ))}
-                    </div>
+                    {/* HH label (icon) */}
+                    <span className="hidden md:inline text-xs font-medium text-gray-700">
+                      {ICONS.hh}Household size
+                    </span>
 
                     {/* HH stepper */}
-                    <div className="inline-flex items-center rounded-full border bg-white overflow-hidden shadow-sm">
+                    <div className="inline-flex items-center rounded-full border border-brand-300 bg-white overflow-hidden shadow-sm">
                       <button
-                        className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
-                        onClick={() => setHH((n) => Math.max(1, Number(n) - 1))}
+                        type="button"
+                        className="h-10 w-10 text-lg font-semibold hover:bg-brand-50 active:scale-[.98]"
+                        onClick={() => setHH((n) => Math.max(MIN_HH, Number(n || MIN_HH) - 1))}
                         aria-label="Decrease household size"
                       >
-                        –
+                        −
                       </button>
                       <div className="px-3 text-sm font-semibold tabular-nums min-w-[2ch] text-center select-none">
                         {hh}
                       </div>
                       <button
-                        className="h-10 w-10 text-lg font-semibold hover:bg-gray-100 active:scale-[.98]"
-                        onClick={() => setHH((n) => Math.min(20, Number(n) + 1))}
+                        type="button"
+                        className="h-10 w-10 text-lg font-semibold hover:bg-brand-50 active:scale-[.98]"
+                        onClick={() => setHH((n) => Math.min(MAX_HH, Number(n || MIN_HH) + 1))}
                         aria-label="Increase household size"
                       >
                         +
                       </button>
                     </div>
 
-                    {/* USDA toggle */}
-                    <div className="inline-flex rounded-full border bg-white overflow-hidden">
+                    {/* USDA toggle (styled like other forms) */}
+                    <div className="inline-flex rounded-2xl overflow-hidden border border-brand-300">
                       <button
+                        type="button"
                         className={cx(
-                          "px-3 h-9 text-sm font-medium",
-                          usda ? "bg-[color:var(--brand-700)] text-white" : "hover:bg-gray-50"
+                          "px-3 h-9 text-sm font-semibold transition-colors",
+                          usda
+                            ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)]"
+                            : "bg-white text-brand-900 hover:bg-brand-50"
                         )}
                         onClick={() => setUSDA(true)}
                         aria-pressed={usda}
+                        title="USDA first visit this month"
                       >
-                        USDA: Yes
+                        {ICONS.usda}Yes
                       </button>
                       <button
+                        type="button"
                         className={cx(
-                          "px-3 h-9 text-sm font-medium border-l",
-                          !usda ? "bg-[color:var(--brand-700)] text-white" : "hover:bg-gray-50"
+                          "px-3 h-9 text-sm font-semibold border-l transition-colors",
+                          !usda
+                            ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)]"
+                            : "bg-white text-brand-900 hover:bg-brand-50"
                         )}
                         onClick={() => setUSDA(false)}
                         aria-pressed={!usda}
+                        title="Not USDA"
                       >
-                        USDA: No
+                        No
                       </button>
                     </div>
                   </div>
@@ -451,20 +464,30 @@ export default function AddVisitButton({
               ) : (
                 <ul className="divide-y">
                   {filtered.slice(0, 200).map((c) => {
-                    const initials = `${(c.firstName || "").slice(0, 1)}${(c.lastName || "").slice(0, 1)}`.toUpperCase();
-                    const fullName = `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.id;
-                    const line2 = [c.address || "", c.zip || ""].filter(Boolean).join(" • ");
+                    const initials =
+                      `${(c.firstName || "").slice(0, 1)}${(c.lastName || "").slice(0, 1)}`
+                        .toUpperCase() || "👤";
+                    const fullName =
+                      `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.id;
+                    const line2 = [c.address || "", c.zip || ""]
+                      .filter(Boolean)
+                      .join(" • ");
 
                     return (
-                      <li key={c.id} className="p-3 sm:p-4 hover:bg-brand-50/70">
+                      <li key={c.id} className={cx("p-3 sm:p-4", c.inactive ? "opacity-60" : "hover:bg-brand-50/70")}>
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] flex items-center justify-center text-sm font-semibold shrink-0">
-                              {initials || "?"}
+                            <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] grid place-items-center text-sm font-semibold shrink-0">
+                              {initials}
                             </div>
                             <div className="min-w-0">
                               <div className="font-medium truncate text-[15px] text-gray-900">
                                 {fullName}
+                                {c.inactive && (
+                                  <span className="ml-2 align-middle text-[11px] px-1.5 py-0.5 rounded-md bg-gray-200 text-gray-700">
+                                    Inactive
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-gray-600 truncate">{line2}</div>
                             </div>
@@ -475,19 +498,19 @@ export default function AddVisitButton({
                               HH {hh} • {usda ? "USDA" : "Non-USDA"}
                             </span>
                             <button
-                              className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white shadow-sm focus:outline-none focus-visible:ring-4 active:scale-[.98] transition"
+                              className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white shadow-sm focus:outline-none focus-visible:ring-4 active:scale-[.98] transition disabled:opacity-50"
                               style={{
                                 background:
                                   "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
                               }}
                               onClick={() => addVisit(c)}
-                              disabled={busy}
-                              title="Add this client"
+                              disabled={busy || c.inactive === true}
+                              title={c.inactive ? "Client is inactive" : "Add this client"}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") e.currentTarget.click();
                               }}
                             >
-                              <CheckIcon className="h-4 w-4" />
+                              <Check className="h-4 w-4" />
                               Add
                             </button>
                           </div>
@@ -509,7 +532,7 @@ export default function AddVisitButton({
             <div className="px-4 sm:px-6 py-3 border-t bg-white">
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="h-11 px-5 rounded-xl border hover:bg-gray-50 active:scale-[.98] transition"
+                  className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() => setOpen(false)}
                 >
                   Done
@@ -540,31 +563,5 @@ export default function AddVisitButton({
         </div>
       )}
     </>
-  );
-}
-
-/* =========================
-   Icons
-========================= */
-function PlusIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-function SearchIcon({ className = "h-5 w-5" }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M21 21l-4.3-4.3" />
-    </svg>
-  );
-}
-function CheckIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
   );
 }

@@ -156,11 +156,22 @@ const handleOrgChange = useCallback(
   }, [loading, orgId, location, locations, setActiveLocation]);
 
 
-  const desktopLocations = useMemo(() => {
-    if (!orgId) return [];
-    const base = locations;
-    return isAdmin ? [{ id: "", name: "All locations" }, ...base] : base;
-  }, [locations, orgId, isAdmin]);
+const desktopLocations = useMemo(() => {
+  if (!orgId) return [];
+  const scoped = (locations || []).filter((l) => l.orgId === orgId);
+  return isAdmin
+    ? [{ id: "", orgId, name: "All locations" }, ...scoped]
+    : scoped;
+}, [locations, orgId, isAdmin]);
+
+const mobileScopedLocations = useMemo(() => {
+  if (!orgId) return [];
+  const scoped = (locations || []).filter((l) => l.orgId === orgId);
+  return isAdmin
+    ? [{ id: "", orgId, name: "All locations" }, ...scoped]
+    : scoped;
+}, [locations, orgId, isAdmin]);
+
 
   // Tiny toast
   const [toast, setToast] = useState(null);
@@ -231,7 +242,7 @@ const handleOrgChange = useCallback(
           {/* Mobile Sign out */}
           <button
             onClick={onSignOut}
-            className="sm:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/10 text-white text-sm hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="sm:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
           >
             Sign out
           </button>
@@ -261,7 +272,7 @@ const handleOrgChange = useCallback(
               onClick={() => setContextOpen((v) => !v)}
               aria-expanded={contextOpen}
               aria-controls="context-panel"
-              className="inline-flex items-center gap-2 h-11 px-4 rounded-full bg-white/10 text-white hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              className="inline-flex items-center gap-2 h-11 px-4 rounded-full bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
               title="Organization & Location"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -273,7 +284,7 @@ const handleOrgChange = useCallback(
               </svg>
             </button>
 
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-white/10 select-none">
+<div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
               <span className="h-7 w-7 rounded-full bg-white/20 grid place-items-center text-[11px] font-semibold">
                 {initials}
               </span>
@@ -283,7 +294,7 @@ const handleOrgChange = useCallback(
 
             <button
               onClick={onSignOut}
-              className="h-10 px-4 rounded-full bg-white/10 text-white text-sm hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              className="h-10 px-4 rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
             >
               Sign out
             </button>
@@ -357,25 +368,31 @@ const handleOrgChange = useCallback(
             />
 
             <div className="h-2" />
+        
 
-            <MobileSelectPopover
-              id="m-loc"
-              label="Location"
-              valueLabel={
-                orgId
-                  ? ((isAdmin && locId === "") ? "All locations"
-                    : (locations.find(l => l.id === locId)?.name || (isAdmin ? "All locations" : "Select a location")))
-                  : "—"
-              }
-              disabled={loading || !orgId || locations.length === 0}
-              open={locOpen}
-              setOpen={setLocOpen}
-              items={orgId ? (isAdmin ? [{ id: "", name: "All locations" }, ...locations] : locations) : []}
-              activeId={locId}
-              onSelect={(l) => handleLocChange(l.id)}
-              getKey={(l) => l.id}
-              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
-            />
+              <MobileSelectPopover
+                id="m-loc"
+                label="Location"
+                valueLabel={
+                  !orgId
+                    ? "—"
+                    : (isAdmin && locId === "")
+                      ? "All locations"
+                      : (mobileScopedLocations.find(l => l.id === locId)?.name
+                        || (isAdmin ? "All locations" : "Select a location"))
+                }
+                disabled={loading || !orgId || mobileScopedLocations.length === 0}
+                open={locOpen}
+                setOpen={setLocOpen}
+                items={orgId ? mobileScopedLocations : []}
+                activeId={locId}
+                onSelect={(l) => handleLocChange(l.id)}
+                getKey={(l) => l.id}
+                getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
+              />
+
+            
+
 
             <p className="mt-3 text-[11px] text-gray-500">Changes are local (per device).</p>
           </div>
@@ -479,7 +496,6 @@ function DesktopContextStrip({
 }
 
 /* ========= Small UI primitives ========= */
-
 function TopLink({ to, end, className = "", children }) {
   return (
     <NavLink
@@ -487,8 +503,11 @@ function TopLink({ to, end, className = "", children }) {
       end={end}
       className={({ isActive }) =>
         [
-          "relative h-9 px-3 rounded-full text-[14px] tracking-tight font-medium inline-flex items-center justify-center transition",
-          isActive ? "bg-white/15 text-white" : "text-white/95 hover:bg-white/10",
+          "relative h-10 px-3.5 rounded-full text-[15px] tracking-tight font-semibold inline-flex items-center justify-center transition",
+          isActive
+            ? "bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm"
+
+            : "text-white hover:bg-white/15",
           className,
         ].join(" ")
       }
@@ -499,7 +518,7 @@ function TopLink({ to, end, className = "", children }) {
           <span
             aria-hidden
             className={[
-              "pointer-events-none absolute -bottom-1.5 left-3 right-3 h-[2px] rounded-full bg-white/90 origin-center",
+              "pointer-events-none absolute -bottom-2 left-3 right-3 h-[3px] rounded-full bg-white/90 origin-center",
               "transition-transform duration-300 ease-out",
               isActive ? "scale-x-100" : "scale-x-0",
             ].join(" ")}
@@ -509,6 +528,8 @@ function TopLink({ to, end, className = "", children }) {
     </NavLink>
   );
 }
+
+
 
 function QuickLink({ to, end, children }) {
   return (

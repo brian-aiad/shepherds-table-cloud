@@ -1,18 +1,34 @@
 // src/components/NewClientForm.jsx
-// Shepherds Table Cloud — New Client Intake (stable modal, Oct 2025)
-// - Stable layout: full-screen on mobile, centered card on desktop (no jitter).
-// - Sticky header/footer; scroll only the body region.
-// - Keeps your I18N, dedupe (phone + name+dob), Mapbox, counters, audit fields.
-// - Two-commit flow: create client, then first visit (transaction).
-// - Brand-forward styling, a11y, and mobile-first polish.
+// Shepherds Table Cloud — New Client Intake (bottom sheet on mobile, Oct 2025)
+// - Mobile: slide-up bottom sheet (mirrors LogVisitForm). Desktop: centered card.
+// - Language: single <select> dropdown (no toggle pills); persists in localStorage.
+// - Professional emoji-leading labels for quick scanning (a11y-safe).
+// - Stable header/body/footer; sticky header/footer; pretty-scroll body.
+// - Keeps your I18N, Mapbox autocomplete, dedupe + "Log Visit for Existing", USDA marker.
+// - Two-commit flow (create client, then first visit), atomic counters, serverTimestamp().
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   collection, doc, serverTimestamp, runTransaction, getDocs, setDoc,
-  query, where, limit as qLimit, increment
+  query, where, limit as qLimit, increment, orderBy
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
+import {
+  User,
+  IdCard,
+  Calendar,
+  Phone,
+  MapPin,
+  Tag,
+  Landmark,
+  Users,
+  Soup,
+  Languages,
+  ChevronDown
+
+} from "lucide-react";
+
 
 /* =========================
    Mapbox (env based)
@@ -28,6 +44,7 @@ const I18N = {
   en: {
     titleNew: "New Intake",
     titleEdit: "Edit Client",
+    language: "Language",
     firstName: "First name",
     lastName: "Last name",
     dob: "Date of birth",
@@ -58,10 +75,13 @@ const I18N = {
     searching: "Searching addresses…",
     noMatches: "No nearby matches",
     addrDisabled: "Address search disabled — missing Mapbox token",
+    org: "Org",
+    loc: "Loc",
   },
   es: {
     titleNew: "Nueva admisión",
     titleEdit: "Editar cliente",
+    language: "Idioma",
     firstName: "Nombre",
     lastName: "Apellidos",
     dob: "Fecha de nacimiento",
@@ -92,6 +112,8 @@ const I18N = {
     searching: "Buscando direcciones…",
     noMatches: "Sin resultados cercanos",
     addrDisabled: "Búsqueda deshabilitada: falta el token de Mapbox",
+    org: "Org",
+    loc: "Loc",
   },
 };
 const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
@@ -99,6 +121,19 @@ const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
 /* =========================
    Helpers
 ========================= */
+
+const ICONS = {
+  firstName: <User size={16} className="text-brand-600 inline mr-1" />,
+  lastName: <IdCard size={16} className="text-brand-600 inline mr-1" />,
+  dob: <Calendar size={16} className="text-brand-600 inline mr-1" />,
+  phone: <Phone size={16} className="text-brand-600 inline mr-1" />,
+  address: <MapPin size={16} className="text-brand-600 inline mr-1" />,
+  zip: <Tag size={16} className="text-brand-600 inline mr-1" />,
+  county: <Landmark size={16} className="text-brand-600 inline mr-1" />,
+  hh: <Users size={16} className="text-brand-600 inline mr-1" />,
+  usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
+};
+
 const onlyDigits = (s = "") => s.replace(/\D/g, "");
 const normalizePhone = onlyDigits;
 const tcase = (s = "") =>
@@ -166,6 +201,7 @@ function hashDJB2(str = "") {
   return `h${(h >>> 0).toString(16)}`;
 }
 
+/* Model */
 const initialForm = {
   firstName: "",
   lastName: "",
@@ -192,7 +228,7 @@ export default function NewClientForm({
   const editing = !!client?.id;
   const authCtx = useAuth() || {};
 
-  // Device-scoped fallback
+  // Device-scoped fallback (keep your behavior)
   const lsScope = (() => {
     try { return JSON.parse(localStorage.getItem("stc_scope") || "{}"); } catch { return {}; }
   })();
@@ -221,6 +257,7 @@ export default function NewClientForm({
   const [msg, setMsg] = useState("");
   const [dup, setDup] = useState(null);
 
+  // Language: dropdown (persisted)
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem("newClientForm.lang");
     if (saved === "en" || saved === "es") return saved;
@@ -228,8 +265,7 @@ export default function NewClientForm({
   });
   useEffect(() => { localStorage.setItem("newClientForm.lang", lang); }, [lang]);
 
-  // focus + backdrop scroll lock
-  const containerRef = useRef(null);
+  // Focus + backdrop scroll lock
   const firstRef = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -262,7 +298,6 @@ export default function NewClientForm({
     setDup(null);
   }, [open, editing, client]);
 
-
   /* =========================
      Address autocomplete
   ========================== */
@@ -273,7 +308,6 @@ export default function NewClientForm({
   const [showDropdown, setShowDropdown] = useState(false);
   const [addrLocked, setAddrLocked] = useState(false);
   const [lastPicked, setLastPicked] = useState("");
-
   const addrBoxRef = useRef(null);
   const dropdownRef = useRef(null);
   useEffect(() => setAddrQ(form.address), [form.address]);
@@ -352,36 +386,21 @@ export default function NewClientForm({
   }
 
   async function preflightDedupe({ phoneDigits, nameDobHash }) {
-    // Build filters that match what the rules allow
     const baseFilters = [where("orgId", "==", orgId)];
-    // Volunteers must be location-scoped
-    if (!authCtx?.isAdmin && locationId) {
-      baseFilters.push(where("locationId", "==", locationId));
-    }
+    if (!authCtx?.isAdmin && locationId) baseFilters.push(where("locationId", "==", locationId));
 
     if (phoneDigits) {
       const qs = await getDocs(
-        query(
-          collection(db, "clients"),
-          ...baseFilters,
-          where("phoneDigits", "==", phoneDigits),
-          qLimit(1)
-        )
+        query(collection(db, "clients"), ...baseFilters, where("phoneDigits", "==", phoneDigits), qLimit(1))
       );
       if (!qs.empty) {
         const d = qs.docs[0];
-       return { id: d.id, ...(d.data() || {}) };
+        return { id: d.id, ...(d.data() || {}) };
       }
-   }
-
+    }
     if (nameDobHash) {
       const qs2 = await getDocs(
-        query(
-          collection(db, "clients"),
-          ...baseFilters,
-          where("nameDobHash", "==", nameDobHash),
-          qLimit(1)
-        )
+        query(collection(db, "clients"), ...baseFilters, where("nameDobHash", "==", nameDobHash), qLimit(1))
       );
       if (!qs2.empty) {
         const d = qs2.docs[0];
@@ -394,37 +413,13 @@ export default function NewClientForm({
   /* =========================
      Submit
   ========================== */
-  // NEW: shared saver with force flag
-async function saveClient({ force = false } = {}) {
-  if (busy) return;
-
-  const v = validate();
-  if (v) { setMsg(v); return; }
-
-  setBusy(true);
-  setMsg("");
-  if (!force) setDup(null); // if forcing, dup UI may still be visible until we clear it below
-
-  const phoneDigits = normalizePhone(form.phone);
-
-  try {
+  const buildBasePayload = useCallback(() => {
     const firstName = tcase(form.firstName.trim());
     const lastName  = tcase(form.lastName.trim());
     const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
     const nameDobHash   = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
-
-    // Only run preflight checks when creating AND not forcing
-    if (!editing && !force) {
-      const existing = await preflightDedupe({ phoneDigits, nameDobHash });
-      if (existing) {
-        setDup(existing);
-        setMsg(t(lang, "dupFoundMsg"));
-        setBusy(false);
-        return;
-      }
-    }
-
-    const basePayload = {
+    const phoneDigits = normalizePhone(form.phone);
+    return {
       firstName,
       lastName,
       dob: form.dob.trim(),
@@ -437,137 +432,157 @@ async function saveClient({ force = false } = {}) {
       firstTimeThisMonth: typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,
       fullNameLower,
       nameDobHash,
-      updatedAt: serverTimestamp(),
-      updatedByUserId: auth.currentUser?.uid || null,
     };
+  }, [form]);
 
-    let createdId = client?.id;
+  async function saveClient({ force = false } = {}) {
+    if (busy) return;
+    const v = validate();
+    if (v) { setMsg(v); return; }
 
-    if (!editing) {
-      // 1) CREATE CLIENT (separate commit)
-      const clientRef = doc(collection(db, "clients"));
-      await setDoc(clientRef, {
-        ...basePayload,
-        orgId,
-        locationId,
-        createdAt: serverTimestamp(),
-        createdByUserId: auth.currentUser?.uid || null,
-        inactive: false,
-        mergedIntoId: null,
-        visitCountLifetime: 0,
-        visitCountByMonth: {},
-        lastVisitAt: null,
-        lastVisitMonthKey: null,
-      });
+    setBusy(true);
+    setMsg("");
+    if (!force) setDup(null);
 
-      // Optional USDA marker — best effort; rules enforce uniqueness
-      if (form.firstTimeThisMonth === true) {
-        const mk = monthKey(new Date());
-        const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
-        try {
-          await setDoc(markerRef, {
-            clientId: clientRef.id,
-            orgId,
-            locationId,
-            monthKey: mk,
-            createdAt: serverTimestamp(),
-            createdByUserId: auth.currentUser?.uid || null,
-          });
-        } catch { /* ignore collisions */ }
+    try {
+      const base = buildBasePayload();
+      const { firstName, lastName, nameDobHash, phoneDigits } = base;
+      let createdId = client?.id;
+
+      if (!editing && !force) {
+        const existing = await preflightDedupe({ phoneDigits, nameDobHash });
+        if (existing) {
+          setDup(existing);
+          setMsg(t(lang, "dupFoundMsg"));
+          setBusy(false);
+          return;
+        }
       }
 
-      // 2) FIRST VISIT + COUNTERS (transaction)
-      await runTransaction(db, async (tx) => {
-        const now = new Date();
-        const mk = monthKey(now);
-        const dk = localDateKey(now);
-        const wk = isoWeekKey(now);
-        const weekday = now.getDay();
-
-        const visitRef = doc(collection(db, "visits"));
-        tx.set(visitRef, {
-          clientId: clientRef.id,
-          clientFirstName: basePayload.firstName,
-          clientLastName: basePayload.lastName,
+      if (!editing) {
+        // 1) CREATE CLIENT (separate commit)
+        const clientRef = doc(collection(db, "clients"));
+        await setDoc(clientRef, {
+          ...base,
           orgId,
           locationId,
-          householdSize: Number(form.householdSize || 1),
-          visitAt: serverTimestamp(),
           createdAt: serverTimestamp(),
-          dateKey: dk,
-          monthKey: mk,
-          weekKey: wk,
-          weekday,
-          usdaFirstTimeThisMonth: form.firstTimeThisMonth === true,
-          createdBy: auth.currentUser?.uid || null, // legacy
           createdByUserId: auth.currentUser?.uid || null,
-          editedAt: null,
-          editedByUserId: null,
-          addedByReports: false,
+          updatedAt: serverTimestamp(),
+          updatedByUserId: auth.currentUser?.uid || null,
+          inactive: false,
+          mergedIntoId: null,
+          visitCountLifetime: 0,
+          visitCountByMonth: {},
+          lastVisitAt: null,
+          lastVisitMonthKey: null,
         });
 
-        const clientRef2 = doc(db, "clients", clientRef.id);
-        tx.set(
-          clientRef2,
-          {
-            visitCountLifetime: increment(1),
-            [`visitCountByMonth.${mk}`]: increment(1),
-            lastVisitAt: serverTimestamp(),
-            lastVisitMonthKey: mk,
-            updatedAt: serverTimestamp(),
-            updatedByUserId: auth.currentUser?.uid || null,
-          },
-          { merge: true }
-        );
-      });
+        // Optional USDA marker — best effort
+        if (form.firstTimeThisMonth === true) {
+          const mk = monthKey(new Date());
+          const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
+          try {
+            await setDoc(markerRef, {
+              clientId: clientRef.id,
+              orgId,
+              locationId,
+              monthKey: mk,
+              createdAt: serverTimestamp(),
+              createdByUserId: auth.currentUser?.uid || null,
+            });
+          } catch { /* ignore collisions */ }
+        }
 
-      createdId = clientRef.id;
-    } else {
-      // EDITING: preserve existing org/location
-      await runTransaction(db, async (tx) => {
-        if (!client?.id) throw new Error("Missing client id for edit.");
-        const clientRef = doc(db, "clients", client.id);
-        tx.set(
-          clientRef,
-          { ...basePayload },
-          { merge: true }
-        );
+        // 2) FIRST VISIT + COUNTERS (transaction)
+        await runTransaction(db, async (tx) => {
+          const now = new Date();
+          const mk = monthKey(now);
+          const dk = localDateKey(now);
+          const wk = isoWeekKey(now);
+          const weekday = now.getDay();
+
+          const visitRef = doc(collection(db, "visits"));
+          tx.set(visitRef, {
+            clientId: clientRef.id,
+            clientFirstName: firstName,
+            clientLastName: lastName,
+            orgId,
+            locationId,
+            householdSize: Number(form.householdSize || 1),
+            visitAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+            dateKey: dk,
+            monthKey: mk,
+            weekKey: wk,
+            weekday,
+            usdaFirstTimeThisMonth: form.firstTimeThisMonth === true,
+            createdByUserId: auth.currentUser?.uid || null,
+            editedAt: null,
+            editedByUserId: null,
+            addedByReports: false,
+          });
+
+          const clientRef2 = doc(db, "clients", clientRef.id);
+          tx.set(
+            clientRef2,
+            {
+              visitCountLifetime: increment(1),
+              [`visitCountByMonth.${mk}`]: increment(1),
+              lastVisitAt: serverTimestamp(),
+              lastVisitMonthKey: mk,
+              updatedAt: serverTimestamp(),
+              updatedByUserId: auth.currentUser?.uid || null,
+            },
+            { merge: true }
+          );
+        });
+
         createdId = clientRef.id;
-      });
+      } else {
+        // EDITING: preserve tenant scope
+        await runTransaction(db, async (tx) => {
+          if (!client?.id) throw new Error("Missing client id for edit.");
+          const clientRef = doc(db, "clients", client.id);
+          tx.set(
+            clientRef,
+            {
+              ...base,
+              updatedAt: serverTimestamp(),
+              updatedByUserId: auth.currentUser?.uid || null,
+            },
+            { merge: true }
+          );
+          createdId = clientRef.id;
+        });
+      }
+
+      const saved = { id: createdId, ...(editing ? { ...client } : { orgId, locationId }), ...base };
+      onSaved?.(saved);
+      setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
+      setDup(null);
+
+      if (!editing) {
+        setForm(initialForm);
+        setAddrLocked(false);
+        setLastPicked("");
+        firstRef.current?.focus();
+      }
+    } catch (err) {
+      console.error(err);
+      setMsg(t(lang, "errSave"));
+    } finally {
+      setBusy(false);
     }
-
-    const saved = { id: createdId, ...(editing ? { ...client } : { orgId, locationId }), ...basePayload };
-    onSaved?.(saved);
-    setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
-
-    // Clear dup banner if we came from it
-    setDup(null);
-
-    if (!editing) {
-      setForm(initialForm);
-      setAddrLocked(false);
-      setLastPicked("");
-      firstRef.current?.focus();
-    }
-  } catch (err) {
-    console.error(err);
-    setMsg(t(lang, "errSave"));
-  } finally {
-    setBusy(false);
   }
-}
 
-// form submit = normal path (runs dedupe)
-async function onSubmit(e) {
-  e.preventDefault();
-  await saveClient({ force: false });
-}
-
-// NEW: called by "Create new anyway" to bypass dedupe
-async function createAnyway() {
-  await saveClient({ force: true });
-}
-
+  async function onSubmit(e) {
+    e.preventDefault();
+    await saveClient({ force: false });
+  }
+  async function createAnyway() {
+    await saveClient({ force: true });
+  }
 
   // Log visit for duplicate
   async function logVisitForDuplicate() {
@@ -605,7 +620,6 @@ async function createAnyway() {
           createdAt: serverTimestamp(),
           monthKey: mk, dateKey: dk, weekKey: wk, weekday,
           usdaFirstTimeThisMonth: wantsUsdaFirst,
-          createdBy: auth.currentUser?.uid || null,
           createdByUserId: auth.currentUser?.uid || null,
           editedAt: null, editedByUserId: null,
           addedByReports: false,
@@ -640,9 +654,21 @@ async function createAnyway() {
       setBusy(false);
     }
   }
+  // Initials avatar (must live before any early returns so hooks order is stable)
+  const initials = useMemo(() => {
+    const name = `${form.firstName || ""} ${form.lastName || ""}`.trim();
+    if (!name) return "👤";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase())
+      .join("");
+  }, [form.firstName, form.lastName]);
 
   if (!open) return null;
 
+  // Small helper to show bilingual hint only if Spanish chosen
   const showAssist = lang === "es";
   const dual = (primary, hint) => (
     <span className="flex flex-col">
@@ -651,21 +677,9 @@ async function createAnyway() {
     </span>
   );
 
-  const langBtnCls = (active) =>
-  `h-9 px-3 rounded-xl text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
-    active
-      ? "bg-white text-[color:var(--brand-700)] shadow-sm"               // ACTIVE
-      : "bg-transparent text-white/90 border border-white/40 hover:bg-white/10" // INACTIVE
-  }`;
-
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-[1000] flex items-stretch md:items-center justify-center"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-[1000]">
       {/* Backdrop */}
       <button
         aria-label="Close"
@@ -673,73 +687,106 @@ async function createAnyway() {
         onClick={onClose}
       />
 
-      {/* Modal shell */}
-      <div
-        className="
-          relative w-full h-full md:h-auto md:w-[min(820px,94vw)] max-h-[96vh]
-          bg-white md:rounded-3xl shadow-2xl ring-1 ring-brand-200/70
-          flex flex-col overflow-hidden
-        "
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+      {/* Modal shell — bottom sheet on mobile; centered card on desktop */}
+  
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-client-title"
+          className="
+            absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(820px,94vw)]
+            bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+            bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
+            overflow-hidden flex flex-col
+          "
+          // ↓ keep a small gap at the very top on mobile, and account for notches
+          style={{
+            maxHeight: "calc(100vh - 28px)",
+            marginTop: "env(safe-area-inset-top, 8px)",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+
         {/* Header (sticky) */}
         <div className="sticky top-0 z-10">
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
-            <div className="px-4 md:px-6 py-3 md:py-4">
-              {/* Top row */}
-              <div className="flex items-start md:items-center justify-between gap-3 md:gap-6">
-                {/* Title + language pills */}
-                <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
-                  <h2 className="text-base md:text-xl font-semibold shrink-0">
-                    {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
-                  </h2>
+           <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
+            <div className="flex items-center justify-between gap-3 sm:gap-6">
+                {/* Title + avatar */}
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                  <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
+                    {initials === "👤" ? (
+                      <User className="h-5 w-5 text-white/95" aria-hidden="true" />
+                    ) : (
+                      <span>{initials}</span>
+                    )}
+                  </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setLang("en")}
-                      className={langBtnCls(lang === "en")}
-                      aria-pressed={lang === "en"}
-                    >
-                      English
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLang("es")}
-                      className={langBtnCls(lang === "es")}
-                      aria-pressed={lang === "es"}
-                    >
-                      Español
-                    </button>
+                  <div className="min-w-0">
+                    <h2 id="new-client-title" className="text-base sm:text-xl font-semibold truncate">
+                      {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
+                    </h2>
+                    <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight">
+                      <div className="truncate">
+                        {t(lang, "org")}: <b>{orgId ?? "—"}</b>
+                      </div>
+                      <div className="truncate">
+                        {t(lang, "loc")}: <b>{locationId ?? "—"}</b>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
-                {/* Org / Loc (desktop) */}
-                <div className="hidden md:flex flex-col text-[12px] leading-4 text-white/90">
-                  <span>Org: <b>{orgId ?? "—"}</b></span>
-                  <span>Loc: <b>{locationId ?? "—"}</b></span>
-                </div>
 
-                {/* Close */}
-                <button
-                  onClick={onClose}
-                  className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
-                  aria-label="Close"
-                  title="Close"
-                >
-                  ✕
-                </button>
-              </div>
+             {/* Language dropdown */}
+<div className="flex items-center gap-2 shrink-0">
+  <label className="sr-only" htmlFor="lang-select">{t(lang, "language")}</label>
 
-              {/* Org / Loc (mobile) */}
-              <div className="mt-2 md:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
-                <span>Org: <b>{orgId ?? "—"}</b></span>
-                <span>Loc: <b>{locationId ?? "—"}</b></span>
+  <div className="relative shrink-0">
+    {/* Left icon */}
+    <Languages
+      className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
+      aria-hidden="true"
+    />
+    {/* Right chevron */}
+    <ChevronDown
+      className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
+      aria-hidden="true"
+    />
+    {/* Actual control */}
+    <select
+      id="lang-select"
+      value={lang}
+      onChange={(e) => setLang(e.target.value)}
+      className="h-8 sm:h-9 min-w-[104px] appearance-none pl-8 pr-6 rounded-lg
+             bg-white/95 border border-white/60 shadow-sm
+             text-[color:var(--brand-700)] text-xs sm:text-sm font-medium leading-none
+             focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+      aria-label={t(lang, "language")}
+    >
+      <option value="en">English</option>
+      <option value="es">Español</option>
+    </select>
+  </div>
+
+  {/* Close */}
+  <button
+    onClick={onClose}
+    className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+    aria-label="Close"
+    title="Close"
+  >
+    ✕
+  </button>
+</div>
+
+
+
               </div>
             </div>
           </div>
         </div>
-
 
         {/* Body (scroll area) */}
         <form
@@ -747,15 +794,20 @@ async function createAnyway() {
           onSubmit={onSubmit}
           onKeyDown={handleFormKeyDown}
           noValidate
-          className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
+          style={{
+            // header + consent + footer space; still scrolls smoothly
+            maxHeight: "calc(100vh - 220px)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
+
         >
 
           {/* Names */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-700">
-                {dual(t(lang, "firstName"), "First name")}
+                {dual(<>{ICONS.firstName}{t(lang, "firstName")}</>, "First name")}
               </span>
               <input
                 ref={firstRef}
@@ -772,7 +824,7 @@ async function createAnyway() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-700">
-                {dual(t(lang, "lastName"), "Last name")}
+                {dual(<>{ICONS.lastName}{t(lang, "lastName")}</>, "Last name")}
               </span>
               <input
                 className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
@@ -789,10 +841,10 @@ async function createAnyway() {
           </div>
 
           {/* DOB + Phone */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-700">
-                {dual(t(lang, "dob"), "Date of birth")}
+                {dual(<>{ICONS.dob}{t(lang, "dob")}</>, "Date of birth")}
               </span>
               <input
                 className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
@@ -807,7 +859,7 @@ async function createAnyway() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-gray-700">
-                {dual(t(lang, "phone"), "Phone")}
+                {dual(<>{ICONS.phone}{t(lang, "phone")}</>, "Phone")}
               </span>
               <input
                 className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
@@ -824,109 +876,101 @@ async function createAnyway() {
 
           {/* Address + ZIP + County */}
           <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-gray-700">
-            {dual(t(lang, "address"), "Address")}
-          </span>
+            <span className="text-xs font-medium text-gray-700">
+              {dual(<>{ICONS.address}{t(lang, "address")}</>, "Address")}
+            </span>
 
-          {/* Address input */}
-          <input
-            ref={addrBoxRef}
-            disabled={!addrEnabled}
-            className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400 disabled:bg-gray-50 disabled:text-gray-500"
-            placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
-            value={form.address}
-            onChange={onAddressInputChange}
-            enterKeyHint="next"
-            autoComplete="street-address"
-            onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
-            aria-autocomplete="list"
-            aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
-            aria-controls="addr-nearby-panel"
-          />
+            <input
+              ref={addrBoxRef}
+              disabled={!addrEnabled}
+              className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400 disabled:bg-gray-50 disabled:text-gray-500"
+              placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
+              value={form.address}
+              onChange={onAddressInputChange}
+              enterKeyHint="next"
+              autoComplete="street-address"
+              onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
+              aria-autocomplete="list"
+              aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
+              aria-controls="addr-nearby-panel"
+            />
 
-          {/* Inline nearby panel (NOT absolute) — sits right under input and pushes layout down */}
-          {addrEnabled && showDropdown && (
-            <div
-              id="addr-nearby-panel"
-              ref={dropdownRef}
-              className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
-              role="listbox"
-              aria-label="Nearby results"
-            >
-              <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
-                {addrLoading ? t(lang, "searching") : "Nearby results"}
+            {addrEnabled && showDropdown && (
+              <div
+                id="addr-nearby-panel"
+                ref={dropdownRef}
+                className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
+                role="listbox"
+                aria-label="Nearby results"
+              >
+                <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
+                  {addrLoading ? t(lang, "searching") : "Nearby results"}
+                </div>
+                <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
+                  {!addrLoading && suggestions.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
+                  )}
+                  {suggestions.map((sug) => (
+                    <li key={sug.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                        onClick={() => onPickSuggestion(sug)}
+                        title={sug.place_name}
+                      >
+                        <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
+                        <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
+                  <button
+                    type="button"
+                    className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowDropdown(false)}
+                  >
+                    Hide
+                  </button>
+                </div>
               </div>
+            )}
 
-              {/* Capped height + scroll for mobile */}
-              <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
-                {!addrLoading && suggestions.length === 0 && (
-                  <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
-                )}
-
-                {suggestions.map((sug) => (
-                  <li key={sug.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
-                      onClick={() => onPickSuggestion(sug)}
-                      title={sug.place_name}
-                    >
-                      <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
-                      <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-
-              {/* Mobile-friendly close */}
-              <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
-                <button
-                  type="button"
-                  className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
-                  onClick={() => setShowDropdown(false)}
-                >
-                  Hide
-                </button>
-              </div>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <label className="flex-1">
+                <span className="sr-only">{t(lang, "zip")}</span>
+                <input
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  name="zip"
+                  placeholder={` ${lang === "es" ? "Código postal" : "ZIP code"}`}
+                  value={form.zip}
+                  onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                  inputMode="numeric"
+                  pattern="\d{5}"
+                  autoComplete="postal-code"
+                  enterKeyHint="next"
+                />
+              </label>
+              <label className="flex-1">
+                <span className="sr-only">{t(lang, "county")}</span>
+                <input
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  name="county"
+                  placeholder={` ${lang === "es" ? "Condado" : "County"}`}
+                  value={form.county}
+                  onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
+                  enterKeyHint="next"
+                />
+              </label>
             </div>
-          )}
-
-          {/* ZIP + County row (always clickable now because the panel is in-flow) */}
-          <div className="grid grid-cols-2 gap-3 mt-2">
-            <label className="flex-1">
-              <span className="sr-only">{t(lang, "zip")}</span>
-              <input
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                name="zip"
-                placeholder={lang === "es" ? "Código postal" : "ZIP code"}
-                value={form.zip}
-                onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
-                inputMode="numeric"
-                pattern="\d{5}"
-                autoComplete="postal-code"
-                enterKeyHint="next"
-              />
-            </label>
-            <label className="flex-1">
-              <span className="sr-only">{t(lang, "county")}</span>
-              <input
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                name="county"
-                placeholder={lang === "es" ? "Condado" : "County"}
-                value={form.county}
-                onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
-                enterKeyHint="next"
-              />
-            </label>
           </div>
-        </div>
 
           {/* Household + USDA */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="flex flex-col gap-2">
               <span className="text-xs font-medium text-gray-700">
-                {dual(t(lang, "hhSize"), "Household size")}
+                {dual(<>{ICONS.hh}{t(lang, "hhSize")}</>, "Household size")}
               </span>
               <div className="flex items-center gap-3">
                 <button
@@ -940,7 +984,6 @@ async function createAnyway() {
                 <div className="h-12 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
                   <span className="text-lg font-semibold tabular-nums">{form.householdSize}</span>
                 </div>
-
                 <button
                   type="button"
                   aria-label="Increase household size"
@@ -955,16 +998,15 @@ async function createAnyway() {
             {!editing && (
               <fieldset className="flex flex-col gap-2">
                 <legend className="text-xs font-medium text-gray-700">
-                  {dual(t(lang, "usdaThisMonth"), "First time receiving USDA this month")}
+                  {dual(<>{ICONS.usda}{t(lang, "usdaThisMonth")}</>, "First time receiving USDA this month")}
                 </legend>
                 <div className="grid grid-cols-2 gap-2">
                   <label
-                   className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
+                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
                       form.firstTimeThisMonth === true
                         ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                         : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
                     }`}
-
                   >
                     <input
                       type="radio"
@@ -981,7 +1023,6 @@ async function createAnyway() {
                         ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                         : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
                     }`}
-
                   >
                     <input
                       type="radio"
@@ -1025,23 +1066,30 @@ async function createAnyway() {
                 >
                   {t(lang, "dupUseAnyways")}
                 </button>
-
               </div>
             </div>
           )}
         </form>
+       {/* Consent notice */}
+          <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
+            Client consents to the collection and secure storage of their information for
+            food program eligibility and reporting. Data is not shared outside the
+            organization except as required by law.
+          </div>
+
+
+
 
         {/* Footer (sticky) */}
         <div
-          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 md:px-6 pt-3 pb-5 md:pb-6"
+          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
         >
-
-          <div className="flex flex-col-reverse md:flex-row md:items-center md:justify-end gap-2">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="h-12 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+              className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             >
               {t(lang, "cancel")}
             </button>
@@ -1049,7 +1097,7 @@ async function createAnyway() {
               type="submit"
               form="new-client-form"
               disabled={busy}
-              className="h-12 w-full md:w-auto px-6 rounded-2xl bg-[color:var(--brand-700)] text-white text-[17px] font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50"
+              className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50"
             >
               {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
             </button>

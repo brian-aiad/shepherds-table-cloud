@@ -84,11 +84,8 @@ const TOTALS = {
  * If the text sits a hair off, nudge x/y/width slightly.
  */
 const FOOD_BANK = {
-  defaultText: "We Help (2046)",
-  // Horizontal position: the blue fill box starts ~under the label "Food Bank Name:"
+  defaultText: "—",
   x: 135.5,
-  // Position relative to the totals row baseline (lower on the page → subtract)
-  // Increase yOffset to move the text further *below* the totals line.
   yOffsetFromTotals: 33,
   width: 440,
   height: 16,
@@ -96,21 +93,29 @@ const FOOD_BANK = {
 
 /** --- Date stamp (top-right of every page) --- */
 const DATE_STAMP = {
-  enabled: true,      // leave on; text only draws if a value is provided
-  margin: 28,         // ~0.4in from top/right edges
+  enabled: true,
+  margin: 28, // ~0.4in from top/right edges
   fontSize: 11,
-  color: rgb(0.25, 0.25, 0.25), // subtle gray
-  prefix: "",         // e.g., "EFAP Date: " if you want
+  color: rgb(0.25, 0.25, 0.25),
+  prefix: "", // e.g., "EFAP Date: "
 };
 
 /** --- Page counter (top-left of every page) --- */
 const PAGE_STAMP = {
   enabled: true,
-  margin: 28,                // ~0.4in from top/left edge
+  margin: 28, // ~0.4in from top/left edge
   fontSize: 11,
   color: rgb(0.25, 0.25, 0.25),
-  prefix: "EFAP ",          // yields "EFAP 1 of 2"
-  // If you ever want just "1 / 2", set prefix to "".
+  prefix: "EFAP ", // yields "EFAP 1 of 2"
+};
+
+/** --- Footer credit (bottom-center of every page) --- */
+const FOOTER_CREDIT = {
+  enabled: true,
+  text: "This document was helped built by Shepherds Table Cloud",
+  fontSize: 9,
+  color: rgb(0.35, 0.35, 0.35),
+  bottomMargin: 12, // distance from page bottom
 };
 
 /** Render order (left → right) */
@@ -123,11 +128,17 @@ const COL_ORDER = ["name", "address", "zip", "householdSize", "firstTime"];
 export async function buildEfapDailyPdf(rows, opts = {}) {
   // rows come from Reports.jsx shaped like:
   // { name, address, zip, householdSize: number, firstTime: boolean | "" }
-  const foodBankName = opts.foodBankName ?? FOOD_BANK.defaultText;
+
+  // Prefer branded display name if provided in orgSettings
+  const foodBankName =
+    opts.orgSettings?.brandText ??
+    opts.orgName ??
+    opts.org?.name ??
+    opts.foodBankName ??
+    FOOD_BANK.defaultText;
 
   // Optional date label shown top-right on each page.
   // You can pass any of: opts.dateStamp, opts.dateText, opts.dateKey, or opts.date.
-  // Example: "2025-10-08" (hyphens recommended). We normalize spaces/slashes/dots.
   const dateRaw =
     opts.dateStamp ?? opts.dateText ?? opts.dateKey ?? opts.date ?? "";
   const dateLabel =
@@ -173,6 +184,15 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
     if (checked) cb.check();
     else cb.uncheck();
     cb.enableReadOnly();
+  };
+
+  const drawCenteredFooter = (page, text, fontSize, color, bottomMargin) => {
+    if (!text) return;
+    const { width } = page.getSize();
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+    const x = (width - textWidth) / 2;
+    const y = bottomMargin;
+    page.drawText(text, { x, y, size: fontSize, font, color });
   };
 
   // Build pages
@@ -284,7 +304,6 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
         const yesX = COL_X[key] + YES_OFFSET_X;
         const noX = COL_X[key] + NO_OFFSET_X;
 
-        // Reports may pass true / false / "" (empty if unknown)
         const val = r.firstTime;
         const isYes = val === true || String(val).toLowerCase() === "yes";
         const isNo = val === false || String(val).toLowerCase() === "no";
@@ -295,7 +314,6 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
     });
 
     // ===== Page totals (bottom row) =====
-    // Sum only rows that appear on this page.
     const totals = slice.reduce(
       (acc, r) => {
         const n = Number(r.householdSize || 0);
@@ -310,9 +328,6 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
       { hh: 0, yes: 0, no: 0 }
     );
 
-    // Coordinates for the totals boxes.
-    // We place them on the "row after #20" with a small nudge so they land
-    // inside the three summary boxes printed at the very bottom of the form.
     const totalsYBase = baseYForRow(ROWS_PER_PAGE) + TOTALS.yNudge;
 
     // Total Household
@@ -349,39 +364,50 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
     );
 
     // ===== Food Bank Name (line under totals) =====
-    // This writes into the long rectangle next to the label "Food Bank Name:"
     addTextField(
       page,
       `food_bank_name_p${p + 1}`,
-      foodBankName,
+      foodBankName || FOOD_BANK.defaultText,
       FOOD_BANK.x,
-      totalsYBase - FOOD_BANK.yOffsetFromTotals, // a bit below the totals row
+      totalsYBase - FOOD_BANK.yOffsetFromTotals,
       FOOD_BANK.width,
       FOOD_BANK.height
     );
+
+    // ===== Footer credit =====
+    if (FOOTER_CREDIT.enabled) {
+      drawCenteredFooter(
+        page,
+        FOOTER_CREDIT.text,
+        FOOTER_CREDIT.fontSize,
+        FOOTER_CREDIT.color,
+        FOOTER_CREDIT.bottomMargin
+      );
+    }
   }
 
   return await pdfDoc.save();
 }
 
 /*
+USAGE NOTES
+-----------
+- From Reports.jsx, pass the active org name (brandText preferred) into opts:
+    const { org, orgSettings } = useAuth() || {};
+    const pdfBytes = await buildEfapDailyPdf(rows, {
+      dateStamp: dayKey,                    // e.g. "2025-10-27"
+      orgSettings,                          // uses .brandText if present
+      orgName: org?.name,                   // fallback if brandText missing
+    });
+
+- If you also set a filename:
+    const site = (orgSettings?.brandText || org?.name || "ShepherdsTable").replace(/\s+/g, "_");
+    const filename = efapSuggestedFileName(dayKey, site);
+
 QUICK TWEAKS
-- If the three bottom numbers are a hair too high/low inside their boxes,
-  adjust TOTALS.yNudge by +/- 1–4.
-- If they’re a smidge too far left/right, tweak YES_OFFSET_X / NO_OFFSET_X or
-  COL_X.householdSize.
-- Spacing and column widths: ROW_HEIGHT and COL_WIDTH.* as usual.
-- If the Food Bank name isn’t perfectly centered in its box, nudge:
-  FOOD_BANK.x, FOOD_BANK.yOffsetFromTotals, FOOD_BANK.width, FOOD_BANK.height.
-
-DATE STAMP
-- Pass a date string when you build the PDF:
-    await buildbuildEfapDailylyPdf(rows, { dateStamp: "2025-10-08" });
-  (You can also pass dateKey/date/dateText; we normalize separators.)
-- To change look/placement, tweak DATE_STAMP.* above.
-
-PAGE STAMP
-- The page counter prints top-left like "EFAP 1 of 3".
-- Customize prefix via PAGE_STAMP.prefix (set "" for bare "1 of N").
-- Disable by setting PAGE_STAMP.enabled = false.
+------------
+- Bottom numbers a bit high/low? tweak TOTALS.yNudge by +/-1–4.
+- YES/NO left/right: change YES_OFFSET_X / NO_OFFSET_X or COL_X.householdSize.
+- Food Bank name placement: adjust FOOD_BANK.x / yOffsetFromTotals / width / height.
+- Footer position: FOOTER_CREDIT.bottomMargin.
 */

@@ -1,14 +1,12 @@
 // src/components/LogVisitForm.jsx
-// Ship-safe LogVisitForm (Oct 2025 hardening + polished header/body/footer)
-// - Single Firestore transaction for: visit + client counters (+ optional USDA marker)
-// - Create-once usda_first marker (only if not exists) using deterministic id: `${orgId}_${clientId}_${monthKey}`
-// - Adds weekKey (YYYY-Www) and weekday (0–6) to visits
-// - Visits store clientFirstName/clientLastName for resilient reporting
-// - Preserves client's original orgId/locationId (no silent reassignment)
-// - Blocks logging if client is inactive
-// - Uses serverTimestamp() everywhere; atomic increment(1)
-// - No writes of user context (avoids shared-login scope flips)
-// - Household size control: steppers + numeric input with clamping
+// Shepherds Table Cloud — Log Visit (Oct 2025 UI parity)
+// - Bottom sheet on mobile / centered card on desktop
+// - Sticky gradient header/footer, initials avatar, icons on labels, pretty-scroll
+// - Single Firestore transaction: visit + client counters (+ optional USDA marker)
+// - Deterministic USDA monthly marker id: `${orgId}_${clientId}_${monthKey}`
+// - weekKey (YYYY-Www) + weekday (0–6); resilient client name denorm
+// - Hard guard: blocks if client is inactive; preserves client's original org/location
+// - Household size: steppers + numeric input with clamping; Enter = next field
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
+import { Users, Soup, X } from "lucide-react";
 
 /* ---------- date helpers ---------- */
 const monthKeyFor = (d = new Date()) =>
@@ -42,12 +41,34 @@ function isoWeekKey(d = new Date()) {
 const MIN_HH = 1;
 const MAX_HH = 20;
 
+// Enter moves to next input (mirrors NewClientForm/EditForm)
+function handleFormKeyDown(e) {
+  if (e.key !== "Enter") return;
+  const el = e.target;
+  const tag = el.tagName.toLowerCase();
+  const type = (el.getAttribute("type") || "").toLowerCase();
+  const safe =
+    tag === "textarea" || tag === "select" || tag === "button" || type === "submit" || type === "button";
+  if (safe) return;
+  e.preventDefault();
+  const form = e.currentTarget;
+  const focusables = Array.from(form.querySelectorAll("input, select, textarea"))
+    .filter((n) => !n.disabled && n.type !== "hidden" && n.tabIndex !== -1);
+  const idx = focusables.indexOf(el);
+  if (idx > -1 && idx < focusables.length - 1) focusables[idx + 1].focus();
+  else el.blur();
+}
+
+const ICONS = {
+  hh: <Users size={16} className="text-brand-600 inline mr-1" />,
+  usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
+};
+
 export default function LogVisitForm({
   open,
-  client,          // { id, firstName, lastName, householdSize, ... }
+  client,          // { id, firstName, lastName, householdSize, inactive, ... }
   onClose,
   onSaved,
-  // optional fixed scope overrides (usually leave undefined to use current auth scope)
   defaultOrgId,
   defaultLocationId,
 }) {
@@ -55,7 +76,7 @@ export default function LogVisitForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Manual USDA toggle — default No; setting Yes will *upsert* a monthly marker (never deletes).
+  // Manual USDA toggle — default No; setting Yes will upsert a monthly marker (never deletes)
   const [usdaFirstThisMonth, setUsdaFirstThisMonth] = useState(false);
 
   const inputRef = useRef(null);
@@ -85,7 +106,7 @@ export default function LogVisitForm({
     setHH(Math.max(MIN_HH, Math.min(MAX_HH, base)));
     setUsdaFirstThisMonth(false);
     setErr("");
-    const t = setTimeout(() => inputRef.current?.focus(), 80);
+    const t = setTimeout(() => inputRef.current?.focus(), 100);
     return () => clearTimeout(t);
   }, [open, client?.id]);
 
@@ -135,8 +156,6 @@ export default function LogVisitForm({
         if (cur.orgId && cur.orgId !== orgId) {
           throw new Error("Client belongs to a different organization.");
         }
-        // Note: clients may be “assigned” to a location; we *do not* mutate their locationId here.
-        // Visits track the actual location used (locationId below).
 
         // 2) If toggled Yes, create-once USDA marker (only if it does not exist)
         if (usdaFirstThisMonth) {
@@ -216,7 +235,7 @@ export default function LogVisitForm({
   }
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-[1000]">
       {/* Backdrop */}
       <button
         aria-label="Close"
@@ -224,7 +243,7 @@ export default function LogVisitForm({
         onClick={onClose}
       />
 
-      {/* Modal shell (centered on desktop, bottom sheet on mobile) */}
+      {/* Modal shell — bottom sheet on mobile; centered card on desktop */}
       <div
         role="dialog"
         aria-modal="true"
@@ -236,12 +255,13 @@ export default function LogVisitForm({
           overflow-hidden flex flex-col
         "
         onKeyDown={onKey}
+        style={{ maxHeight: "calc(100vh - 28px)", marginTop: "env(safe-area-inset-top, 8px)" }}
       >
-        {/* Header — matches NewClientForm style */}
+        {/* Header — matches NewClientForm/EditForm */}
         <div className="sticky top-0 z-10">
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
             <div className="px-4 sm:px-6 py-3 sm:py-4">
-              <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-6">
+              <div className="flex items-center justify-between gap-3 sm:gap-6">
                 {/* Title + avatar */}
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
@@ -257,7 +277,7 @@ export default function LogVisitForm({
                   </div>
                 </div>
 
-                {/* Org / Loc (desktop) */}
+                {/* Scope (desktop) */}
                 <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
                   <span>Org: <b>{orgId ?? "—"}</b></span>
                   <span>Loc: <b>{locationId ?? "—"}</b></span>
@@ -266,15 +286,15 @@ export default function LogVisitForm({
                 {/* Close */}
                 <button
                   onClick={onClose}
-                  className="rounded-xl px-3 h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
                   aria-label="Close"
                   title="Close"
                 >
-                  ✕
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
-              {/* Org / Loc (mobile) */}
+              {/* Scope (mobile) */}
               <div className="mt-2 sm:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
                 <span>Org: <b>{orgId ?? "—"}</b></span>
                 <span>Loc: <b>{locationId ?? "—"}</b></span>
@@ -287,56 +307,70 @@ export default function LogVisitForm({
         {!orgId || !locationId ? (
           <div
             role="alert"
-            className="mx-4 sm:mx-6 mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800"
+            className="mx-4 sm:mx-6 mt-3 rounded-2xl border border-red-200 bg-red-50 ring-1 ring-red-200 px-3 py-2 text-[13px] text-red-800"
           >
             Select an Organization and Location from the navbar before logging a visit.
           </div>
         ) : null}
 
-        {/* Body */}
-        <div className="p-4 sm:p-6 grid gap-4 pretty-scroll">
-          {/* USDA toggle — matches NewClientForm active gradient */}
-          <div className="rounded-2xl border border-brand-200 p-3 sm:p-4">
-            <div className="text-sm font-medium text-gray-800 mb-2">
-              USDA first time this month?
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setUsdaFirstThisMonth(true)}
+        {/* Body (pretty-scroll) */}
+        <form
+          onSubmit={(e) => { e.preventDefault(); submit(); }}
+          onKeyDown={handleFormKeyDown}
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 grid gap-4 text-[17px] pretty-scroll"
+          style={{ maxHeight: "calc(100vh - 220px)", paddingBottom: "env(safe-area-inset-bottom)" }}
+          noValidate
+        >
+          {/* USDA toggle — styled like NewClientForm active gradient */}
+          <fieldset className="rounded-2xl border border-brand-200 p-3 sm:p-4">
+            <legend className="text-xs font-medium text-gray-700 px-1">
+              {ICONS.usda}USDA first time this month?
+            </legend>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label
                 className={[
-                  "h-11 rounded-2xl border text-sm font-semibold transition-colors",
+                  "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
                   usdaFirstThisMonth
                     ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                     : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
                 ].join(" ")}
-                aria-pressed={usdaFirstThisMonth}
               >
+                <input
+                  type="radio"
+                  name="usda"
+                  className="sr-only"
+                  checked={usdaFirstThisMonth === true}
+                  onChange={() => setUsdaFirstThisMonth(true)}
+                />
                 Yes
-              </button>
-              <button
-                type="button"
-                onClick={() => setUsdaFirstThisMonth(false)}
+              </label>
+              <label
                 className={[
-                  "h-11 rounded-2xl border text-sm font-semibold transition-colors",
+                  "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
                   !usdaFirstThisMonth
                     ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                     : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
                 ].join(" ")}
-                aria-pressed={!usdaFirstThisMonth}
               >
+                <input
+                  type="radio"
+                  name="usda"
+                  className="sr-only"
+                  checked={usdaFirstThisMonth === false}
+                  onChange={() => setUsdaFirstThisMonth(false)}
+                />
                 No
-              </button>
+              </label>
             </div>
             <p className="mt-2 text-xs text-gray-600">
               If “Yes”, we’ll record this as the first USDA visit for {monthKeyFor()} and create a monthly marker.
             </p>
-          </div>
+          </fieldset>
 
-          {/* Household size — steppers + numeric input */}
+          {/* Household size — steppers + numeric input (with icon label) */}
           <div className="rounded-2xl border border-brand-200 p-3 sm:p-4">
-            <label htmlFor="hh-input" className="text-sm font-medium text-gray-800">
-              Household size
+            <label htmlFor="hh-input" className="text-xs font-medium text-gray-700">
+              {ICONS.hh}Household size
             </label>
 
             <div className="mt-2 flex items-stretch gap-2">
@@ -403,14 +437,19 @@ export default function LogVisitForm({
           {/* Error (live region) */}
           <div aria-live="polite" className="min-h-[1rem]">
             {err ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
+              <div className="rounded-2xl border border-red-200 bg-red-50 ring-1 ring-red-200 px-3 py-2 text-[13px] text-red-800">
                 {err}
               </div>
             ) : null}
           </div>
+        </form>
+
+        {/* Consent note (matches placement) */}
+        <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
+          Visits are recorded for reporting and eligibility. Data stays within your organization unless required by law.
         </div>
 
-        {/* Footer — brand buttons to match the app */}
+        {/* Footer — brand buttons */}
         <div
           className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
@@ -447,21 +486,6 @@ export default function LogVisitForm({
 }
 
 /* ---------- tiny presentational helpers ---------- */
-function Badge({ label, subtle = false }) {
-  return (
-    <span
-      className={
-        subtle
-          ? "inline-flex items-center rounded-full border border-gray-300 px-2.5 py-1 text-[11px] text-gray-700"
-          : "inline-flex items-center rounded-full bg-white text-gray-900 border border-brand-200 px-2.5 py-1 text-[11px]"
-      }
-      title={label}
-    >
-      {label}
-    </span>
-  );
-}
-
 function Spinner() {
   return (
     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" role="img" aria-label="Loading">

@@ -645,8 +645,9 @@ const MonthCell = ({ mIndex0 }) => {
    ======================================================================================= */
 export default function Reports() {
   const routeLocation = useRouteLocation();
-  const { loading: authLoading, org, location, isAdmin, email } =
-    useAuth() || {};
+  const { loading: authLoading, org, orgSettings, location, isAdmin, email } =
+  useAuth() || {};
+
 
   // UI/state
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -1043,36 +1044,72 @@ export default function Reports() {
     [visitsByDay, clientsById, toast]
   );
 
-  const buildEfapBytesForDay = useCallback(
-    (dayKey) => {
-      const src = visitsByDay.get(dayKey) || [];
-      const rows = src.map((v) => {
-        const p = clientsById.get(v.clientId) || {};
-        const name = `${p.firstName || ""} ${p.lastName || ""}`.trim() || v.clientId || "";
-        const address = p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
-        return {
-          name,
-          address,
-          zip: p.zip || "",
-          householdSize: Number(v.householdSize || 0),
-          firstTime:
-            v.usdaFirstTimeThisMonth === true
-              ? true
-              : v.usdaFirstTimeThisMonth === false
-              ? false
-              : "",
-        };
-      });
-      return buildEfapDailyPdf(rows, { dateStamp: dayKey });
-    },
-    [visitsByDay, clientsById]
-  );
+ const buildEfapBytesForDay = useCallback(
+  (dayKey) => {
+    const src = visitsByDay.get(dayKey) || [];
+
+    const rows = src.map((v) => {
+      const p = clientsById.get(v.clientId) || {};
+
+      // --- Name: match the table’s fallback behavior (NO clientId fallback) ---
+      const first =
+        p.firstName ??
+        v.clientFirstName ??
+        (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
+        "";
+      const last =
+        p.lastName ??
+        v.clientLastName ??
+        (typeof p.name === "string" ? p.name.split(" ").slice(1).join(" ") : "") ??
+        "";
+      const name = `${first} ${last}`.trim() ||
+        (typeof v.clientName === "string" ? v.clientName : ""); // final human fallback
+
+      // --- Address / Zip fallbacks (unchanged, but include visit-level zip just in case) ---
+      const address =
+        p.address ||
+        p.addr ||
+        p.street ||
+        p.street1 ||
+        p.line1 ||
+        p.address1 ||
+        "";
+      const zip = p.zip || v.clientZip || "";
+
+      return {
+        name,
+        address,
+        zip,
+        householdSize: Number(v.householdSize || 0),
+        firstTime:
+          v.usdaFirstTimeThisMonth === true
+            ? true
+            : v.usdaFirstTimeThisMonth === false
+            ? false
+            : "",
+      };
+    });
+
+    // Pass org branding so Food Bank Name fills correctly
+    return buildEfapDailyPdf(rows, {
+      dateStamp: dayKey,
+      orgSettings,
+      orgName: org?.name,
+      org,
+    });
+  },
+  [visitsByDay, clientsById, org, orgSettings]
+);
+
+
 
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
         const pdfBytes = await buildEfapBytesForDay(dayKey);
-        const fileName = efapSuggestedFileName(dayKey);
+        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable").replace(/\s+/g, "_");
+        const fileName = efapSuggestedFileName(dayKey, site);
+
         downloadBytes(pdfBytes, fileName, "application/pdf");
         toast.show("EFAP PDF downloaded.", "info");
       } catch (e) {
@@ -1087,7 +1124,9 @@ export default function Reports() {
     async (dayKey) => {
       try {
         const pdfBytes = await buildEfapBytesForDay(dayKey);
-        const fileName = efapSuggestedFileName(dayKey);
+        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable").replace(/\s+/g, "_");
+        const fileName = efapSuggestedFileName(dayKey, site);
+
         const file = new File([toUint8Array(pdfBytes)], fileName, {
           type: "application/pdf",
         });

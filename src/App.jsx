@@ -3,13 +3,14 @@
 // - Protected shell for all authenticated pages
 // - AdminRoute guards admin-only pages (respects useAuth().isAdmin)
 // - Lazy-loaded route components with a safe <Suspense> fallback
+// - Includes public legal pages: Privacy Policy + Terms of Service
 // - Catch-alls route back to "/login" for public area, "/" for authed shell
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { useAuth } from "./auth/useAuth"; // ← named export (consistent with the rest of the app)
+import { useAuth } from "./auth/useAuth";
 import Layout from "./components/Layout";
 import UsagePolicy from "./pages/UsagePolicy.jsx";
 
@@ -18,13 +19,16 @@ const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Reports = lazy(() => import("./pages/Reports"));
 const UsdaMonthly = lazy(() => import("./pages/UsdaMonthly"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 
 // ─────────────────────────────────────────────────────────────
 // AdminRoute — simple wrapper to guard admin-only routes
 // ─────────────────────────────────────────────────────────────
 function AdminRoute({ children }) {
   const { loading, isAdmin } = useAuth();
-  if (loading) return <div className="p-6 text-sm text-gray-600">Loading…</div>;
+  if (loading)
+    return <div className="p-6 text-sm text-gray-600">Loading…</div>;
   if (!isAdmin) return <Navigate to="/" replace />;
   return children;
 }
@@ -50,6 +54,8 @@ export default function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/usage" element={<UsagePolicy />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
 
         {/* Authenticated Shell */}
         <Route

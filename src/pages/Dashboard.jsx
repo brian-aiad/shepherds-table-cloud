@@ -62,6 +62,9 @@ const fmtLocal = (ts) => {
 // UI atoms
 const cardCls = "rounded-2xl border border-brand-100 bg-white shadow-soft";
 const subCardCls = "rounded-xl border border-brand-100 bg-white";
+const sectionHdrCls =
+  "sticky top-0 z-10 px-4 py-2.5 rounded-t-2xl bg-brand-50/80 supports-[backdrop-filter]:bg-brand-50/60 backdrop-blur text-brand-900 border-b border-brand-200 shadow-[inset_0_-1px_0_rgba(0,0,0,0.04)]";
+
 
 /* ===========================
    Component
@@ -427,15 +430,20 @@ useEffect(() => {
       {/* main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
         {/* left: list */}
-        <div className={`lg:col-span-2 ${cardCls} p-3`}>
-          <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
-            <span>
-              {searchTokens.length > 0
-              ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
-              : `Showing ${clients.length} client${clients.length === 1 ? "" : "s"}`}
 
-            </span>
+        <div className={`lg:col-span-2 ${cardCls} p-0`}>
+          <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
+            Client List
           </div>
+          <div className="p-3">
+            <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
+              <span>
+                {searchTokens.length > 0
+                  ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
+                  : `Showing ${clients.length} client${clients.length === 1 ? "" : "s"}`}
+              </span>
+            </div>
+
 
           {/* Letter chips (when not searching) */}
           {letterChips.length > 0 && searchTokens.length === 0 && (
@@ -525,10 +533,11 @@ useEffect(() => {
               ))}
           </div>
         </div>
+         </div>
 
         {/* right: quick details */}
         <aside className={`${cardCls} overflow-hidden`}>
-          <div className="sticky top-0 z-10 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 flex items-center justify-between px-4 py-2.5 border-b border-brand-100">
+          <div className={`${sectionHdrCls} flex items-center justify-between`}>
             <div className="text-sm font-semibold">Client Details</div>
             {selected && (
               <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
@@ -591,6 +600,8 @@ useEffect(() => {
                   <dd className="text-gray-900">{selected.phone || "—"}</dd>
                   <dt className="text-gray-500 text-left">ZIP</dt>
                   <dd className="text-gray-900">{selected.zip || "—"}</dd>
+                  <dt className="text-gray-500 text-left">County</dt>
+                  <dd className="text-gray-900 break-words">{selected.county || "—"}</dd>
                   <dt className="text-gray-500 text-left">Household</dt>
                   <dd className="text-gray-900">
                     {Number.isFinite(Number(selected.householdSize)) ? Number(selected.householdSize) : "—"}
@@ -653,9 +664,13 @@ useEffect(() => {
       </div>
 
       {/* recent activity table */}
-      <div className={`mt-5 ${cardCls} p-3`}>
-        <div className="text-sm font-semibold mb-2">Recent activity (latest 10)</div>
-        <div className={`${subCardCls} overflow-auto`}>
+      <div className={`mt-5 ${cardCls} p-0`}>
+        <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
+          Recent activity (latest 10)
+        </div>
+        <div className="p-3">
+          <div className={`${subCardCls} overflow-auto`}>
+
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr className="text-left text-gray-700">
@@ -702,6 +717,7 @@ useEffect(() => {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
 
       {/* mobile quick actions bar */}
