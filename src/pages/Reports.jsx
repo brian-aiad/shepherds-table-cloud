@@ -645,8 +645,17 @@ const MonthCell = ({ mIndex0 }) => {
    ======================================================================================= */
 export default function Reports() {
   const routeLocation = useRouteLocation();
-  const { loading: authLoading, org, orgSettings, location, isAdmin, email } =
-  useAuth() || {};
+  const {
+  loading: authLoading,
+  org,
+  orgSettings,
+  location,
+  locations = [],
+  canPickAllLocations = false,
+  isAdmin,
+  email,
+  setActiveLocation,
+} = useAuth() || {};
 
 
   // UI/state
@@ -730,16 +739,29 @@ export default function Reports() {
   /* --------------------------------
      Scoped live query: visits for month (RANGE BY dateKey)
      -------------------------------- */
-  useEffect(() => {
-    if (authLoading) return;
-    if (!org?.id) {
-      setVisits([]);
-      return;
-    }
+useEffect(() => {
+  if (authLoading) return;
+  if (!org?.id) {
+    setVisits([]);
+    return;
+  }
 
-    setLoading(true);
-    setError("");
-    let off;
+  // If the user is NOT allowed org-wide scope, they must have a location selected.
+  if (!canPickAllLocations && !location?.id) {
+    // Try auto-selecting their first permitted location if we have it
+    if (locations.length && typeof setActiveLocation === "function") {
+      setActiveLocation(locations[0].id);
+    } else {
+      setVisits([]);
+      setError("You don’t have an active location. Ask an admin to assign one.");
+    }
+    return; // don’t run an org-wide query
+  }
+
+  setLoading(true);
+  setError("");
+  let off;
+
 
     // Compute month range on dateKey (YYYY-MM-DD)
     const d = dateFromMonthKey(selectedMonthKey);
@@ -747,8 +769,14 @@ export default function Reports() {
     const endKey = fmtDateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0)); // last day of month
 
     const filters = [where("orgId", "==", org.id)];
-    const effectiveLocationId = location?.id || null;
-    if (effectiveLocationId) filters.push(where("locationId", "==", effectiveLocationId));
+    // If a location is selected, always scope to it.
+    // If no location is selected, ONLY allow org-wide when canPickAllLocations === true.
+    if (location?.id) {
+      filters.push(where("locationId", "==", location.id));
+    } else if (!canPickAllLocations) {
+      setLoading(false);
+      return; // safety: never fall through to org-wide when not permitted
+    }
 
     const qv = query(
       collection(db, "visits"),
@@ -869,22 +897,28 @@ export default function Reports() {
         `${person.firstName || v.clientFirstName || ""} ${person.lastName || v.clientLastName || ""}`.trim() ||
         v.clientId;
 
-      const address =
-        person.address ||
-        person.addr ||
-        person.street ||
-        person.street1 ||
-        person.line1 ||
-        person.address1 ||
-        "";
+       // Prefer visit snapshot so we never depend on client read permissions
+ const county =
+   v.clientCounty ||
+   person.county ||
+   "";
+
+ const zip =
+   v.clientZip ||
+   v.zip ||
+   person.zip ||
+   "";
+
+
 
       return {
         visitId: v.id,
         clientId: v.clientId || "",
         firstName: person.firstName || "",
         lastName: person.lastName || "",
-        address,
-        zip: person.zip || "",
+        county,
+        zip,
+
 
         visitHousehold: v.householdSize ?? "",
         usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
@@ -923,8 +957,9 @@ export default function Reports() {
       rows = rows.filter(
         (r) =>
           (r.labelName || "").toLowerCase().includes(q) ||
-          (r.address || "").toLowerCase().includes(q) ||
+          (r.county || "").toLowerCase().includes(q) ||
           (r.zip || "").toLowerCase().includes(q)
+
       );
     }
 
@@ -1021,7 +1056,11 @@ export default function Reports() {
         const d = toJSDate(v.visitAt);
         const p = clientsById.get(v.clientId) || {};
         const address =
-          p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 || "";
+          p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 ||
+          v.clientAddress || v.clientStreet || v.clientLine1 || "";
+
+        const zip = p.zip || v.clientZip || v.zip || "";
+
         return {
           dateKey: v.dateKey || fmtDateKey(d),
           monthKey: v.monthKey || "",
@@ -1065,20 +1104,17 @@ export default function Reports() {
       const name = `${first} ${last}`.trim() ||
         (typeof v.clientName === "string" ? v.clientName : ""); // final human fallback
 
-      // --- Address / Zip fallbacks (unchanged, but include visit-level zip just in case) ---
-      const address =
-        p.address ||
-        p.addr ||
-        p.street ||
-        p.street1 ||
-        p.line1 ||
-        p.address1 ||
+      // --- county
+      const county =
+        v.clientCounty ||
+        p.county ||
         "";
+
       const zip = p.zip || v.clientZip || "";
 
       return {
         name,
-        address,
+        county,
         zip,
         householdSize: Number(v.householdSize || 0),
         firstTime:
@@ -1200,9 +1236,12 @@ export default function Reports() {
           <span className="text-gray-400">/</span>
           <span className="text-gray-700">{location.name}</span>
         </>
-      ) : (
+      ) : canPickAllLocations ? (
         <span className="text-gray-600">(all locations)</span>
+      ) : (
+        <span className="text-gray-600">(select location)</span>
       )}
+
     </span>
   );
 
@@ -1324,30 +1363,54 @@ export default function Reports() {
           </div>
         </Card>
 
-        {/* USDA Yes vs No */}
-        <Card title="USDA Yes vs No">
-          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
-            <ResponsiveContainer width="96%" height="96%">
-              <PieChart margin={{ top: 0, bottom: 0 }}>
-                <Pie
-                  data={monthAgg.charts.usdaPie}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius="55%"
-                  outerRadius="78%"
-                  paddingAngle={2}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {monthAgg.charts.usdaPie.map((_, i) => (
-                    <Cell key={i} fill={i === 0 ? "#991b1b" : "#fecaca"} stroke="#fff" strokeWidth={1.5} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipBoxStyle} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        {/* USDA Yes vs No (mobile-safe: center label, no clipping) */}
+<Card title="USDA Yes vs No">
+  <div className="h-[260px] flex items-center justify-center px-3 sm:px-4 overflow-visible">
+    <ResponsiveContainer width="96%" height="96%">
+      <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
+        <Pie
+          data={monthAgg.charts.usdaPie}
+          dataKey="value"
+          nameKey="name"
+          // Slightly smaller on small screens to prevent edge clipping
+          innerRadius={window.innerWidth < 640 ? "58%" : "55%"}
+          outerRadius={window.innerWidth < 640 ? "74%" : "78%"}
+          paddingAngle={2}
+          // On mobile we don't draw outside labels (they clip); desktop keeps them
+          label={window.innerWidth >= 640 ? ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%` : false}
+          labelLine={window.innerWidth >= 640}
+          isAnimationActive={false}
+        >
+          {monthAgg.charts.usdaPie.map((_, i) => (
+            <Cell key={i} fill={i === 0 ? "#991b1b" : "#fecaca"} stroke="#fff" strokeWidth={1.5} />
+          ))}
+
+          {/* Mobile center label so numbers never clip */}
+          {window.innerWidth < 640 ? (
+            <text
+              x="50%"
+              y="50%"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              style={{ fontWeight: 700, fontSize: 14, fill: "#991b1b" }}
+            >
+              {(() => {
+                const yes = monthAgg.charts.usdaPie?.[0]?.value ?? 0;
+                const total = (monthAgg.charts.usdaPie || []).reduce((s, d) => s + (d.value || 0), 0) || 1;
+                return `${Math.round((yes / total) * 100)}% USDA`;
+              })()}
+            </text>
+          ) : null}
+        </Pie>
+
+        {/* Tooltip works for both; legend only on md+ */}
+        <Tooltip contentStyle={tooltipBoxStyle} />
+        {window.innerWidth >= 640 ? <Legend wrapperStyle={{ fontSize: 11 }} /> : null}
+      </PieChart>
+    </ResponsiveContainer>
+  </div>
+</Card>
+
 
         {/* People Served per Day */}
         <Card title="People Served per Day">
@@ -1475,133 +1538,153 @@ export default function Reports() {
 
         {/* Table / details */}
         <section className="lg:col-span-2 rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3">
-          {/* Header: date + actions (ONE primary + split menu) */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
-            <div className="font-semibold text-base sm:text-lg">
-              {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
-            </div>
+          {/* Header: date + actions (mobile = tidy grid) */}
+<div className="mb-3">
+  {/* Title + desktop actions */}
+  <div className="hidden sm:flex items-center justify-between">
+    <div className="font-semibold text-lg">
+      {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
+    </div>
 
-            {/* Button group: [ EFAP PDF ] [ ▼ menu ]  */}
-            <div className="flex items-center gap-1.5">
-              <button
-                className={BTN.primary + " min-w-[110px] aria-[busy=true]:opacity-60"}
-                onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-                disabled={!selectedDate}
-                title="Download EFAP PDF for this day"
-                aria-label="EFAP PDF"
-                aria-busy={false}
-              >
-                <span>EFAP PDF</span>
-              </button>
-
-              {/* Split menu for Share + CSV (desktop) */}
-              <div className="relative hidden sm:block" ref={menuRef}>
-                <button
-                  className={BTN.secondary + " px-2.5"}
-                  aria-haspopup="menu"
-                  aria-expanded={menuOpen}
-                  aria-label="Export options"
-                  title="More options"
-                  onClick={() => setMenuOpen((v) => !v)}
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </button>
-                {menuOpen && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-                  >
-                    <button
-                      role="menuitem"
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        shareEfapDailyPdfForDay(selectedDate);
-                      }}
-                      disabled={!selectedDate}
-                      aria-label="Share EFAP"
-                    >
-                      <ShareIcon className="h-4 w-4" />
-                      <span>Share EFAP</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        exportOneDayCsv(selectedDate);
-                      }}
-                      disabled={!selectedDate}
-                      aria-label="Export CSV"
-                    >
-                      <DownloadIcon className="h-4 w-4" />
-                      <span>Export CSV</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Mobile: kebab opens Share + CSV, and Add Visit nearby */}
-              <div className="relative sm:hidden" ref={kebabRef}>
-                <button
-                  className={BTN.icon}
-                  aria-haspopup="menu"
-                  aria-expanded={kebabOpen}
-                  aria-label="More actions"
-                  title="More actions"
-                  onClick={() => setKebabOpen((v) => !v)}
-                >
-                  <KebabIcon className="h-5 w-5" />
-                </button>
-                {kebabOpen && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-                  >
-                    <button
-                      role="menuitem"
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                      onClick={() => {
-                        setKebabOpen(false);
-                        shareEfapDailyPdfForDay(selectedDate);
-                      }}
-                      disabled={!selectedDate}
-                      aria-label="Share EFAP"
-                    >
-                      <ShareIcon className="h-4 w-4" />
-                      <span>Share EFAP</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                      onClick={() => {
-                        setKebabOpen(false);
-                        exportOneDayCsv(selectedDate);
-                      }}
-                      disabled={!selectedDate}
-                      aria-label="Export CSV"
-                    >
-                      <DownloadIcon className="h-4 w-4" />
-                      <span>Export CSV</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Add Visit next to EFAP on mobile as ghost/secondary */}
-              {selectedDate && isAdmin && (
-                <div className="sm:hidden">
-                  <AddVisitButton
-                    org={org}
-                    location={location}
-                    selectedDate={selectedDate}
-                    onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
-                    className={BTN.secondary + " !h-10"}
-                  />
-                </div>
-              )}
-            </div>
+    {/* Desktop actions: EFAP + split menu + Add Visit (if admin) */}
+    <div className="flex items-center gap-1.5" ref={menuRef}>
+      {/* Split menu (desktop) */}
+      <div className="relative">
+        <button
+          className={BTN.icon}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label="More actions"
+          title="More actions"
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <KebabIcon className="h-5 w-5" />
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+          >
+            <button
+              role="menuitem"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              onClick={() => { setMenuOpen(false); shareEfapDailyPdfForDay(selectedDate); }}
+              disabled={!selectedDate}
+              aria-label="Share EFAP"
+            >
+              <ShareIcon className="h-4 w-4" />
+              <span>Share EFAP</span>
+            </button>
+            <button
+              role="menuitem"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              onClick={() => { setMenuOpen(false); exportOneDayCsv(selectedDate); }}
+              disabled={!selectedDate}
+              aria-label="Export CSV"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              <span>Export CSV</span>
+            </button>
           </div>
+        )}
+      </div>
+      
+      <button
+        className={BTN.primary + " min-w-[120px]"}
+        onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+        disabled={!selectedDate}
+        title="Download EFAP PDF for this day"
+        aria-label="EFAP PDF"
+      >
+        EFAP PDF
+      </button>
+
+      
+
+      {selectedDate && isAdmin && (
+        <AddVisitButton
+          org={org}
+          location={location}
+          selectedDate={selectedDate}
+          onAdded={(v) => setVisits((prev) => [v, ...prev])}
+        />
+      )}
+    </div>
+  </div>
+
+  {/* Mobile: tidy 2-row grid */}
+  <div className="sm:hidden">
+    <div className="font-semibold text-base mb-2">
+      {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
+    </div>
+
+    <div className="grid grid-cols-2 gap-2">
+      {/* Row 1: EFAP full-width */}
+      <button
+        className={BTN.primary + " col-span-2 h-11 w-full"}
+        onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+        disabled={!selectedDate}
+        aria-label="EFAP PDF"
+        title="Download EFAP PDF"
+      >
+        EFAP PDF
+      </button>
+
+      {/* Row 2: Add Visit (if admin) + kebab */}
+      {isAdmin ? (
+        <AddVisitButton
+          org={org}
+          location={location}
+          selectedDate={selectedDate}
+          onAdded={(v) => setVisits((prev) => [v, ...prev])}
+          className={BTN.secondary + " !h-11 w-full"}
+        />
+      ) : (
+        <div />
+      )}
+
+      <div className="relative" ref={kebabRef}>
+        <button
+          className={BTN.icon + " !h-11 w-full"}
+          aria-haspopup="menu"
+          aria-expanded={kebabOpen}
+          aria-label="More actions"
+          title="More actions"
+          onClick={() => setKebabOpen((v) => !v)}
+        >
+          <KebabIcon className="h-5 w-5" />
+        </button>
+        {kebabOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+          >
+            <button
+              role="menuitem"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              onClick={() => { setKebabOpen(false); shareEfapDailyPdfForDay(selectedDate); }}
+              disabled={!selectedDate}
+              aria-label="Share EFAP"
+            >
+              <ShareIcon className="h-4 w-4" />
+              <span>Share EFAP</span>
+            </button>
+            <button
+              role="menuitem"
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+              onClick={() => { setKebabOpen(false); exportOneDayCsv(selectedDate); }}
+              disabled={!selectedDate}
+              aria-label="Export CSV"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              <span>Export CSV</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
 
           {/* Subheading separator above filters (visual polish) */}
           <div className="border-t border-gray-200 pt-3 mb-3">
@@ -1655,17 +1738,7 @@ export default function Reports() {
                 {sortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
               </button>
 
-              {/* Desktop Add Visit sits with filters, mobile version is above */}
-              {selectedDate && isAdmin && (
-                <div className="hidden sm:block">
-                  <AddVisitButton
-                    org={org}
-                    location={location}
-                    selectedDate={selectedDate}
-                    onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
-                  />
-                </div>
-              )}
+              
             </div>
           </div>
 
@@ -1696,7 +1769,7 @@ export default function Reports() {
               <thead className="bg-gray-100">
                 <tr className="text-left">
                   <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>Client</th>
-                  <th className="px-4 py-2">Address</th>
+                  <th className="px-4 py-2">County</th>
                   <th className="px-4 py-2">Zip</th>
                   <th className="px-4 py-2">HH</th>
                   <th className="px-4 py-2">USDA First-Time</th>
@@ -1714,7 +1787,7 @@ export default function Reports() {
                         <div className="mt-0.5 text-xs text-gray-500">added {r.addedLocalTime}</div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 break-words">{r.address}</td>
+                    <td className="px-4 py-3 break-words">{r.county}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
                     <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
                     <td className="px-4 py-3">
@@ -1801,12 +1874,13 @@ export default function Reports() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.labelName}</div>
-                    {r.address ? (
+                    {(r.county || r.zip) ? (
                       <div className="text-xs text-gray-700 truncate">
-                        {r.address}
-                        {r.zip ? `, ${r.zip}` : ""}
+                        {r.county || ""}
+                        {r.zip ? (r.county ? `, ${r.zip}` : r.zip) : ""}
                       </div>
                     ) : null}
+
 
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
                       <span className="px-1.5 py-0.5 rounded border bg-white">HH {r.visitHousehold || 0}</span>

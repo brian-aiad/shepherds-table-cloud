@@ -173,6 +173,11 @@ export default function AddVisitButton({
         const isFirst = !!usda;
         const currentUser = auth.currentUser?.uid || null;
         const locId = location?.id || null;
+        // Snapshot client contact info onto the visit (historical)
+        let snapAddress = "";
+        let snapZip = "";
+        let snapCounty = "";
+
 
         await runTransaction(db, async (tx) => {
           // 1) Read client to ensure it exists and guard cross-org
@@ -186,6 +191,10 @@ export default function AddVisitButton({
           if (cur.inactive === true) {
             throw new Error("This client is deactivated. Reactivate before logging a visit.");
           }
+          
+            snapAddress = cur.address || client.address || "";
+            snapZip     = cur.zip || client.zip || "";
+            snapCounty  = cur.county || client.county || "";
 
           // 2) USDA first marker (create-once)
           if (isFirst && mk) {
@@ -212,6 +221,12 @@ export default function AddVisitButton({
             clientId: client.id,
             clientFirstName: client.firstName || cur.firstName || "",
             clientLastName: client.lastName || cur.lastName || "",
+
+            // ⬇️ NEW: historical snapshots used by Reports & PDFs
+            clientAddress: snapAddress,
+            clientZip:     snapZip,
+            clientCounty:  snapCounty,
+            
             visitAt: when, // intentional (historical add)
             createdAt: serverTimestamp(),
             monthKey: mk,
@@ -245,6 +260,12 @@ export default function AddVisitButton({
           clientLastName: client.lastName || "",
           orgId: org.id,
           locationId: location?.id || null,
+
+          // ⬇️ NEW: mirror the snapshots for immediate UI
+          clientAddress: snapAddress,
+          clientZip:     snapZip,
+          clientCounty:  snapCounty,
+          
           visitAt: when,
           dateKey: dKey,
           monthKey: mk,

@@ -322,8 +322,7 @@ useEffect(() => {
     <div key={scopeKey} className="max-w-6xl mx-auto p-4 md:p-6">
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50" aria-live="polite">
-          <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
+<div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-50" aria-live="polite">          <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
             <span className="text-sm">{toast.msg}</span>
             <button className="text-gray-300 text-sm" onClick={() => setToast(null)} aria-label="Dismiss">
               ×
@@ -722,8 +721,7 @@ useEffect(() => {
 
       {/* mobile quick actions bar */}
       {selected && (
-        <div className="md:hidden fixed bottom-9 inset-x-2 z-40">
-          <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
+<div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)]">       <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
             <div className="min-w-0 text-sm font-medium truncate">
               {tcase(selected.firstName)} {tcase(selected.lastName)}
             </div>

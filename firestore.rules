@@ -7,16 +7,19 @@ service cloud.firestore {
     function lowerSafe(s) { return s == null ? null : lower(s); }
     function isAuthed()  { return request.auth != null; }
 
-    // 🔑 Master override — ONLY your account (email gate).
+    // 🔑 Master override — CURRENT: email gate; PREFERRED: custom claim.
     function isMaster() {
       return isAuthed()
-        && lowerSafe(request.auth.token.email) == "csbrianaiad@gmail.com";
-      // Optionally also require a custom claim:
-      // && request.auth.token.master == true
+        && (
+          // Preferred (flip this on once you set the claim)
+          (request.auth.token.master == true)
+          ||
+          // Legacy (keep temporarily if you need a backdoor while rolling out claims)
+          (lowerSafe(request.auth.token.email) == "csbrianaiad@gmail.com")
+        );
     }
 
     // orgUsers doc id convention: "<uid>_<orgId>"
-    // Use literal-style path interpolation $(...) for get/exists.
     function orgUser(rawOrgId) {
       return exists(/databases/$(database)/documents/orgUsers/$(request.auth.uid + "_" + rawOrgId))
         ? get(   /databases/$(database)/documents/orgUsers/$(request.auth.uid + "_" + rawOrgId)).data
@@ -68,23 +71,27 @@ service cloud.firestore {
     }
 
     /** ============================= orgUsers ================================ */
-    // Let users read ONLY their own orgUsers doc; master already allowed globally.
+    // Users can read ONLY their own orgUsers docs.
     match /orgUsers/{id} {
       allow read: if isAuthed()
         && resource.data != null
         && resource.data.userId == request.auth.uid;
-      allow create, update, delete: if false; // master via global
+      allow create, update, delete: if false; // master covered by global
     }
 
     /** ========================== organizations ============================== */
+    // Only members (admin or volunteer) of an org can read that org's doc.
     match /organizations/{orgId} {
-      allow read: if isAuthed();
+      allow read: if isAuthed() && (isAdminOfOrg(orgId) || isVolunteerOfOrg(orgId));
       allow create, update, delete: if false; // master via global
     }
 
     /** ============================ locations ================================ */
+    // Only members of the parent org can read its locations.
     match /locations/{locationId} {
-      allow read: if isAuthed();
+      allow read: if isAuthed()
+        && resource.data != null
+        && (isAdminOfOrg(resource.data.orgId) || isVolunteerOfOrg(resource.data.orgId));
       allow create, update, delete: if false; // master via global
     }
 
@@ -130,7 +137,7 @@ service cloud.firestore {
                 "lastVisitMonthKey",
                 "updatedAt",
                 "updatedByUserId",
-                "householdSize" // optional: LogVisitForm writes latest HH
+                "householdSize" // optional: keep latest HH from visit workflow
               ])
           )
         );
@@ -155,9 +162,9 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/clients/$(request.resource.data.clientId)).data.locationId
              == request.resource.data.locationId;
 
+      // Updates allowed but keep core identity immutable.
       allow update: if isAuthed()
         && canWriteScoped(resource.data.orgId, resource.data.locationId)
-        // immutables
         && request.resource.data.clientId   == resource.data.clientId
         && request.resource.data.orgId      == resource.data.orgId
         && request.resource.data.locationId == resource.data.locationId
@@ -166,25 +173,28 @@ service cloud.firestore {
 
       // Admins of the org may hard delete visits
       allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
-
     }
 
-    /** ============================== reports ================================= */
+    /** ============================== reports =============================== */
+    // Admin-only, org-scoped. (Fix: use request.resource on create.)
     match /reports/{reportId} {
-      allow read: if isAuthed() && isAdminOfOrg(resource.data.orgId);
-      allow create, update, delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
+      allow read:    if isAuthed() && isAdminOfOrg(resource.data.orgId);
+      allow create:  if isAuthed() && hasOrgId() && isAdminOfOrg(request.resource.data.orgId);
+      allow update:  if isAuthed() && isAdminOfOrg(resource.data.orgId);
+      allow delete:  if isAuthed() && isAdminOfOrg(resource.data.orgId);
     }
 
-    /** ============================ usda_first ================================ */
+    /** ============================ usda_first =============================== */
+    // Restrict reads to the user's org/location (was: any authed user).
     match /usda_first/{markerId} {
-      allow read: if isAuthed();
+      allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 
       allow create: if isAuthed()
         && hasOrgId()
         && hasLocationId()
         && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId)
         && !exists(/databases/$(database)/documents/usda_first/$(markerId));
-
+      // No updates/deletes.
       allow update, delete: if false;
     }
 

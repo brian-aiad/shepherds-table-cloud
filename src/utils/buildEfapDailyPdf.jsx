@@ -30,7 +30,7 @@ const DEFAULT_FIELD_HEIGHT = 16;
 /** Column X (left/right) positions */
 const COL_X = {
   name: 58,
-  address: 217,
+  county: 217,
   zip: 372,
   householdSize: 431,
   // Base X for the Yes/No area; we apply offsets for the two boxes
@@ -40,7 +40,7 @@ const COL_X = {
 /** Text field widths */
 const COL_WIDTH = {
   name: 152,
-  address: 153,
+  county: 153,
   zip: 46,
   householdSize: 20,
 };
@@ -51,7 +51,7 @@ const COL_HEIGHT = {};
 /** Global Y nudges per column (applies to every row in that column) */
 const COL_Y_NUDGE = {
   name: 0,
-  address: 0,
+  county: 0,
   zip: 0,
   householdSize: 0,
   firstTime: +0.5, // move both Yes/No checkboxes up slightly
@@ -119,7 +119,7 @@ const FOOTER_CREDIT = {
 };
 
 /** Render order (left → right) */
-const COL_ORDER = ["name", "address", "zip", "householdSize", "firstTime"];
+const COL_ORDER = ["name", "county", "zip", "householdSize", "firstTime"];
 
 /* ===========================
    BUILDER
@@ -127,7 +127,7 @@ const COL_ORDER = ["name", "address", "zip", "householdSize", "firstTime"];
 
 export async function buildEfapDailyPdf(rows, opts = {}) {
   // rows come from Reports.jsx shaped like:
-  // { name, address, zip, householdSize: number, firstTime: boolean | "" }
+  // { name, county, zip, householdSize: number, firstTime: boolean | "" }
 
   // Prefer branded display name if provided in orgSettings
   const foodBankName =
@@ -249,15 +249,15 @@ export async function buildEfapDailyPdf(rows, opts = {}) {
         );
       }
 
-      // ADDRESS
+       // COUNTY (goes into the second column on the form)
       {
-        const key = "address";
+        const key = "county";
         const x = COL_X[key];
         const y = yFor(i, key);
         addTextField(
           page,
           `${key}_p${p + 1}_r${i + 1}`,
-          (r.address ?? "").toString(),
+          (r.county ?? "").toString(),
           x,
           y,
           widthFor(key),

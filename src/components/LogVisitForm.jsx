@@ -162,6 +162,7 @@ export default function LogVisitForm({
           const markerId = `${orgId}_${client.id}_${mKey}`;
           const markerRef = doc(db, "usda_first", markerId);
           const markerSnap = await tx.get(markerRef);
+          
           if (!markerSnap.exists()) {
             tx.set(markerRef, {
               orgId,
@@ -173,6 +174,11 @@ export default function LogVisitForm({
             });
           }
         }
+        // Snapshot address fields from the client for historical reporting
+        const snapAddress = cur.address || client.address || "";
+        const snapZip     = cur.zip || client.zip || "";
+        const snapCounty  = cur.county || client.county || "";
+
 
         // 3) Create the visit
         const visitRef = doc(collection(db, "visits"));
@@ -185,6 +191,11 @@ export default function LogVisitForm({
           clientId: client.id,
           clientFirstName: client.firstName || cur.firstName || "",
           clientLastName: client.lastName || cur.lastName || "",
+
+            // ⬇️ NEW: historical client snapshots
+          clientAddress: snapAddress,
+          clientZip:     snapZip,
+          clientCounty:  snapCounty,
 
           // keys & timestamps
           visitAt: serverTimestamp(),

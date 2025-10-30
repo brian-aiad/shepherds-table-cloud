@@ -4,9 +4,9 @@ import { useAuth } from "../auth/useAuth";
 
 /**
  * Shepherd’s Table Cloud — Navbar (SEAMLESS VERSION)
- * - KILLS the white line by removing ALL translucent highlight overlays/borders.
- * - Uses a solid brand background (no white in the gradient).
- * - Ensures the context panel renders above everything.
+ * - Solid brand background (no white in the gradient).
+ * - Context panel renders above everything.
+ * - ADMIN LOCATION SCOPE: “All locations” shows only when canPickAllLocations === true.
  */
 
 export default function Navbar() {
@@ -21,6 +21,8 @@ export default function Navbar() {
     location,
     locations = [],
     isAdmin,
+    // NEW: only admins *with org-wide access* can see “All locations”
+    canPickAllLocations = false,
     loading,
     setActiveOrg,
     setActiveLocation,
@@ -44,7 +46,7 @@ export default function Navbar() {
   const locMenuRef = useRef(null);
 
   const orgId = org?.id || "";
-const locId = location?.id ?? null;  // "" is a valid value (All), null means no selection
+  const locId = location?.id ?? null; // "" is valid (All), null = none
 
   // Identity / badges
   const initials = useMemo(() => {
@@ -71,37 +73,38 @@ const locId = location?.id ?? null;  // "" is a valid value (All), null means no
   }, [role]);
 
   // Handlers
-const handleOrgChange = useCallback(
-  async (nextOrgId) => {
-    await setActiveOrg(nextOrgId || null);
-    setOrgOpen(false);
-    setLocOpen(false);
-    setMobileOpen(false);                     // close mobile panel
-    // nudge current route so Dashboard effects re-run
-    nav(route.pathname + route.search, {
-      replace: true,
-      state: { scopeChangedAt: Date.now() },
-    });
-  },
-  [setActiveOrg, nav, route.pathname, route.search]
-);
+  const handleOrgChange = useCallback(
+    async (nextOrgId) => {
+      await setActiveOrg(nextOrgId || null);
+      setOrgOpen(false);
+      setLocOpen(false);
+      setMobileOpen(false);
+      // nudge current route so Dashboard effects re-run
+      nav(route.pathname + route.search, {
+        replace: true,
+        state: { scopeChangedAt: Date.now() },
+      });
+    },
+    [setActiveOrg, nav, route.pathname, route.search]
+  );
 
-    const handleLocChange = useCallback(
-      async (nextLocId) => {
-        // Volunteers can’t clear scope; admins may send "" (All locations)
-        if ((nextLocId == null || nextLocId === "") && !isAdmin) return;
-        await setActiveLocation(nextLocId);  // IMPORTANT: pass through "" (don’t coerce to null)
-        setLocOpen(false);
-        setMobileOpen(false);
-        nav(route.pathname + route.search, {
-          replace: true,
-          state: { scopeChangedAt: Date.now() },
-        });
-      },
-      [setActiveLocation, isAdmin, nav, route.pathname, route.search]
-    );
+  const handleLocChange = useCallback(
+    async (nextLocId) => {
+      // Admins may send "" ONLY if they actually have org-wide access.
+      if (nextLocId === "" && !(isAdmin && canPickAllLocations)) return;
+      // Volunteers cannot clear or pick ""
+      if ((nextLocId == null || nextLocId === "") && !isAdmin) return;
 
-
+      await setActiveLocation(nextLocId); // IMPORTANT: pass through "" (don’t coerce to null)
+      setLocOpen(false);
+      setMobileOpen(false);
+      nav(route.pathname + route.search, {
+        replace: true,
+        state: { scopeChangedAt: Date.now() },
+      });
+    },
+    [setActiveLocation, isAdmin, canPickAllLocations, nav, route.pathname, route.search]
+  );
 
   const handleSaveDefault = useCallback(async () => {
     try {
@@ -140,38 +143,35 @@ const handleOrgChange = useCallback(
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onEsc);
     return () => {
-      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
   }, [orgOpen, locOpen]);
 
-  // Auto pick first location after org change
+  // Auto pick first location after org change (respects restricted list supplied by context)
   useEffect(() => {
-    // Only auto-pick when there is truly NO location yet.
-    // If admin selected All locations (id === ""), leave it alone.
     if (!loading && orgId && locations.length > 0 && location == null) {
       const first = locations[0];
-      if (first?.id) setActiveLocation(first.id);
+      if (first?.id !== undefined) setActiveLocation(first.id);
     }
   }, [loading, orgId, location, locations, setActiveLocation]);
 
+  // Build option sets — inject “All locations” ONLY when allowed
+  const desktopLocations = useMemo(() => {
+    if (!orgId) return [];
+    const scoped = (locations || []).filter((l) => l.orgId === orgId);
+    return isAdmin && canPickAllLocations
+      ? [{ id: "", orgId, name: "All locations" }, ...scoped]
+      : scoped;
+  }, [locations, orgId, isAdmin, canPickAllLocations]);
 
-const desktopLocations = useMemo(() => {
-  if (!orgId) return [];
-  const scoped = (locations || []).filter((l) => l.orgId === orgId);
-  return isAdmin
-    ? [{ id: "", orgId, name: "All locations" }, ...scoped]
-    : scoped;
-}, [locations, orgId, isAdmin]);
-
-const mobileScopedLocations = useMemo(() => {
-  if (!orgId) return [];
-  const scoped = (locations || []).filter((l) => l.orgId === orgId);
-  return isAdmin
-    ? [{ id: "", orgId, name: "All locations" }, ...scoped]
-    : scoped;
-}, [locations, orgId, isAdmin]);
-
+  const mobileScopedLocations = useMemo(() => {
+    if (!orgId) return [];
+    const scoped = (locations || []).filter((l) => l.orgId === orgId);
+    return isAdmin && canPickAllLocations
+      ? [{ id: "", orgId, name: "All locations" }, ...scoped]
+      : scoped;
+  }, [locations, orgId, isAdmin, canPickAllLocations]);
 
   // Tiny toast
   const [toast, setToast] = useState(null);
@@ -188,7 +188,7 @@ const mobileScopedLocations = useMemo(() => {
         aria-hidden
         className="fixed top-0 left-0 right-0 h-[max(1px,env(safe-area-inset-top))] z-[9998] pointer-events-none"
         style={{
-          background: "var(--brand-650, var(--brand-600))", // solid color, no white
+          background: "var(--brand-650, var(--brand-600))",
         }}
       />
 
@@ -200,11 +200,10 @@ const mobileScopedLocations = useMemo(() => {
         </div>
       )}
 
-      {/* ===== Top bar — SOLID background, no borders, no white overlays ===== */}
+      {/* ===== Top bar ===== */}
       <div
         className="relative w-full"
         style={{
-          // Solid (or very dark subtle) gradient with ZERO white in it
           background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
         }}
       >
@@ -247,7 +246,6 @@ const mobileScopedLocations = useMemo(() => {
             Sign out
           </button>
 
-
           {/* Primary links */}
           <nav aria-label="Primary" className="hidden md:flex items-center justify-center flex-1 gap-6">
             <TopLink to="/" end className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
@@ -284,7 +282,7 @@ const mobileScopedLocations = useMemo(() => {
               </svg>
             </button>
 
-<div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
+            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
               <span className="h-7 w-7 rounded-full bg-white/20 grid place-items-center text-[11px] font-semibold">
                 {initials}
               </span>
@@ -321,6 +319,7 @@ const mobileScopedLocations = useMemo(() => {
           locBtnRef={locBtnRef}
           locMenuRef={locMenuRef}
           isAdmin={isAdmin}
+          canPickAllLocations={canPickAllLocations}
         />
       </div>
 
@@ -330,11 +329,10 @@ const mobileScopedLocations = useMemo(() => {
         className={[
           "sm:hidden transition-[max-height,opacity] duration-300",
           mobileOpen
-            ? "max-h-[80vh] opacity-100 overflow-visible" // let dropdowns render past the panel
-            : "max-h-0 opacity-0 overflow-hidden",
+            ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto"
+            : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
         ].join(" ")}
       >
-
         <div
           className="px-4 pb-4"
           style={{
@@ -368,31 +366,27 @@ const mobileScopedLocations = useMemo(() => {
             />
 
             <div className="h-2" />
-        
 
-              <MobileSelectPopover
-                id="m-loc"
-                label="Location"
-                valueLabel={
-                  !orgId
-                    ? "—"
-                    : (isAdmin && locId === "")
-                      ? "All locations"
-                      : (mobileScopedLocations.find(l => l.id === locId)?.name
-                        || (isAdmin ? "All locations" : "Select a location"))
-                }
-                disabled={loading || !orgId || mobileScopedLocations.length === 0}
-                open={locOpen}
-                setOpen={setLocOpen}
-                items={orgId ? mobileScopedLocations : []}
-                activeId={locId}
-                onSelect={(l) => handleLocChange(l.id)}
-                getKey={(l) => l.id}
-                getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
-              />
-
-            
-
+            <MobileSelectPopover
+              id="m-loc"
+              label="Location"
+              valueLabel={
+                !orgId
+                  ? "—"
+                  : (isAdmin && canPickAllLocations && locId === "")
+                    ? "All locations"
+                    : (mobileScopedLocations.find(l => l.id === locId)?.name
+                      || (isAdmin && canPickAllLocations ? "All locations" : "Select a location"))
+              }
+              disabled={loading || !orgId || mobileScopedLocations.length === 0}
+              open={locOpen}
+              setOpen={setLocOpen}
+              items={orgId ? mobileScopedLocations : []}
+              activeId={locId}
+              onSelect={(l) => handleLocChange(l.id)}
+              getKey={(l) => l.id}
+              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
+            />
 
             <p className="mt-3 text-[11px] text-gray-500">Changes are local (per device).</p>
           </div>
@@ -430,17 +424,24 @@ function DesktopContextStrip({
   locBtnRef,
   locMenuRef,
   isAdmin,
+  // NEW
+  canPickAllLocations = false,
 }) {
   const activeOrgName = orgs.find((o) => o.id === orgId)?.name || "Select an org";
   const activeLocName =
-    orgId ? (locations.find((l) => l.id === locId)?.name || (isAdmin ? "All locations" : "Select a location")) : "—";
+    orgId
+      ? (
+          locations.find((l) => l.id === locId)?.name
+          || (isAdmin && canPickAllLocations ? "All locations" : "Select a location")
+        )
+      : "—";
 
   return (
     <div
       id="context-panel"
       className={[
         "hidden sm:block relative z-20 transition-[max-height,opacity] duration-300",
-        open ? "max-h-[80vh] opacity-100 overflow-visible" : "max-h-0 opacity-0 overflow-hidden",
+        open ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto" : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
       ].join(" ")}
       aria-hidden={!open}
     >
@@ -486,7 +487,8 @@ function DesktopContextStrip({
 
           <div className="mt-3">
             <p className="text-[11px] text-white/85">
-              Changes are local (per device). Use “All locations” for org-wide admin data.
+              Changes are local (per device).
+              {isAdmin && canPickAllLocations ? " Use “All locations” for org-wide admin data." : ""}
             </p>
           </div>
         </div>
@@ -506,7 +508,6 @@ function TopLink({ to, end, className = "", children }) {
           "relative h-10 px-3.5 rounded-full text-[15px] tracking-tight font-semibold inline-flex items-center justify-center transition",
           isActive
             ? "bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm"
-
             : "text-white hover:bg-white/15",
           className,
         ].join(" ")
@@ -528,8 +529,6 @@ function TopLink({ to, end, className = "", children }) {
     </NavLink>
   );
 }
-
-
 
 function QuickLink({ to, end, children }) {
   return (
@@ -611,7 +610,6 @@ function SelectorCard({
             open ? "ring-2 ring-brand-300 border-brand-300" : ""
           ].join(" ")}
         >
-
           <span className="truncate">{valueLabel}</span>
           <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M5.75 7.75L10 12l4.25-4.25" />
@@ -675,26 +673,25 @@ function MobileSelectPopover({
       <div className="flex items-center gap-3">
         <label htmlFor={id} className="w-28 text-xs text-gray-700">{label}</label>
 
-       <button
-        id={id}
-        ref={buttonRef}
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        className={[
-          "h-12 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
-          "border border-brand-200 hover:border-brand-300",
-          "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
-          open ? "ring-2 ring-brand-300 border-brand-300" : ""
-        ].join(" ")}
-      >
-
+        <button
+          id={id}
+          ref={buttonRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+          className={[
+            "h-12 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
+            "border border-brand-200 hover:border-brand-300",
+            "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
+            open ? "ring-2 ring-brand-300 border-brand-300" : ""
+          ].join(" ")}
+        >
           <span className="truncate">{valueLabel}</span>
           <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M5.75 7.75L10 12l4.25-4.25" />
@@ -704,7 +701,7 @@ function MobileSelectPopover({
 
       {open && (
         <div
-          ref={menuRef}                       // NEW: lets the outside-click logic detect “inside”
+          ref={menuRef}
           role="listbox"
           tabIndex={-1}
           className="absolute left-28 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
@@ -738,4 +735,3 @@ function MobileSelectPopover({
     </div>
   );
 }
-
