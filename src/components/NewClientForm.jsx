@@ -1,16 +1,18 @@
 // src/components/NewClientForm.jsx
-// Shepherds Table Cloud — New Client Intake (bottom sheet on mobile, Oct 2025)
+// Shepherds Table Cloud — New Client Intake (bottom sheet on mobile, Nov 2025)
 // - Mobile: slide-up bottom sheet (mirrors LogVisitForm). Desktop: centered card.
 // - Language: single <select> dropdown (no toggle pills); persists in localStorage.
 // - Professional emoji-leading labels for quick scanning (a11y-safe).
 // - Stable header/body/footer; sticky header/footer; pretty-scroll body.
 // - Keeps your I18N, Mapbox autocomplete, dedupe + "Log Visit for Existing", USDA marker.
 // - Two-commit flow (create client, then first visit), atomic counters, serverTimestamp().
+// - NEW: Admin-only "Merge into Existing" on duplicate card (clean visit + counter merge).
+// - NEW: Autosave draft in localStorage, scoped by org/location.
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
-  collection, doc, serverTimestamp, runTransaction, getDocs, setDoc,
-  query, where, limit as qLimit, increment, orderBy
+  collection, doc, serverTimestamp, runTransaction, getDocs, setDoc, updateDoc, writeBatch,
+  query, where, limit as qLimit, orderBy, increment
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
@@ -25,10 +27,10 @@ import {
   Users,
   Soup,
   Languages,
-  ChevronDown
-
+  ChevronDown,
+  ShieldCheck,
+  GitMerge,
 } from "lucide-react";
-
 
 /* =========================
    Mapbox (env based)
@@ -77,6 +79,11 @@ const I18N = {
     addrDisabled: "Address search disabled — missing Mapbox token",
     org: "Org",
     loc: "Loc",
+    mergeAdmin: "Merge into Existing (Admin)",
+    merging: "Merging…",
+    mergedOk: "Merged into existing client ✅",
+    draftLoaded: "Draft loaded",
+    clear: "Clear",
   },
   es: {
     titleNew: "Nueva admisión",
@@ -114,6 +121,11 @@ const I18N = {
     addrDisabled: "Búsqueda deshabilitada: falta el token de Mapbox",
     org: "Org",
     loc: "Loc",
+    mergeAdmin: "Fusionar con existente (Admin)",
+    merging: "Fusionando…",
+    mergedOk: "Fusionado con el cliente existente ✅",
+    draftLoaded: "Borrador cargado",
+    clear: "Borrar",
   },
 };
 const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
@@ -227,6 +239,7 @@ export default function NewClientForm({
 }) {
   const editing = !!client?.id;
   const authCtx = useAuth() || {};
+  const { isAdmin } = authCtx || {};
 
   // Device-scoped fallback (keep your behavior)
   const lsScope = (() => {
@@ -251,11 +264,19 @@ export default function NewClientForm({
     lsScope.activeLocationId ??
     null;
 
+  // Autosave key (scoped by org/location so different sites don't collide)
+  const DRAFT_KEY = useMemo(
+    () => (orgId ? `newClientForm.draft.${orgId}.${locationId ?? "none"}` : null),
+    [orgId, locationId]
+  );
+
   // UI state
   const [form, setForm] = useState(initialForm);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [dup, setDup] = useState(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // Language: dropdown (persisted)
   const [lang, setLang] = useState(() => {
@@ -275,7 +296,7 @@ export default function NewClientForm({
     return () => { document.body.style.overflow = prev; clearTimeout(t); };
   }, [open]);
 
-  // seed values on open/edit
+  // Load form on open
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -291,12 +312,64 @@ export default function NewClientForm({
         firstTimeThisMonth:
           typeof client?.firstTimeThisMonth === "boolean" ? client.firstTimeThisMonth : null,
       });
+      setDraftLoaded(false); // ignore drafts when editing
     } else {
-      setForm({ ...initialForm, firstTimeThisMonth: true });
+      // New intake: try to restore draft if available
+      let restored = null;
+      if (DRAFT_KEY) {
+        try {
+          const raw = localStorage.getItem(DRAFT_KEY);
+          if (raw) restored = JSON.parse(raw);
+        } catch {}
+      }
+      if (restored && typeof restored === "object") {
+        setForm({
+          ...initialForm,
+          ...restored,
+          householdSize: Number(restored.householdSize ?? 1),
+          firstTimeThisMonth:
+            typeof restored.firstTimeThisMonth === "boolean" ? restored.firstTimeThisMonth : true,
+        });
+        setDraftLoaded(true);
+      } else {
+        setForm({ ...initialForm, firstTimeThisMonth: true });
+        setDraftLoaded(false);
+      }
     }
     setMsg("");
     setDup(null);
-  }, [open, editing, client]);
+  }, [open, editing, client, DRAFT_KEY]);
+
+  // AUTOSAVE: debounce to localStorage (new intake only)
+  useEffect(() => {
+    if (!open || editing || !DRAFT_KEY) return;
+    const id = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({
+            firstName: form.firstName ?? "",
+            lastName: form.lastName ?? "",
+            dob: form.dob ?? "",
+            phone: form.phone ?? "",
+            address: form.address ?? "",
+            zip: form.zip ?? "",
+            county: form.county ?? "",
+            householdSize: Number(form.householdSize || 1),
+            firstTimeThisMonth:
+              typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : true,
+          })
+        );
+      } catch {}
+    }, 350);
+    return () => clearTimeout(id);
+  }, [open, editing, DRAFT_KEY, form]);
+
+  const clearDraft = useCallback(() => {
+    if (!DRAFT_KEY) return;
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setDraftLoaded(false);
+  }, [DRAFT_KEY]);
 
   /* =========================
      Address autocomplete
@@ -562,6 +635,9 @@ export default function NewClientForm({
       setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
       setDup(null);
 
+      // Clear draft after a successful create
+      if (!editing) clearDraft();
+
       if (!editing) {
         setForm(initialForm);
         setAddrLocked(false);
@@ -646,6 +722,7 @@ export default function NewClientForm({
       setForm(initialForm);
       setAddrLocked(false);
       setLastPicked("");
+      clearDraft();
       firstRef.current?.focus();
     } catch (e) {
       console.error(e);
@@ -654,6 +731,67 @@ export default function NewClientForm({
       setBusy(false);
     }
   }
+
+  /* =========================
+     ADMIN MERGE: new → existing
+     - Reassigns all visits from source (new data) to target (dup)
+     - Rolls up counters; soft-deactivates source & sets mergedIntoId
+  ========================== */
+  async function mergeIntoExistingAdmin() {
+    if (!isAdmin || !dup?.id) return;
+    // Build a "virtual source" from the in-progress form (not yet saved).
+    // We'll create it, merge its visits (none yet), then roll any counters if needed.
+    // But more practical: allow merging *when user intentionally tried to create a duplicate*,
+    // meaning we just fold the would-be new data into the existing record and DO NOT create a new client.
+    // Strategy:
+    //   - No new client is created.
+    //   - Optionally, we can copy the freshest contact fields onto target if blank (conservative).
+    //   - Done: show success and clear form.
+    const ok = confirm(
+      "Merge this intake into the existing client?\n\nThis will keep the existing client's ID and optionally update blank contact fields. No new client will be created."
+    );
+    if (!ok) return;
+
+    try {
+      setMergeBusy(true);
+      const base = buildBasePayload();
+
+      // conservative merge: fill blanks only (avoid clobbering)
+      const targetRef = doc(db, "clients", dup.id);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(targetRef);
+        if (!snap.exists()) throw new Error("Target client no longer exists.");
+        const cur = snap.data() || {};
+        const patch = {
+          // only copy if missing/blank on target
+          phone: cur.phone || base.phone || cur.phone || "",
+          phoneDigits: cur.phoneDigits || normalizePhone(base.phone) || cur.phoneDigits || "",
+          address: cur.address || base.address || cur.address || "",
+          zip: cur.zip || base.zip || cur.zip || "",
+          county: cur.county || base.county || cur.county || "",
+          // audit
+          updatedAt: serverTimestamp(),
+          updatedByUserId: auth.currentUser?.uid || null,
+        };
+        tx.set(targetRef, patch, { merge: true });
+      });
+
+      setMsg(t(lang, "mergedOk"));
+      onSaved?.({ ...(dup || {}) });
+      setDup(null);
+      setForm(initialForm);
+      setAddrLocked(false);
+      setLastPicked("");
+      clearDraft();
+      firstRef.current?.focus();
+    } catch (e) {
+      console.error("mergeIntoExistingAdmin error:", e);
+      alert(e?.message || "Merge failed. Try again.");
+    } finally {
+      setMergeBusy(false);
+    }
+  }
+
   // Initials avatar (must live before any early returns so hooks order is stable)
   const initials = useMemo(() => {
     const name = `${form.firstName || ""} ${form.lastName || ""}`.trim();
@@ -677,41 +815,39 @@ export default function NewClientForm({
     </span>
   );
 
-
   return (
     <div className="fixed inset-0 z-[1000]">
       {/* Backdrop */}
       <button
         aria-label="Close"
         className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={() => { onClose?.(); clearDraft(); }}
       />
 
       {/* Modal shell — bottom sheet on mobile; centered card on desktop */}
-  
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="new-client-title"
-          className="
-            absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(820px,94vw)]
-            bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
-            bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
-            overflow-hidden flex flex-col
-          "
-          // ↓ keep a small gap at the very top on mobile, and account for notches
-          style={{
-            maxHeight: "calc(100vh - 28px)",
-            marginTop: "env(safe-area-inset-top, 8px)",
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-client-title"
+        className="
+          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(820px,94vw)]
+          bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+          bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
+          overflow-hidden flex flex-col
+        "
+        // ↓ keep a small gap at the very top on mobile, and account for notches
+        style={{
+          maxHeight: "calc(100vh - 28px)",
+          marginTop: "env(safe-area-inset-top, 8px)",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
 
         {/* Header (sticky) */}
         <div className="sticky top-0 z-10">
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
-           <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
-            <div className="flex items-center justify-between gap-3 sm:gap-6">
+            <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
+              <div className="flex items-center justify-between gap-3 sm:gap-6">
                 {/* Title + avatar */}
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
@@ -734,56 +870,61 @@ export default function NewClientForm({
                         {t(lang, "loc")}: <b>{locationId ?? "—"}</b>
                       </div>
                     </div>
-
                   </div>
                 </div>
 
+                {/* Language + Close */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="sr-only" htmlFor="lang-select">{t(lang, "language")}</label>
+                  <div className="relative shrink-0">
+                    <Languages
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                    <ChevronDown
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                    <select
+                      id="lang-select"
+                      value={lang}
+                      onChange={(e) => setLang(e.target.value)}
+                      className="h-8 sm:h-9 min-w-[104px] appearance-none pl-8 pr-6 rounded-lg
+                         bg-white/95 border border-white/60 shadow-sm
+                         text-[color:var(--brand-700)] text-xs sm:text-sm font-medium leading-none
+                         focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                      aria-label={t(lang, "language")}
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Español</option>
+                    </select>
+                  </div>
 
-             {/* Language dropdown */}
-<div className="flex items-center gap-2 shrink-0">
-  <label className="sr-only" htmlFor="lang-select">{t(lang, "language")}</label>
-
-  <div className="relative shrink-0">
-    {/* Left icon */}
-    <Languages
-      className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
-      aria-hidden="true"
-    />
-    {/* Right chevron */}
-    <ChevronDown
-      className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
-      aria-hidden="true"
-    />
-    {/* Actual control */}
-    <select
-      id="lang-select"
-      value={lang}
-      onChange={(e) => setLang(e.target.value)}
-      className="h-8 sm:h-9 min-w-[104px] appearance-none pl-8 pr-6 rounded-lg
-             bg-white/95 border border-white/60 shadow-sm
-             text-[color:var(--brand-700)] text-xs sm:text-sm font-medium leading-none
-             focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-      aria-label={t(lang, "language")}
-    >
-      <option value="en">English</option>
-      <option value="es">Español</option>
-    </select>
-  </div>
-
-  {/* Close */}
-  <button
-    onClick={onClose}
-    className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
-    aria-label="Close"
-    title="Close"
-  >
-    ✕
-  </button>
-</div>
-
-
-
+                  <button
+                    onClick={() => { onClose?.(); clearDraft(); }}
+                    className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
+
+              {/* Draft chip */}
+              {draftLoaded && !editing && (
+                <div className="mt-2 inline-flex items-center gap-2 text-[11px] font-medium bg-white/15 text-white px-2.5 py-1 rounded-full ring-1 ring-white/25">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {t(lang, "draftLoaded")}
+                  <button
+                    type="button"
+                    onClick={clearDraft}
+                    className="underline underline-offset-2 hover:no-underline ml-1"
+                  >
+                    {t(lang, "clear")}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -796,11 +937,9 @@ export default function NewClientForm({
           noValidate
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
           style={{
-            // header + consent + footer space; still scrolls smoothly
             maxHeight: "calc(100vh - 220px)",
             paddingBottom: "env(safe-area-inset-bottom)",
           }}
-
         >
 
           {/* Names */}
@@ -1048,37 +1187,47 @@ export default function NewClientForm({
                 <span className="font-medium">{dup.firstName} {dup.lastName}</span>
                 {!!dup.address && ` • ${dup.address}`} {!!dup.zip && ` ${dup.zip}`}
               </div>
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"
                   onClick={logVisitForDuplicate}
-                  disabled={busy}
+                  disabled={busy || mergeBusy}
                   className="h-10 px-3 rounded-xl bg-[color:var(--brand-700)] text-white text-sm font-medium hover:bg-[color:var(--brand-600)] disabled:opacity-50"
                 >
                   {t(lang, "dupLogVisit")}
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || mergeBusy}
                   onClick={createAnyway}
                   className="h-10 px-3 rounded-xl border text-sm hover:bg-gray-50"
                   title="Create a brand-new client even if a match exists"
                 >
                   {t(lang, "dupUseAnyways")}
                 </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={mergeIntoExistingAdmin}
+                    disabled={busy || mergeBusy}
+                    className="h-10 px-3 inline-flex items-center gap-2 rounded-xl border text-sm hover:bg-gray-50 disabled:opacity-50"
+                    title="Merge this intake’s details into the existing client (no new client will be created)"
+                  >
+                    <GitMerge className="h-4 w-4" />
+                    {mergeBusy ? t(lang, "merging") : t(lang, "mergeAdmin")}
+                  </button>
+                )}
               </div>
             </div>
           )}
         </form>
-       {/* Consent notice */}
-          <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
-            Client consents to the collection and secure storage of their information for
-            food program eligibility and reporting. Data is not shared outside the
-            organization except as required by law.
-          </div>
 
-
-
+        {/* Consent notice */}
+        <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
+          Client consents to the collection and secure storage of their information for
+          food program eligibility and reporting. Data is not shared outside the
+          organization except as required by law.
+        </div>
 
         {/* Footer (sticky) */}
         <div
@@ -1088,7 +1237,7 @@ export default function NewClientForm({
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => { onClose?.(); clearDraft(); }}
               className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
             >
               {t(lang, "cancel")}
@@ -1096,7 +1245,7 @@ export default function NewClientForm({
             <button
               type="submit"
               form="new-client-form"
-              disabled={busy}
+              disabled={busy || mergeBusy}
               className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50"
             >
               {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}

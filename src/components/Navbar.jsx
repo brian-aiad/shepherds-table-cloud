@@ -1,3 +1,4 @@
+// src/components/Navbar.jsx
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { NavLink, useNavigate, useLocation as useRouteLoc } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
@@ -7,6 +8,8 @@ import { useAuth } from "../auth/useAuth";
  * - Solid brand background (no white in the gradient).
  * - Context panel renders above everything.
  * - ADMIN LOCATION SCOPE: “All locations” shows only when canPickAllLocations === true.
+ * - NEW: Tenant org logo (organizations/{orgId}.logoUrl) with graceful fallback.
+ * - NEW: Mobile “Current location” badge for at-a-glance scope awareness.
  */
 
 export default function Navbar() {
@@ -21,7 +24,7 @@ export default function Navbar() {
     location,
     locations = [],
     isAdmin,
-    // NEW: only admins *with org-wide access* can see “All locations”
+    // Only admins with org-wide access can pick “All locations”
     canPickAllLocations = false,
     loading,
     setActiveOrg,
@@ -79,7 +82,6 @@ export default function Navbar() {
       setOrgOpen(false);
       setLocOpen(false);
       setMobileOpen(false);
-      // nudge current route so Dashboard effects re-run
       nav(route.pathname + route.search, {
         replace: true,
         state: { scopeChangedAt: Date.now() },
@@ -173,6 +175,20 @@ export default function Navbar() {
       : scoped;
   }, [locations, orgId, isAdmin, canPickAllLocations]);
 
+  // Derived UI labels
+  const activeOrgName = orgs.find((o) => o.id === orgId)?.name || org?.name || "Select an org";
+  const activeLocName = !orgId
+    ? "—"
+    : (isAdmin && canPickAllLocations && locId === "")
+      ? "All locations"
+      : (mobileScopedLocations.find((l) => l.id === locId)?.name || "Select a location");
+
+  // Tenant logo (prefer org.logoUrl, fallback to app logo)
+  const appLogo = `${import.meta.env.BASE_URL}logo.png`;
+  const orgLogo = (org?.logoUrl && typeof org.logoUrl === "string" && org.logoUrl.trim()) ? org.logoUrl : null;
+  const brandLogoSrc = orgLogo || appLogo;
+  const brandAlt = orgLogo ? `${activeOrgName} logo` : "Shepherd’s Table Cloud logo";
+
   // Tiny toast
   const [toast, setToast] = useState(null);
   function showToast(msg, ms = 1800) {
@@ -187,9 +203,7 @@ export default function Navbar() {
       <div
         aria-hidden
         className="fixed top-0 left-0 right-0 h-[max(1px,env(safe-area-inset-top))] z-[9998] pointer-events-none"
-        style={{
-          background: "var(--brand-650, var(--brand-600))",
-        }}
+        style={{ background: "var(--brand-650, var(--brand-600))" }}
       />
 
       {toast && (
@@ -222,21 +236,39 @@ export default function Navbar() {
             </svg>
           </button>
 
-          {/* Brand */}
-          <NavLink
-            to="/"
-            className="inline-flex items-center gap-3 rounded-lg px-2 py-1 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            aria-label="Go to Dashboard"
-          >
-            <img
-              src={`${import.meta.env.BASE_URL}logo.png`}
-              alt="Shepherd’s Table Cloud logo"
-              className="h-10 w-10 rounded-md bg-white p-1.5 ring-1 ring-black/10 object-contain"
-            />
-            <span className="relative top-[2px] text-[17px] sm:text-[19px] md:text-[21px] lg:text-[22px] font-semibold tracking-tight leading-[1.1] text-white">
-              Shepherd’s Table
-            </span>
-          </NavLink>
+         {/* Brand (org-aware, compact + polished) */}
+<NavLink
+  to="/"
+  className="inline-flex items-center gap-3 rounded-xl px-2.5 py-1.5 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
+  aria-label="Go to Dashboard"
+>
+  {/* Logo with graceful org fallback */}
+  <div className="relative shrink-0">
+    <img
+      src={org?.logoUrl || brandLogoSrc}
+      alt={org?.name ? `${org.name} logo` : brandAlt}
+      className="h-10 w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
+      referrerPolicy="no-referrer"
+      loading="eager"
+    />
+    {/* subtle glow overlay */}
+    <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
+  </div>
+
+  {/* Brand text block */}
+  <div className="flex flex-col leading-tight min-w-0">
+    <span className="font-semibold text-white text-[17px] sm:text-[19px] md:text-[21px] tracking-tight truncate">
+      Shepherd’s Table 
+    </span>
+
+    {org?.name && (
+      <span className="text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[160px] sm:max-w-none">
+        {org.name}
+      </span>
+    )}
+  </div>
+</NavLink>
+
 
           {/* Mobile Sign out */}
           <button
@@ -339,6 +371,7 @@ export default function Navbar() {
             background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
           }}
         >
+          {/* Primary quick links */}
           <div className="flex gap-2 pt-3">
             <QuickLink to="/" end>Dashboard</QuickLink>
             {isAdmin && (
@@ -349,12 +382,31 @@ export default function Navbar() {
             )}
           </div>
 
+          {/* NEW: Mobile Current Location badge (always visible) */}
+          <div className="mt-3">
+            <span
+              className="inline-flex items-center gap-2 rounded-full bg-white/15 text-white ring-1 ring-white/20 px-3 py-1.5 text-[12px] font-medium"
+              title="Current scope"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M12 8v8M8 12h8" opacity=".0" />{/* decorative */}
+                <path d="M12 21a9 9 0 1 1 0-18a9 9 0 0 1 0 18Z" opacity=".35" />
+                <path d="M12 16a4 4 0 1 1 0-8a4 4 0 0 1 0 8Z" />
+              </svg>
+              <span className="truncate max-w-[75vw]">
+                <strong className="font-semibold">{activeOrgName}</strong>
+                <span className="opacity-80"> • </span>
+                <span className="opacity-95">{activeLocName}</span>
+              </span>
+            </span>
+          </div>
+
           {/* Mobile selectors */}
           <div className="mt-3 rounded-2xl bg-white text-gray-900 p-3 shadow-sm">
             <MobileSelectPopover
               id="m-org"
               label="Organization"
-              valueLabel={orgs.find(o => o.id === orgId)?.name || "Select an org"}
+              valueLabel={activeOrgName}
               disabled={loading || orgs.length === 0}
               open={orgOpen}
               setOpen={setOrgOpen}
@@ -391,6 +443,7 @@ export default function Navbar() {
             <p className="mt-3 text-[11px] text-gray-500">Changes are local (per device).</p>
           </div>
 
+          {/* Identity row */}
           <div className="mt-3 flex items-center justify-end text-white">
             <div className="inline-flex items-center gap-2 text-[12px]">
               <span className="truncate max-w-[220px]">{email || "—"}</span>
@@ -424,7 +477,6 @@ function DesktopContextStrip({
   locBtnRef,
   locMenuRef,
   isAdmin,
-  // NEW
   canPickAllLocations = false,
 }) {
   const activeOrgName = orgs.find((o) => o.id === orgId)?.name || "Select an org";
@@ -485,11 +537,21 @@ function DesktopContextStrip({
             />
           </div>
 
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] text-white/85">
               Changes are local (per device).
               {isAdmin && canPickAllLocations ? " Use “All locations” for org-wide admin data." : ""}
             </p>
+            <button
+              onClick={onSaveDefault}
+              className="inline-flex items-center gap-2 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 px-3 py-1.5 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              title="Save this scope on this device"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+              Save as default
+            </button>
           </div>
         </div>
       </div>
@@ -665,8 +727,8 @@ function MobileSelectPopover({
   onSelect,
   getKey,
   getLabel,
-  buttonRef,     // NEW
-  menuRef,       // NEW
+  buttonRef,
+  menuRef,
 }) {
   return (
     <div className="relative">

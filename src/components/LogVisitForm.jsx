@@ -157,14 +157,13 @@ export default function LogVisitForm({
           throw new Error("Client belongs to a different organization.");
         }
 
-        // 2) If toggled Yes, create-once USDA marker (only if it does not exist)
+        // 2) If toggled Yes, create-once USDA marker (no pre-read; ignore if it exists)
         if (usdaFirstThisMonth) {
           const markerId = `${orgId}_${client.id}_${mKey}`;
           const markerRef = doc(db, "usda_first", markerId);
-          const markerSnap = await tx.get(markerRef);
-          
-          if (!markerSnap.exists()) {
-            tx.set(markerRef, {
+          try {
+            // true create → passes your rules only when it doesn't exist
+            tx.create(markerRef, {
               orgId,
               clientId: client.id,
               locationId,
@@ -172,8 +171,11 @@ export default function LogVisitForm({
               createdAt: serverTimestamp(),
               createdByUserId: currentUserId,
             });
+          } catch (_e) {
+            // If it already exists or create is disallowed, we ignore—visit can still proceed.
           }
         }
+
         // Snapshot address fields from the client for historical reporting
         const snapAddress = cur.address || client.address || "";
         const snapZip     = cur.zip || client.zip || "";

@@ -1,17 +1,29 @@
 // src/auth/AuthProvider.tsx
-// Shepherds Table Cloud — Auth context (multi-tenant, Oct 2025)
+// Shepherds Table Cloud — Auth context (multi-tenant, Nov 2025)
 //
 // Exposes useAuth() fields via context:
-// { uid, email, org, orgs, location, locations, role, isAdmin, isMaster, loading,
-//   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow, canPickAllLocations }
+// { uid, email, org, orgs, location, locations, role, isAdmin, canPickAllLocations, loading,
+//   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow }
 //
-// Master policy in this build:
-// - Master is ONLY the email "csbrianaiad@gmail.com" (no claim required).
-// - Admins are determined by /orgUsers/<uid>_<ORGID>.
-// - Volunteers can read clients (assigned locations) and write visits (assigned locations).
+// Role model:
+// - Master (via custom claim `master: true`) → full access across all orgs/locations
+// - Org Admins (from /orgUsers) → admin inside their org; may be restricted to specific locationIds
+// - Volunteers (from /orgUsers) → restricted to assigned locationIds; no “All locations”
+// Suspensions:
+// - /orgUsers rows with { active: false } OR { suspended: true } are ignored (no access)
+//
+// Data used:
+// organizations/{orgId} {name, slug, active, ...}
+// locations/{locId} {orgId, name, active, ...}
+// orgUsers/{uid_orgId} {orgId, userId, email, role, locationIds, active, suspended}
+// users/{uid} {activeOrgId, activeLocationId}
+//
+// Notes:
+// - “All locations” only appears when canPickAllLocations === true (admin with org-wide access)
+// - Local device scope mirror: stc_scope { activeOrgId, activeLocationId }
 
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, getIdTokenResult } from "firebase/auth";
 import type { User } from "firebase/auth";
 import {
   collection,
@@ -22,7 +34,6 @@ import {
   serverTimestamp,
   setDoc,
   where,
-  orderBy,
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 
@@ -58,10 +69,9 @@ export type AuthValue = {
   orgs: Org[];
   locations: LocationRec[];
 
-  role: Role;        // coarse (has ANY admin across memberships)
-  isAdmin: boolean;  // true only if admin of ACTIVE org, or master
-  isMaster: boolean; // explicit master flag (email match)
-  canPickAllLocations?: boolean; // UI helper: show "All locations" only if true
+  role: Role;            // coarse badge: "admin" if admin in ANY org else "volunteer"
+  isAdmin: boolean;      // admin for the ACTIVE org (or master)
+  canPickAllLocations: boolean; // UI helper: show “All locations” only if true
 
   loading: boolean;
 
@@ -72,14 +82,9 @@ export type AuthValue = {
 };
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Constants
+   Device scope mirror (localStorage)
 ────────────────────────────────────────────────────────────────────────────── */
-const MASTER_EMAIL = "csbrianaiad@gmail.com"; // single master account
-const LS_KEY = "stc_scope"; // per-device mirror of activeOrgId/activeLocationId
-
-/* ──────────────────────────────────────────────────────────────────────────────
-   Helpers: device scope
-────────────────────────────────────────────────────────────────────────────── */
+const LS_KEY = "stc_scope";
 type DeviceScope = { activeOrgId: string | null; activeLocationId: string | null };
 
 function readDeviceScope(): DeviceScope {
@@ -98,7 +103,7 @@ function readDeviceScope(): DeviceScope {
 
 function writeDeviceScope(patch: Partial<DeviceScope>) {
   const prev = readDeviceScope();
-  const next = {
+  const next: DeviceScope = {
     activeOrgId: patch.activeOrgId ?? prev.activeOrgId,
     activeLocationId: patch.activeLocationId ?? prev.activeLocationId,
   };
@@ -109,9 +114,7 @@ function writeDeviceScope(patch: Partial<DeviceScope>) {
   }
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────
-   Firestore: persist user context (explicit only)
-────────────────────────────────────────────────────────────────────────────── */
+/* Persist current device scope to Firestore only when user explicitly asks */
 async function persistUserScopeToFirestore(uid: string, scope: DeviceScope) {
   const uref = doc(db, "users", uid);
   await setDoc(
@@ -126,7 +129,7 @@ async function persistUserScopeToFirestore(uid: string, scope: DeviceScope) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Context
+   Context defaults
 ────────────────────────────────────────────────────────────────────────────── */
 export const AuthContext = createContext<AuthValue>({
   uid: null,
@@ -140,7 +143,6 @@ export const AuthContext = createContext<AuthValue>({
 
   role: null,
   isAdmin: false,
-  isMaster: false,
   canPickAllLocations: false,
 
   loading: true,
@@ -152,7 +154,7 @@ export const AuthContext = createContext<AuthValue>({
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Branded loading screen (logo + subtle spinner)
+   Branded loading screen (kept)
 ────────────────────────────────────────────────────────────────────────────── */
 function BrandedLoading() {
   const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
@@ -193,6 +195,9 @@ function BrandedLoading() {
   );
 }
 
+/* ──────────────────────────────────────────────────────────────────────────────
+   Provider
+────────────────────────────────────────────────────────────────────────────── */
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -202,18 +207,17 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const [org, setOrg] = useState<Org | null>(null);
   const [location, setLocation] = useState<LocationRec | null>(null);
 
-  const [role, setRole] = useState<Role>(null); // coarse (any admin anywhere)
+  const [role, setRole] = useState<Role>(null); // coarse badge: any admin anywhere → "admin"
   const [isMaster, setIsMaster] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Per-org role and allowed location maps
+  // Per-org maps
   const [rolesByOrg, setRolesByOrg] = useState<Record<string, Role>>({});
   const [allowedLocsByOrg, setAllowedLocsByOrg] = useState<Record<string, string[]>>({});
-  // true = admin has org-wide location access for that org (no locationIds restriction)
+  // true when admin has org-wide location access (no explicit locationIds restriction)
   const [adminAllByOrg, setAdminAllByOrg] = useState<Record<string, boolean>>({});
 
-  /* ── Derived ─────────────────────────────────────────────────────────────── */
-  // isAdmin is scoped to the ACTIVE org (unless master)
+  /* Derived flags */
   const isAdmin = useMemo(() => {
     if (isMaster) return true;
     const activeOrgId = org?.id || null;
@@ -221,21 +225,18 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     return rolesByOrg[activeOrgId] === "admin";
   }, [isMaster, org?.id, rolesByOrg]);
 
-  // Can this user pick "All locations" for the active org?
   const canPickAllLocations = useMemo(() => {
     if (isMaster) return true;
     const activeOrgId = org?.id || null;
     if (!activeOrgId) return false;
-    // Only admins who have org-wide access (no locationIds restriction) can pick All
     return rolesByOrg[activeOrgId] === "admin" && adminAllByOrg[activeOrgId] === true;
   }, [isMaster, org?.id, rolesByOrg, adminAllByOrg]);
 
-  /* ── Actions ─────────────────────────────────────────────────────────────── */
+  /* Actions */
   const signOutNow = useCallback(async () => {
     await signOut(auth);
   }, []);
 
-  // Switch org: update memory + device mirror; pick first VALID location for that org.
   const setActiveOrg = useCallback(
     async (orgId: string | null) => {
       if (!uid) return;
@@ -269,8 +270,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     [uid, orgs, locations, isMaster, rolesByOrg, allowedLocsByOrg, adminAllByOrg]
   );
 
-  // Switch location within current org: update memory + device mirror.
-  // ACCEPTS "" (empty string) as "All locations" but only when allowed.
+  // "" (empty string) is the sentinel for "All locations" — only when allowed.
   const setActiveLocation = useCallback(
     async (locationId: string | null) => {
       if (!uid) return;
@@ -281,7 +281,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       const adminHere = isMaster || rolesByOrg[activeOrgId] === "admin";
 
       if (locationId === "") {
-        // Only admins with org-wide access can pick All
         const allow = allowedLocsByOrg[activeOrgId] || [];
         const adminAll = adminHere && (adminAllByOrg[activeOrgId] === true || allow.length === 0);
         if (!adminAll) return;
@@ -292,10 +291,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Normal single-location selection
       const next = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null;
 
-      // Guard org match
+      // cross-org guard
       if (next && next.orgId !== activeOrgId) {
         const locsForOrg = locations.filter((l) => l.orgId === activeOrgId);
         const fallback = adminHere
@@ -309,7 +307,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Volunteers: must be assigned
+      // volunteers must be explicitly assigned
       if (!adminHere && next) {
         const allow = allowedLocsByOrg[activeOrgId] || [];
         if (!allow.includes(next.id)) {
@@ -327,20 +325,19 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     [uid, org?.id, locations, isMaster, rolesByOrg, allowedLocsByOrg, adminAllByOrg]
   );
 
-  // Explicit “Make default on this device” → persists the current device scope to Firestore
   const saveDeviceDefaultScope = useCallback(async () => {
     if (!uid) return;
     const scope = readDeviceScope();
     await persistUserScopeToFirestore(uid, scope);
   }, [uid]);
 
-  /* ── Bootstrap on auth state ─────────────────────────────────────────────── */
+  /* ── Bootstrap ───────────────────────────────────────────────────────────── */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u: User | null) => {
       setLoading(true);
       try {
         if (!u) {
-          // Reset on sign-out
+          // reset on sign-out
           setUid(null);
           setEmail(null);
           setOrg(null);
@@ -359,11 +356,17 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         setUid(u.uid);
         setEmail(u.email ?? null);
 
-        // Master flag: ONLY email match
-        const masterNow = (u.email ?? "").toLowerCase() === MASTER_EMAIL.toLowerCase();
+        // Master via custom claim
+        let masterNow = false;
+        try {
+          const token = await getIdTokenResult(u);
+          masterNow = token?.claims?.master === true;
+        } catch {
+          masterNow = false;
+        }
         setIsMaster(masterNow);
 
-        // Ensure users/{uid} shell exists (no scope write here)
+        // ensure users/{uid} shell
         const uref = doc(db, "users", u.uid);
         const usnap = await getDoc(uref);
         if (!usnap.exists()) {
@@ -374,18 +377,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           );
         }
 
-        // Load orgs/locations depending on master/admin
         let nextOrgs: Org[] = [];
         let nextLocations: LocationRec[] = [];
         let nextRole: Role = null;
 
-        // Maps we will commit to state at the end
         let mapRolesByOrg: Record<string, Role> = {};
         let mapAllowedLocsByOrg: Record<string, string[]> = {};
         let mapAdminAllByOrg: Record<string, boolean> = {};
 
         if (masterNow) {
-          // Master: can see all orgs & locations
+          // Master sees all orgs and locations
           const orgQs = await getDocs(collection(db, "organizations"));
           nextOrgs = orgQs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Org[];
 
@@ -393,12 +394,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           nextLocations = locQs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
 
           nextRole = "admin";
-          mapRolesByOrg = {};
-          mapAllowedLocsByOrg = {};
-          mapAdminAllByOrg = {};
         } else {
-          // Non-master: memberships from orgUsers
-          const ouQs = await getDocs(query(collection(db, "orgUsers"), where("userId", "==", u.uid)));
+          // Non-master: build access from orgUsers, ignoring inactive/suspended
+          const ouQs = await getDocs(
+            query(collection(db, "orgUsers"), where("userId", "==", u.uid))
+          );
 
           const orgIds = new Set<string>();
           mapRolesByOrg = {};
@@ -409,6 +409,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             const rec = row.data() as any;
             if (!rec?.orgId) return;
 
+            // Skip inactive / suspended memberships
+            if (rec?.active === false || rec?.suspended === true) return;
+
             orgIds.add(rec.orgId);
 
             const r: Role = rec?.role === "admin" ? "admin" : "volunteer";
@@ -417,51 +420,45 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             const locs = Array.isArray(rec?.locationIds) ? rec.locationIds.filter(Boolean) : [];
 
             if (r === "admin") {
-              // Admin with explicit locationIds → RESTRICT to those; none → full org access
+              // Admin w/ explicit locationIds → restricted; empty → org-wide
               mapAllowedLocsByOrg[rec.orgId] = locs;
               mapAdminAllByOrg[rec.orgId] = locs.length === 0;
             } else {
-              // Volunteer must always have explicit allow list (can be empty)
+              // Volunteer must have explicit allow list (can be empty = no access)
               mapAllowedLocsByOrg[rec.orgId] = locs;
               mapAdminAllByOrg[rec.orgId] = false;
             }
           });
 
-          // Load orgs
+          // Fetch org docs we actually belong to
           const orgFetches = Array.from(orgIds).map(async (id) => {
             const snap = await getDoc(doc(db, "organizations", id));
             return snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as Org) : null;
           });
           nextOrgs = (await Promise.all(orgFetches)).filter(Boolean) as Org[];
 
-          // Load locations; admins respect restriction; volunteers restricted to assigned locationIds
+          // Fetch locations per org, respecting location restrictions
           const locFetches = nextOrgs.map(async (o) => {
-        const qs = await getDocs(
-          query(collection(db, "locations"), where("orgId", "==", o.id))
-        );
-                    const all = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
+            const qs = await getDocs(query(collection(db, "locations"), where("orgId", "==", o.id)));
+            const all = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as LocationRec[];
 
-            const roleForOrg = mapRolesByOrg[o.id] || "volunteer";
-            if (roleForOrg === "admin") {
+            const r = mapRolesByOrg[o.id] || "volunteer";
+            if (r === "admin") {
               const allow = mapAllowedLocsByOrg[o.id] || [];
-              // org-wide if no restriction; otherwise only the listed locations
               return (mapAdminAllByOrg[o.id] === true || allow.length === 0)
                 ? all
                 : all.filter((l) => allow.includes(l.id));
             }
-
-            // volunteer: only explicitly assigned locations; if none assigned, they see none
             const allow = mapAllowedLocsByOrg[o.id] || [];
             return all.filter((l) => allow.includes(l.id));
           });
           nextLocations = (await Promise.all(locFetches)).flat();
 
-          // Coarse UX role: if user is admin in ANY org, mark as admin (UI badge only)
-          const hasAnyAdmin = Object.values(mapRolesByOrg).includes("admin");
-          nextRole = hasAnyAdmin ? "admin" : "volunteer";
+          // Coarse badge
+          nextRole = Object.values(mapRolesByOrg).includes("admin") ? "admin" : "volunteer";
         }
 
-        // Resolve initial selection with device-first preference (no Firestore writes here)
+        // Initial selection: prefer device scope, then stored in users/{uid}, else first available
         const device = readDeviceScope();
         const stored = (await getDoc(doc(db, "users", u.uid))).data() as any | undefined;
 
@@ -486,7 +483,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           const adminHere = masterNow || (mapRolesByOrg[pickOrg.id] === "admin");
 
           if (pickLocId === "" && adminHere) {
-            // allow "All" if org-wide; otherwise we’ll re-evaluate below after maps are committed
             const allow = mapAllowedLocsByOrg[pickOrg.id] || [];
             const adminAll = masterNow || mapAdminAllByOrg[pickOrg.id] === true || allow.length === 0;
             if (adminAll) {
@@ -541,7 +537,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       locations,
       role,
       isAdmin,
-      isMaster,
       canPickAllLocations,
       loading,
       setActiveOrg,
@@ -558,7 +553,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       locations,
       role,
       isAdmin,
-      isMaster,
       canPickAllLocations,
       loading,
       setActiveOrg,
@@ -568,7 +562,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     ]
   );
 
-  // IMPORTANT: Keep provider mounted; show branded loading screen until init completes.
   if (loading) {
     return (
       <AuthContext.Provider value={value}>

@@ -1,10 +1,10 @@
 // src/App.jsx
-// Shepherds Table Cloud — App Router (Oct 2025)
+// Shepherds Table Cloud — App Router (Nov 2025)
+// - React Router v6 with Suspense + lazy routes
 // - Protected shell for all authenticated pages
-// - AdminRoute guards admin-only pages (respects useAuth().isAdmin)
-// - Lazy-loaded route components with a safe <Suspense> fallback
-// - Includes public legal pages: Privacy Policy + Terms of Service
-// - Catch-alls route back to "/login" for public area, "/" for authed shell
+// - AdminRoute guards admin-only pages via useAuth().isAdmin
+// - Auth-aware NotFound: unauth → /login, authed → /
+// - Public legal pages included (privacy/terms/usage)
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
@@ -27,10 +27,32 @@ const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 // ─────────────────────────────────────────────────────────────
 function AdminRoute({ children }) {
   const { loading, isAdmin } = useAuth();
-  if (loading)
-    return <div className="p-6 text-sm text-gray-600">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-gray-600" aria-busy="true">
+        Loading…
+      </div>
+    );
+  }
   if (!isAdmin) return <Navigate to="/" replace />;
   return children;
+}
+
+// ─────────────────────────────────────────────────────────────
+// AuthAwareNotFound — redirect based on auth state
+//  • unauthenticated → /login
+//  • authenticated   → /
+// ─────────────────────────────────────────────────────────────
+function AuthAwareNotFound() {
+  const { loading, uid } = useAuth() || {};
+  if (loading) {
+    return (
+      <div className="min-h-[40vh] grid place-items-center p-6 text-sm text-gray-600" aria-busy="true">
+        Loading…
+      </div>
+    );
+  }
+  return <Navigate to={uid ? "/" : "/login"} replace />;
 }
 
 // Shared Suspense fallback (accessible)
@@ -91,8 +113,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
 
-        {/* Outside-shell catch-all → login */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Outside-shell catch-all → auth-aware redirect */}
+        <Route path="*" element={<AuthAwareNotFound />} />
       </Routes>
     </Suspense>
   );

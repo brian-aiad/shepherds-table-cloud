@@ -187,22 +187,33 @@ useEffect(() => {
   return () => unsub();
 }, [selected?.id, org?.id, location?.id, isAdmin]);
 
-/* ---- recent visits (latest 10) ---- */
+/* ---- recent visits (latest 10) — LOCATION SPECIFIC ONLY ---- */
 useEffect(() => {
   if (!org?.id) return;
-  if (!isAdmin && !location?.id) { setRecentVisits([]); return; }
+  // Require a concrete location (no org-wide "All locations")
+  if (!location?.id) { 
+    setRecentVisits([]); 
+    return; 
+  }
 
-    const filters = [where("orgId", "==", orgId)];
-    if (!isAll && locId) filters.push(where("locationId", "==", locId));
+  const q2 = query(
+    collection(db, "visits"),
+    where("orgId", "==", org?.id),
+    where("locationId", "==", location.id),
+    orderBy("visitAt", "desc")
+  );
 
-
-
-  const q2 = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
-  return onSnapshot(q2, (snap) => {
+  const unsub = onSnapshot(q2, (snap) => {
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     setRecentVisits(all.slice(0, 10));
+  }, (e) => {
+    console.error("recent visits onSnapshot error:", e);
+    setRecentVisits([]);
   });
-}, [org?.id, location?.id, isAdmin]);
+
+  return () => unsub();
+}, [org?.id, location?.id]);
+
 
 /* ---- visits today count ---- */
   useEffect(() => {
@@ -333,24 +344,37 @@ useEffect(() => {
 
       {/* scope pill (above search) */}
       <div className="mb-2 text-xs text-gray-700">
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-brand-200 bg-white">
-          <span className="font-semibold text-brand-900">Scope</span> • <span>{org?.name || "—"}</span>
+        <span
+          className="
+            inline-flex items-center gap-1.5
+            rounded-full bg-white text-brand-900
+            ring-1 ring-black/5 shadow-sm
+            px-3 py-1 text-[12px]
+          "
+          aria-label="Current scope"
+        >
+          <span className="text-gray-600">Scope</span>
+          <span className="text-gray-400">•</span>
+          <span className="font-semibold">{org?.name || "—"}</span>
+
           {isAll ? (
             <>
-              <span className="opacity-60">/</span>
-              <span>All locations</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-gray-700">All locations</span>
             </>
           ) : location?.name ? (
             <>
-              <span className="opacity-60">/</span>
-              <span>{location.name}</span>
+              <span className="text-gray-400">/</span>
+              <span className="text-gray-700">{location.name}</span>
             </>
+          ) : canPickAllLocations ? (
+            <span className="text-gray-600">(all locations)</span>
           ) : (
-            <span className="opacity-70">(select a location)</span>
+            <span className="text-gray-600">(select location)</span>
           )}
-
         </span>
       </div>
+
 
       {/* top bar */}
       <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
@@ -709,7 +733,11 @@ useEffect(() => {
               {recentVisits.length === 0 && (
                 <tr>
                   <td className="px-3 py-6 text-gray-600" colSpan={4}>
-                    No activity yet.
+                    {isAll
+                      ? "Choose a location to see recent activity for that location."
+                      : !location?.id
+                        ? "Select a location to see recent activity."
+                        : "No activity yet."}
                   </td>
                 </tr>
               )}

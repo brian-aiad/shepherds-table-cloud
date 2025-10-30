@@ -1,10 +1,16 @@
 // src/auth/useAuth.ts
-// Enhanced hook around AuthContext.
-// - Loads Firebase custom claims (exposes `claims`, `claimsLoading`, `isMaster`)
-// - Provides device-local scope helpers (no Firestore writes)
-// - Provides `saveDeviceDefaultScope()` to explicitly persist the current scope
+// Shepherds Table Cloud — Enhanced useAuth hook (Nov 2025)
 //
-// Keeps BOTH named and default exports for compatibility.
+// What this adds (drop-in safe):
+// • Reads Firebase custom claims once per UID (light in-memory throttle)
+// • Exposes: claims, claimsLoading, isMaster (claims.master === true only; no hardcoded emails)
+// • Convenience ids: activeOrgId, activeLocationId
+// • Device-local scope helpers: setActiveOrgLocal, setActiveLocationLocal
+// • saveDeviceDefaultScope(): persists current (or device) scope to Firestore
+//
+// Compatibility:
+// • Keeps BOTH named and default exports
+// • Does NOT change AuthContext shape; it only enriches what the hook returns
 
 import { useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { getIdTokenResult } from "firebase/auth";
@@ -12,71 +18,86 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { AuthContext } from "./AuthProvider";
 import { auth, db } from "../lib/firebase";
 
-/** ONLY owner email is master in rules; we still read claims for completeness/UX */
-const MASTER_ADMIN_EMAIL = "csbrianaiad@gmail.com";
-
-/** Local mirror key (per-device) */
+/* ──────────────────────────────────────────────────────────────────────────────
+   Device-scope (per-device mirror in localStorage)
+────────────────────────────────────────────────────────────────────────────── */
 const LS_KEY = "stc_scope";
 
-type Claims = Record<string, any>;
-
-type ExtendedAuth = ReturnType<typeof useAuthBase> & {
-  /** Firebase custom claims on the ID token */
-  claims: Claims | null;
-  /** True when { master:true } claim is present OR email is the master email (UX parity) */
-  isMaster: boolean;
-  /** Loading state while we fetch claims */
-  claimsLoading: boolean;
-
-  /** Convenience: derived ids for current scope */
+type DeviceScope = {
   activeOrgId: string | null;
   activeLocationId: string | null;
-
-  /**
-   * Local-only scope setters (do NOT write to Firestore).
-   * These update the device mirror so scope changes don’t flip other devices.
-   */
-  setActiveOrgLocal: (orgId: string | null) => void;
-  setActiveLocationLocal: (locationId: string | null) => void;
-
-  /**
-   * Explicitly persist the current scope as the default for this device AND in Firestore.
-   * Call this from the navbar “Make default on this device” action.
-   */
-  saveDeviceDefaultScope: () => Promise<void>;
 };
 
-function readDeviceScope() {
+function readDeviceScope(): DeviceScope {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { activeOrgId: null as string | null, activeLocationId: null as string | null };
+    if (!raw) return { activeOrgId: null, activeLocationId: null };
     const parsed = JSON.parse(raw);
     return {
-      activeOrgId: (parsed?.activeOrgId ?? null) as string | null,
-      activeLocationId: (parsed?.activeLocationId ?? null) as string | null,
+      activeOrgId: parsed?.activeOrgId ?? null,
+      activeLocationId: parsed?.activeLocationId ?? null,
     };
   } catch {
     return { activeOrgId: null, activeLocationId: null };
   }
 }
 
-function writeDeviceScope(patch: { activeOrgId?: string | null; activeLocationId?: string | null }) {
+function writeDeviceScope(patch: Partial<DeviceScope>) {
   const prev = readDeviceScope();
-  const next = {
+  const next: DeviceScope = {
     activeOrgId: patch.activeOrgId ?? prev.activeOrgId,
     activeLocationId: patch.activeLocationId ?? prev.activeLocationId,
   };
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(next));
   } catch {
-    // ignore storage errors
+    /* ignore storage errors */
   }
 }
 
-/** Base hook that reads the context as-is (unchanged) */
+/* ──────────────────────────────────────────────────────────────────────────────
+   Tiny in-memory throttle for claims fetches (per UID)
+   Prevents re-calling getIdTokenResult on every mount/rerender.
+────────────────────────────────────────────────────────────────────────────── */
+type Claims = Record<string, any>;
+const CLAIMS_CACHE: {
+  uid?: string;
+  claims?: Claims | null;
+  fetchedAt?: number;
+} = { uid: undefined, claims: undefined, fetchedAt: 0 };
+
+// Only refresh claims if UID changed or cache older than TTL.
+const CLAIMS_TTL_MS = 60_000; // 1 minute is enough for UI perf without being stale-prone
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Base: read context
+────────────────────────────────────────────────────────────────────────────── */
 function useAuthBase() {
   return useContext(AuthContext);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Hook
+────────────────────────────────────────────────────────────────────────────── */
+type ExtendedAuth = ReturnType<typeof useAuthBase> & {
+  /** Firebase custom claims on the ID token */
+  claims: Claims | null;
+  /** Loading state while we fetch claims */
+  claimsLoading: boolean;
+  /** True only when { master:true } is present on the token (no email fallback) */
+  isMaster: boolean;
+
+  /** Convenience: derived ids for current scope */
+  activeOrgId: string | null;
+  activeLocationId: string | null;
+
+  /** Local-only scope setters (no Firestore writes) */
+  setActiveOrgLocal: (orgId: string | null) => void;
+  setActiveLocationLocal: (locationId: string | null) => void;
+
+  /** Persist current (or device) scope to users/{uid} */
+  saveDeviceDefaultScope: () => Promise<void>;
+};
 
 export function useAuth(): ExtendedAuth {
   const ctx = useAuthBase();
@@ -84,7 +105,7 @@ export function useAuth(): ExtendedAuth {
   const [claims, setClaims] = useState<Claims | null>(null);
   const [claimsLoading, setClaimsLoading] = useState<boolean>(true);
 
-  // Load custom claims from the current ID token (non-fatal; no force refresh)
+  // Load custom claims with a tiny per-UID throttle
   useEffect(() => {
     let mounted = true;
 
@@ -96,9 +117,25 @@ export function useAuth(): ExtendedAuth {
           if (mounted) setClaims(null);
           return;
         }
-        // Avoid forcing a refresh; swallow permission errors gracefully.
+
+        const now = Date.now();
+        const sameUid = CLAIMS_CACHE.uid === u.uid;
+        const fresh = sameUid && now - (CLAIMS_CACHE.fetchedAt || 0) < CLAIMS_TTL_MS;
+
+        if (fresh) {
+          if (mounted) setClaims(CLAIMS_CACHE.claims ?? {});
+          return;
+        }
+
+        // Avoid forcing a refresh; UI can live with eventual consistency here.
         const res = await getIdTokenResult(u).catch(() => null);
-        if (mounted) setClaims(res?.claims ?? {});
+        if (mounted) {
+          const nextClaims = res?.claims ?? {};
+          setClaims(nextClaims);
+          CLAIMS_CACHE.uid = u.uid;
+          CLAIMS_CACHE.claims = nextClaims;
+          CLAIMS_CACHE.fetchedAt = Date.now();
+        }
       } finally {
         if (mounted) setClaimsLoading(false);
       }
@@ -110,18 +147,14 @@ export function useAuth(): ExtendedAuth {
     };
   }, [ctx?.uid]);
 
-  // Derive master bit: prefer claims, fallback to email match for UX
-  const isMaster = useMemo(() => {
-    const byClaim = claims?.master === true;
-    const byEmail = (ctx?.email ?? "").toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
-    return Boolean(byClaim || byEmail);
-  }, [claims, ctx?.email]);
+  // Master flag is claim-only per security model (no hardcoded email)
+  const isMaster = useMemo(() => claims?.master === true, [claims]);
 
-  // Derived ids for convenience
+  // Convenience ids from context
   const activeOrgId = ctx?.org?.id ?? null;
   const activeLocationId = ctx?.location?.id ?? null;
 
-  // Local-only updates (no Firestore writes)
+  // Local-only scope (no Firestore writes)
   const setActiveOrgLocal = useCallback((orgId: string | null) => {
     writeDeviceScope({ activeOrgId: orgId ?? null });
   }, []);
@@ -130,20 +163,20 @@ export function useAuth(): ExtendedAuth {
     writeDeviceScope({ activeLocationId: locationId ?? null });
   }, []);
 
-  // Explicit persistence for current scope
+  // Persist current (or device) scope to Firestore for this user
   const saveDeviceDefaultScope = useCallback(async () => {
     const uid = ctx?.uid;
     if (!uid) return;
-    const scope = readDeviceScope();
 
-    // If nothing in LS, fall back to current in-memory scope
+    // Prefer explicit device mirror; fall back to current in-memory scope
+    const scope = readDeviceScope();
     const finalOrgId = scope.activeOrgId ?? activeOrgId ?? null;
     const finalLocId = scope.activeLocationId ?? activeLocationId ?? null;
 
-    // Mirror to device
+    // Mirror back to device to keep them in sync
     writeDeviceScope({ activeOrgId: finalOrgId, activeLocationId: finalLocId });
 
-    // Persist to Firestore
+    // Persist to users/{uid}
     const uref = doc(db, "users", uid);
     await setDoc(
       uref,
@@ -159,8 +192,8 @@ export function useAuth(): ExtendedAuth {
   return {
     ...ctx,
     claims,
-    isMaster,
     claimsLoading,
+    isMaster,
     activeOrgId,
     activeLocationId,
     setActiveOrgLocal,
