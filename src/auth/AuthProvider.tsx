@@ -3,7 +3,10 @@
 //
 // Exposes useAuth() fields via context:
 // { uid, email, org, orgs, location, locations, role, isAdmin, canPickAllLocations, loading,
-//   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow }
+//   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow,
+//   roleForActiveOrg, isAdminForActiveOrg, hasCapability,
+//   canAccessDashboard, canCreateClients, canEditClients, canLogVisits,
+//   canDeleteClients, canDeleteVisits, canViewReports, canManageOrg }
 //
 // Role model:
 // - Master (via custom claim `master: true`) → full access across all orgs/locations
@@ -36,6 +39,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
+import { can, type AppRole } from "./roles";
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Types
@@ -69,9 +73,33 @@ export type AuthValue = {
   orgs: Org[];
   locations: LocationRec[];
 
-  role: Role;            // coarse badge: "admin" if admin in ANY org else "volunteer"
-  isAdmin: boolean;      // admin for the ACTIVE org (or master)
-  canPickAllLocations: boolean; // UI helper: show “All locations” only if true
+  /** Coarse badge across ANY org (kept for back-compat) */
+  role: Role;
+
+  /** Admin for the ACTIVE org (or master); kept for back-compat */
+  isAdmin: boolean;
+
+  /** New: role resolved for ACTIVE org only (null when no active org) */
+  roleForActiveOrg: AppRole | null;
+
+  /** New: explicit alias for per-active-org admin */
+  isAdminForActiveOrg: boolean;
+
+  /** New: capability checker for ACTIVE org */
+  hasCapability: (capability: string) => boolean;
+
+  /** New: convenience booleans (ACTIVE org) */
+  canAccessDashboard: boolean;
+  canCreateClients: boolean;
+  canEditClients: boolean;
+  canLogVisits: boolean;
+  canDeleteClients: boolean;
+  canDeleteVisits: boolean;
+  canViewReports: boolean;
+  canManageOrg: boolean;
+
+  /** UI helper: show “All locations” only if true */
+  canPickAllLocations: boolean;
 
   loading: boolean;
 
@@ -143,6 +171,20 @@ export const AuthContext = createContext<AuthValue>({
 
   role: null,
   isAdmin: false,
+
+  roleForActiveOrg: null,
+  isAdminForActiveOrg: false,
+  hasCapability: () => false,
+
+  canAccessDashboard: false,
+  canCreateClients: false,
+  canEditClients: false,
+  canLogVisits: false,
+  canDeleteClients: false,
+  canDeleteVisits: false,
+  canViewReports: false,
+  canManageOrg: false,
+
   canPickAllLocations: false,
 
   loading: true,
@@ -231,6 +273,39 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     if (!activeOrgId) return false;
     return rolesByOrg[activeOrgId] === "admin" && adminAllByOrg[activeOrgId] === true;
   }, [isMaster, org?.id, rolesByOrg, adminAllByOrg]);
+
+  /** Role for active org (future-ready to 'manager'|'viewer') */
+  const roleForActiveOrg: AppRole | null = useMemo(() => {
+    const activeOrgId = org?.id || null;
+    if (!activeOrgId) return null;
+    const r = rolesByOrg[activeOrgId];
+    if (!r) return null;
+    // Map legacy Role to AppRole; today only "admin"|"volunteer" are emitted.
+    return (r as AppRole) ?? null;
+  }, [org?.id, rolesByOrg]);
+
+  /** Explicit alias; keep old isAdmin for back-compat, expose new name */
+  const isAdminForActiveOrg = isAdmin;
+
+  /** Capability checker (ACTIVE org) */
+  const hasCapability = useCallback(
+    (capability: string) => {
+      // Master/admin always allowed
+      if (isAdminForActiveOrg) return true;
+      return can(roleForActiveOrg, capability);
+    },
+    [isAdminForActiveOrg, roleForActiveOrg]
+  );
+
+  /** Convenience booleans (ACTIVE org) */
+  const canAccessDashboard = hasCapability("dashboard");
+  const canCreateClients   = hasCapability("createClients");
+  const canEditClients     = hasCapability("editClients");
+  const canLogVisits       = hasCapability("logVisits");
+  const canDeleteClients   = hasCapability("deleteClients");
+  const canDeleteVisits    = hasCapability("deleteVisits");
+  const canViewReports     = hasCapability("viewReports");
+  const canManageOrg       = hasCapability("manageOrg");
 
   /* Actions */
   const signOutNow = useCallback(async () => {
@@ -535,8 +610,23 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       orgs,
       location,
       locations,
-      role,
-      isAdmin,
+
+      role,                 // coarse badge (any-admin)
+      isAdmin,              // back-compat
+
+      roleForActiveOrg,
+      isAdminForActiveOrg,
+      hasCapability,
+
+      canAccessDashboard,
+      canCreateClients,
+      canEditClients,
+      canLogVisits,
+      canDeleteClients,
+      canDeleteVisits,
+      canViewReports,
+      canManageOrg,
+
       canPickAllLocations,
       loading,
       setActiveOrg,
@@ -551,8 +641,23 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       orgs,
       location,
       locations,
+
       role,
       isAdmin,
+
+      roleForActiveOrg,
+      isAdminForActiveOrg,
+      hasCapability,
+
+      canAccessDashboard,
+      canCreateClients,
+      canEditClients,
+      canLogVisits,
+      canDeleteClients,
+      canDeleteVisits,
+      canViewReports,
+      canManageOrg,
+
       canPickAllLocations,
       loading,
       setActiveOrg,
@@ -568,7 +673,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         <BrandedLoading />
       </AuthContext.Provider>
     );
-  }
+    }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

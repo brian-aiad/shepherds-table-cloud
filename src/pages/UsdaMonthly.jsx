@@ -158,23 +158,22 @@ function MonthNav({ month, setMonth }) {
   }, [setMonth]);
 
   const MonthCell = ({ mIndex0 }) => {
-  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const isCurrent = y === yearView && m === mIndex0 + 1;
-  return (
-    <button
-      onClick={() => commit(yearView, mIndex0)}
-      className={
-        "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
-        (isCurrent
-          ? "bg-brand-700 text-white"
-          : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
-      }
-    >
-      {names[mIndex0]}
-    </button>
-  );
-};
-
+    const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const isCurrent = y === yearView && m === mIndex0 + 1;
+    return (
+      <button
+        onClick={() => commit(yearView, mIndex0)}
+        className={
+          "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
+          (isCurrent
+            ? "bg-brand-700 text-white"
+            : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
+        }
+      >
+        {names[mIndex0]}
+      </button>
+    );
+  };
 
   const baseBtn = "inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50";
   const size = "h-10 w-10 md:h-11 md:w-11";
@@ -302,17 +301,24 @@ function MonthNav({ month, setMonth }) {
   );
 }
 
-
-
-
-
-
 /* =========================
    Page
 ========================= */
 export default function UsdaMonthly() {
   const nav = useNavigate();
-  const { loading: authLoading, org, location, isAdmin, email } = useAuth() || {};
+  // pull capability helpers from auth (future-proof)
+  const {
+    loading: authLoading,
+    org,
+    location,
+    isAdmin,           // legacy convenience
+    email,
+    hasCapability,     // (cap: string) => boolean
+    canViewReports,    // convenience boolean if your context provides it
+  } = useAuth() || {};
+
+  const canSeeReports = !!(hasCapability?.("viewReports") || canViewReports || isAdmin);
+  const canExport = !!hasCapability?.("export");
 
   const today = new Date();
   const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -463,7 +469,7 @@ export default function UsdaMonthly() {
 
   // Early UI states
   if (authLoading) return <div className="p-4 sm:p-6">Loading…</div>;
-  if (!isAdmin) {
+  if (!canSeeReports) {
     return (
       <div className="p-4 sm:p-6">
         <div className="rounded-xl border bg-amber-50 text-amber-900 px-3 py-2 text-sm">
@@ -511,69 +517,81 @@ export default function UsdaMonthly() {
     </span>
   );
 
-
   return (
     <div className="p-3 sm:p-4 md:p-6" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-   {/* ===== THEMED TOOLBAR — floating month pill like Reports ===== */}
-<div className="mb-4 sm:mb-6 rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
-  {/* Brand gradient header (pill sits on the seam) */}
-  <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-8 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
-    <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
-      <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
-        USDA Monthly Report
-      </h1>
-      <div className="hidden md:flex items-center gap-2">{syncChip}</div>
-    </div>
-    <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-      {scopeChip}
-    </div>
+      {/* ===== THEMED TOOLBAR — floating month pill like Reports ===== */}
+      <div className="mb-4 sm:mb-6 rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+        {/* Brand gradient header (pill sits on the seam) */}
+        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-8 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+              USDA Monthly Report
+            </h1>
+            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+          </div>
+          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+            {scopeChip}
+          </div>
 
-    {/* MonthNav floats between header and controls */}
-    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
-      <MonthNav month={month} setMonth={setMonth} />
-    </div>
-  </div>
+          {/* MonthNav floats between header and controls */}
+          <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
+            <MonthNav month={month} setMonth={setMonth} />
+          </div>
+        </div>
 
-  {/* Controls surface – stacked on mobile, aligned L/R on desktop */}
-<div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-9 md:pt-6 pb-4 overflow-visible">
-    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      {/* LEFT: Shade select */}
-      <div className="w-full md:w-auto max-w-[480px]">
-        <label htmlFor="shadeBy" className="sr-only">Shade calendar cells by</label>
-        <select
-          id="shadeBy"
-          className="w-full min-h-[44px] rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-          value={shadeBy}
-          onChange={(e) => setShadeBy(e.target.value)}
-          title="Shade calendar cells by"
-        >
-          <option value="visits">Shade by Visits</option>
-          <option value="persons">Shade by Persons</option>
-        </select>
+        {/* Controls surface – stacked on mobile, aligned L/R on desktop */}
+        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-9 md:pt-6 pb-4 overflow-visible">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            {/* LEFT: Shade select */}
+            <div className="w-full md:w-auto max-w-[480px]">
+              <label htmlFor="shadeBy" className="sr-only">Shade calendar cells by</label>
+              <select
+                id="shadeBy"
+                className="w-full min-h-[44px] rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+                value={shadeBy}
+                onChange={(e) => setShadeBy(e.target.value)}
+                title="Shade calendar cells by"
+              >
+                <option value="visits">Shade by Visits</option>
+                <option value="persons">Shade by Persons</option>
+              </select>
+            </div>
+
+            {/* RIGHT: Actions */}
+            <div className="w-full md:w-auto md:ml-auto">
+              {canExport ? (
+                <button
+                  onClick={exportMonthlyPdf}
+                  className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl
+                             bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-5 py-2.5 text-white font-semibold shadow
+                             hover:from-brand-800 hover:via-brand-700 hover:to-brand-600
+                             active:from-brand-900 active:via-brand-800 active:to-brand-700
+                             focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
+                >
+                  <span>Download USDA Monthly</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-bounce-slow" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-6-6m6 6l6-6" />
+                    <line x1="4" y1="21" x2="20" y2="21" strokeLinecap="round" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  aria-disabled
+                  disabled
+                  className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl
+                             bg-gray-200 text-gray-500 px-5 py-2.5 font-semibold shadow cursor-not-allowed"
+                  title="You don’t have permission to export."
+                >
+                  <span>Download USDA Monthly</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-6-6m6 6l6-6" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-      {/* RIGHT: Actions */}
-      <div className="w-full md:w-auto md:ml-auto">
-        <button
-          onClick={exportMonthlyPdf}
-          className="w-full md:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl
-                     bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-5 py-2.5 text-white font-semibold shadow
-                     hover:from-brand-800 hover:via-brand-700 hover:to-brand-600
-                     active:from-brand-900 active:via-brand-800 active:to-brand-700
-                     focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
-        >
-          <span>Download USDA Monthly</span>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-bounce-slow" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-6-6m6 6l6-6" />
-            <line x1="4" y1="21" x2="20" y2="21" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
 
       {error && <div className="mb-3 rounded-lg border bg-red-50 p-3 text-red-700">{error}</div>}
       {loading && <div className="mb-3 text-sm text-gray-600">Loading…</div>}
@@ -606,9 +624,7 @@ export default function UsdaMonthly() {
           >
             {/* weekday header */}
             <div
-             
               className="grid sticky top-0 bg-white/95 backdrop-blur z-0 pb-2"
-
               style={{ gridTemplateColumns: `repeat(7, ${MOBILE_COL_PX}px)`, columnGap: MOBILE_GAP_PX }}
             >
               {weekdays.map((d) => (

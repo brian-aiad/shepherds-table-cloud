@@ -1,5 +1,6 @@
 // src/components/AddVisitButton.jsx
-// Shepherds Table Cloud — Add Visit (Oct 2025 UI parity)
+// Shepherds Table Cloud — Add Visit (Oct 2025 UI parity, scale-proof roles)
+// - Capability guard: requires hasCapability('logVisits') or admin
 // - Bottom sheet on mobile / centered card on desktop
 // - Sticky gradient header + sticky controls strip + pretty-scroll results
 // - HH steppers and USDA toggle styled like NewClientForm/LogVisitForm
@@ -28,6 +29,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { Users, Soup, Search, Plus, Check, X } from "lucide-react";
+import { useAuth } from "../auth/useAuth";
 
 /* =========================
    Helpers
@@ -60,6 +62,19 @@ export default function AddVisitButton({
   disabled = false,
   className = "",
 }) {
+  const authCtx = useAuth() || {};
+  const {
+    hasCapability,
+    isAdminForActiveOrg,
+    canLogVisits, // convenience boolean from AuthProvider (if present)
+  } = authCtx;
+
+  // Capability: allow if admin or has 'logVisits'
+  const allowLogVisits =
+    isAdminForActiveOrg === true ||
+    (typeof hasCapability === "function" && hasCapability("logVisits")) ||
+    canLogVisits === true;
+
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -106,11 +121,15 @@ export default function AddVisitButton({
 
   const openSheet = useCallback(() => {
     if (!selectedDate) return;
+    if (!allowLogVisits) {
+      alert("You don’t have permission to log visits.");
+      return;
+    }
     setOpen(true);
     setHH(1);
     setUSDA(true);
     setSearch("");
-  }, [selectedDate]);
+  }, [selectedDate, allowLogVisits]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,6 +163,10 @@ export default function AddVisitButton({
 
   const addVisit = useCallback(
     async (client) => {
+      if (!allowLogVisits) {
+        alert("You don’t have permission to log visits.");
+        return;
+      }
       if (!client || !org?.id || !selectedDate) return;
       // Hard guard: block inactive clients
       if (client.inactive === true) {
@@ -178,7 +201,6 @@ export default function AddVisitButton({
         let snapZip = "";
         let snapCounty = "";
 
-
         await runTransaction(db, async (tx) => {
           // 1) Read client to ensure it exists and guard cross-org
           const clientRef = doc(db, "clients", client.id);
@@ -191,10 +213,10 @@ export default function AddVisitButton({
           if (cur.inactive === true) {
             throw new Error("This client is deactivated. Reactivate before logging a visit.");
           }
-          
-            snapAddress = cur.address || client.address || "";
-            snapZip     = cur.zip || client.zip || "";
-            snapCounty  = cur.county || client.county || "";
+
+          snapAddress = cur.address || client.address || "";
+          snapZip = cur.zip || client.zip || "";
+          snapCounty = cur.county || client.county || "";
 
           // 2) USDA first marker (create-once)
           if (isFirst && mk) {
@@ -222,11 +244,11 @@ export default function AddVisitButton({
             clientFirstName: client.firstName || cur.firstName || "",
             clientLastName: client.lastName || cur.lastName || "",
 
-            // ⬇️ NEW: historical snapshots used by Reports & PDFs
+            // ⬇️ historical snapshots used by Reports & PDFs
             clientAddress: snapAddress,
-            clientZip:     snapZip,
-            clientCounty:  snapCounty,
-            
+            clientZip: snapZip,
+            clientCounty: snapCounty,
+
             visitAt: when, // intentional (historical add)
             createdAt: serverTimestamp(),
             monthKey: mk,
@@ -261,11 +283,11 @@ export default function AddVisitButton({
           orgId: org.id,
           locationId: location?.id || null,
 
-          // ⬇️ NEW: mirror the snapshots for immediate UI
+          // ⬇️ mirror the snapshots for immediate UI
           clientAddress: snapAddress,
-          clientZip:     snapZip,
-          clientCounty:  snapCounty,
-          
+          clientZip: snapZip,
+          clientCounty: snapCounty,
+
           visitAt: when,
           dateKey: dKey,
           monthKey: mk,
@@ -285,22 +307,22 @@ export default function AddVisitButton({
         setBusy(false);
       }
     },
-    [org?.id, location?.id, selectedDate, monthKey, hh, usda, onAdded]
+    [allowLogVisits, org?.id, location?.id, selectedDate, monthKey, hh, usda, onAdded]
   );
 
   return (
     <>
       {/* Entry button */}
       <button
-        disabled={disabled || !selectedDate}
+        disabled={disabled || !selectedDate || !allowLogVisits}
         onClick={openSheet}
-        title="Add a visit to this day"
+        title={allowLogVisits ? "Add a visit to this day" : "You don’t have permission to log visits"}
         aria-label="Add visit"
         className={cx(
           "inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-white shadow-sm",
           "focus:outline-none focus-visible:ring-4",
           "active:scale-[.98] transition",
-          disabled || !selectedDate ? "opacity-60 pointer-events-none" : "",
+          disabled || !selectedDate || !allowLogVisits ? "opacity-60 pointer-events-none" : "",
           className
         )}
         style={{
@@ -525,8 +547,14 @@ export default function AddVisitButton({
                                   "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
                               }}
                               onClick={() => addVisit(c)}
-                              disabled={busy || c.inactive === true}
-                              title={c.inactive ? "Client is inactive" : "Add this client"}
+                              disabled={busy || c.inactive === true || !allowLogVisits}
+                              title={
+                                c.inactive
+                                  ? "Client is inactive"
+                                  : allowLogVisits
+                                  ? "Add this client"
+                                  : "You don’t have permission to log visits"
+                              }
                               onKeyDown={(e) => {
                                 if (e.key === "Enter") e.currentTarget.click();
                               }}

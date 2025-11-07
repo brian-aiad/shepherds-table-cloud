@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "../lib/firebase";
 import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
 import { useAuth } from "../auth/useAuth";
@@ -65,12 +65,23 @@ const subCardCls = "rounded-xl border border-brand-100 bg-white";
 const sectionHdrCls =
   "sticky top-0 z-10 px-4 py-2.5 rounded-t-2xl bg-brand-50/80 supports-[backdrop-filter]:bg-brand-50/60 backdrop-blur text-brand-900 border-b border-brand-200 shadow-[inset_0_-1px_0_rgba(0,0,0,0.04)]";
 
-
 /* ===========================
    Component
 =========================== */
 export default function Dashboard() {
-  const { loading, org, location, isAdmin } = useAuth() || {};
+  const {
+    loading,
+    org,
+    location,
+    // legacy boolean, still useful for org-wide scope checks
+    isAdmin,
+    // capability system (provided by AuthProvider)
+    hasCapability,
+    canPickAllLocations = false,
+    canCreateClients,
+    canEditClients,
+    canLogVisits,
+  } = useAuth() || {};
 
   // Data
   const [clients, setClients] = useState([]);
@@ -78,11 +89,11 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(null);
   const [selectedVisits, setSelectedVisits] = useState([]);
 
-    // Derived scope helpers
+  // Derived scope helpers
   const orgId = org?.id ?? null;
   const locId = location?.id ?? null;
-  const isAll = isAdmin && locId === "";   // "" sentinel = All locations (admins only)
-
+  // "" sentinel = All locations (admins only)
+  const isAll = isAdmin && locId === "";
 
   // UI
   const [term, setTerm] = useState("");
@@ -106,123 +117,116 @@ export default function Dashboard() {
     setErr("");
   }, [org?.id, location?.id]);
 
-
-/* ---- live clients (FULL LIST) ---- */
-useEffect(() => {
-  if (loading || !org?.id) return;
-
-  // Volunteers MUST be location-scoped. If no location yet, don't attach a query.
-  if (!isAdmin && !location?.id) {
-    setClients([]);
-    setSelected(null);
-    setErr("Choose a location to view clients.");
-    return;
-  }
-
-const filters = [where("orgId", "==", orgId)];
-if (!isAll && locId) filters.push(where("locationId", "==", locId));
-
-
-  const q1 = query(
-    collection(db, "clients"),
-    ...filters,
-    orderBy("lastName"),
-    orderBy("firstName")
-  );
-
-  const unsub = onSnapshot(
-    q1,
-    (snap) => {
-      const rows = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((c) => c.inactive !== true && !c.mergedIntoId);
-
-      setClients(rows);
-      setErr("");
-
-      setSelected((prev) => (prev ? rows.find((r) => r.id === prev.id) || null : null));
-    },
-    (e) => {
-      console.error("clients onSnapshot error:", e);
-      setErr("Couldn’t load clients. Check org/location scope and rules.");
-    }
-  );
-
-  return () => unsub();
-}, [loading, org?.id, location?.id, isAdmin]);
-
-
+  /* ---- live clients (FULL LIST) ---- */
   useEffect(() => {
-    console.log("scope", { isAdmin, orgId: org?.id, locationId: location?.id });
-  }, [isAdmin, org?.id, location?.id]);
+    if (loading || !org?.id) return;
 
-
-/* ---- visit history for selected (client-specific) ---- */
-useEffect(() => {
-  if (!selected?.id || !org?.id) {
-    setSelectedVisits([]);
-    return;
-  }
-
-  // Volunteers must be location-scoped; admins can see all locations in the org.
-  if (!isAdmin && !location?.id) {
-    setSelectedVisits([]);
-    return;
-  }
-
-  const filters = [where("clientId", "==", selected.id), where("orgId", "==", orgId)];
-  if (!isAll && locId) filters.push(where("locationId", "==", locId));
-
-
-  const qv = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
-
-  const unsub = onSnapshot(
-    qv,
-    (snap) => setSelectedVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    (e) => {
-      console.error("visits (selected) onSnapshot error:", e);
-      setSelectedVisits([]);
+    // Non-admins must be location-scoped. If no location yet, don't attach a query.
+    if (!isAdmin && !location?.id) {
+      setClients([]);
+      setSelected(null);
+      setErr("Choose a location to view clients.");
+      return;
     }
-  );
-  return () => unsub();
-}, [selected?.id, org?.id, location?.id, isAdmin]);
 
-/* ---- recent visits (latest 10) — LOCATION SPECIFIC ONLY ---- */
-useEffect(() => {
-  if (!org?.id) return;
-  // Require a concrete location (no org-wide "All locations")
-  if (!location?.id) { 
-    setRecentVisits([]); 
-    return; 
-  }
+    const filters = [where("orgId", "==", orgId)];
+    if (!isAll && locId) filters.push(where("locationId", "==", locId));
 
-  const q2 = query(
-    collection(db, "visits"),
-    where("orgId", "==", org?.id),
-    where("locationId", "==", location.id),
-    orderBy("visitAt", "desc")
-  );
+    const q1 = query(
+      collection(db, "clients"),
+      ...filters,
+      orderBy("lastName"),
+      orderBy("firstName")
+    );
 
-  const unsub = onSnapshot(q2, (snap) => {
-    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    setRecentVisits(all.slice(0, 10));
-  }, (e) => {
-    console.error("recent visits onSnapshot error:", e);
-    setRecentVisits([]);
-  });
+    const unsub = onSnapshot(
+      q1,
+      (snap) => {
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((c) => c.inactive !== true && !c.mergedIntoId);
 
-  return () => unsub();
-}, [org?.id, location?.id]);
+        setClients(rows);
+        setErr("");
 
+        setSelected((prev) => (prev ? rows.find((r) => r.id === prev.id) || null : null));
+      },
+      (e) => {
+        console.error("clients onSnapshot error:", e);
+        setErr("Couldn’t load clients. Check org/location scope and rules.");
+      }
+    );
 
-/* ---- visits today count ---- */
+    return () => unsub();
+  }, [loading, org?.id, location?.id, isAdmin]);
+
+  /* ---- visit history for selected (client-specific) ---- */
+  useEffect(() => {
+    if (!selected?.id || !org?.id) {
+      setSelectedVisits([]);
+      return;
+    }
+
+    // Non-admins must be location-scoped; admins can see all locations in the org.
+    if (!isAdmin && !location?.id) {
+      setSelectedVisits([]);
+      return;
+    }
+
+    const filters = [where("clientId", "==", selected.id), where("orgId", "==", orgId)];
+    if (!isAll && locId) filters.push(where("locationId", "==", locId));
+
+    const qv = query(collection(db, "visits"), ...filters, orderBy("visitAt", "desc"));
+
+    const unsub = onSnapshot(
+      qv,
+      (snap) => setSelectedVisits(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (e) => {
+        console.error("visits (selected) onSnapshot error:", e);
+        setSelectedVisits([]);
+      }
+    );
+    return () => unsub();
+  }, [selected?.id, org?.id, location?.id, isAdmin]);
+
+  /* ---- recent visits (latest 10) — LOCATION SPECIFIC ONLY ---- */
+  useEffect(() => {
+    if (!org?.id) return;
+    // Require a concrete location (no org-wide "All locations")
+    if (!location?.id) {
+      setRecentVisits([]);
+      return;
+    }
+
+    const q2 = query(
+      collection(db, "visits"),
+      where("orgId", "==", org?.id),
+      where("locationId", "==", location.id),
+      orderBy("visitAt", "desc")
+    );
+
+    const unsub = onSnapshot(
+      q2,
+      (snap) => {
+        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setRecentVisits(all.slice(0, 10));
+      },
+      (e) => {
+        console.error("recent visits onSnapshot error:", e);
+        setRecentVisits([]);
+      }
+    );
+
+    return () => unsub();
+  }, [org?.id, location?.id]);
+
+  /* ---- visits today count ---- */
   useEffect(() => {
     if (!org?.id) return;
 
     const today = localDateKey();
     const filters = [where("orgId", "==", orgId), where("dateKey", "==", today)];
     if (!isAll && locId) filters.push(where("locationId", "==", locId));
-
 
     const q3 = query(collection(db, "visits"), ...filters);
     return onSnapshot(q3, (snap) => setTodayCount(snap.size));
@@ -282,6 +286,11 @@ useEffect(() => {
 
   /* ---- actions ---- */
   function logVisit(c) {
+    if (!(canLogVisits ?? hasCapability?.("logVisits"))) {
+      setToast({ msg: "You don’t have permission to log visits." });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
     setVisitSheet({ open: true, client: c });
   }
 
@@ -329,13 +338,24 @@ useEffect(() => {
     );
   }
 
+  const allowNewClient = (canCreateClients ?? hasCapability?.("createClients")) === true;
+  const allowEditClient = (canEditClients ?? hasCapability?.("editClients")) === true;
+
   return (
     <div key={scopeKey} className="max-w-6xl mx-auto p-4 md:p-6">
       {/* toast */}
       {toast && (
-<div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-50" aria-live="polite">          <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
+        <div
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-50"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
             <span className="text-sm">{toast.msg}</span>
-            <button className="text-gray-300 text-sm" onClick={() => setToast(null)} aria-label="Dismiss">
+            <button
+              className="text-gray-300 text-sm"
+              onClick={() => setToast(null)}
+              aria-label="Dismiss"
+            >
               ×
             </button>
           </div>
@@ -375,7 +395,6 @@ useEffect(() => {
         </span>
       </div>
 
-
       {/* top bar */}
       <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
         {/* search */}
@@ -392,11 +411,25 @@ useEffect(() => {
             aria-label="Search clients by name or phone"
           />
           {/* lens */}
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <div
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            aria-hidden="true"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
-          </div>          
+          </div>
           {term && (
             <button
               type="button"
@@ -409,7 +442,6 @@ useEffect(() => {
               ×
             </button>
           )}
-
         </div>
 
         {/* actions */}
@@ -418,34 +450,49 @@ useEffect(() => {
           <span
             role="status"
             aria-label={`Visits today ${todayCount}`}
-            className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0">
+            className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0"
+          >
             <span className="text-sm font-semibold whitespace-nowrap">
               <span className="hidden md:inline">Visits </span>Today
             </span>
             <span className="h-4 w-px bg-brand-200 md:h-5" aria-hidden="true" />
-            <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">{todayCount}</span>
+            <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">
+              {todayCount}
+            </span>
           </span>
 
-          {/* Add New Client (longer; right) */}
-          <button
-            onClick={() => setShowNew(true)}
-            className="btn btn-brand-grad px-6 min-w-[184px] md:min-w-[208px]"
-            aria-label="Add new client"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 align-middle" aria-hidden="true">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            <span className="md:hidden align-middle">Add New Client</span>
-            <span className="hidden md:inline align-middle">Add New Client</span>
-          </button>
-
-
+          {/* Add New Client (capability-gated) */}
+          {allowNewClient && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="btn btn-brand-grad px-6 min-w-[184px] md:min-w-[208px]"
+              aria-label="Add new client"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-4 w-4 align-middle"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span className="md:hidden align-middle">Add New Client</span>
+              <span className="hidden md:inline align-middle">Add New Client</span>
+            </button>
+          )}
         </div>
-
       </div>
 
       {err && (
-        <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm">
+        <div
+          role="alert"
+          className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm"
+        >
           {err}
         </div>
       )}
@@ -453,7 +500,6 @@ useEffect(() => {
       {/* main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
         {/* left: list */}
-
         <div className={`lg:col-span-2 ${cardCls} p-0`}>
           <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
             Client List
@@ -462,101 +508,103 @@ useEffect(() => {
             <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
               <span>
                 {searchTokens.length > 0
-                  ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
+                  ? `Showing ${filteredSorted.length} best match${
+                      filteredSorted.length === 1 ? "" : "es"
+                    }`
                   : `Showing ${clients.length} client${clients.length === 1 ? "" : "s"}`}
               </span>
             </div>
 
+            {/* Letter chips (when not searching) */}
+            {letterChips.length > 0 && searchTokens.length === 0 && (
+              <div className="flex gap-2 pb-2 overflow-x-auto no-scrollbar">
+                {letterChips.map((L) => (
+                  <button
+                    key={L}
+                    className="px-2 py-1 rounded-md text-xs bg-brand-50 text-brand-900 ring-1 ring-brand-100 hover:bg-brand-100 active:bg-brand-200"
+                    onClick={() => setTerm((t) => (t === L ? "" : L))}
+                    aria-label={`Jump to ${L}`}
+                  >
+                    {L}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {/* Letter chips (when not searching) */}
-          {letterChips.length > 0 && searchTokens.length === 0 && (
-            <div className="flex gap-2 pb-2 overflow-x-auto no-scrollbar">
-              {letterChips.map((L) => (
-                <button
-                  key={L}
-                  className="px-2 py-1 rounded-md text-xs bg-brand-50 text-brand-900 ring-1 ring-brand-100 hover:bg-brand-100 active:bg-brand-200"
-                  onClick={() => setTerm((t) => (t === L ? "" : L))}
-                  aria-label={`Jump to ${L}`}
-                >
-                  {L}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* List — full list, comfortable scrolling */}
-          <div className="max-h-[70vh] md:max-h-[480px] overflow-auto pretty-scroll">
-            {(searchTokens.length > 0
-              ? [{ letter: null, items: filteredSorted }]
-              : grouped.map(([letter, items]) => ({ letter, items })))
-              .map(({ letter, items }) => (
-                <div key={letter ?? "best"} className="mb-3">
-                  {letter && (
-                    <div className="sticky top-0 z-10 bg-white text-xs font-semibold text-brand-800 py-1 border-b border-brand-100">
-                      {letter}
-                    </div>
-                  )}
-                  <ul className="divide-y">
-                    {items.map((c) => (
-                      <li
-                        key={c.id}
-                        onClick={() => setSelected(c)}
-                        className={`group flex items-center gap-3 py-2.5 px-2 rounded transition flex-nowrap ${
-                          selected?.id === c.id ? "bg-brand-50 hover:bg-brand-100" : "hover:bg-gray-100"
-                        }`}
-                      >
-                        {/* Left: name + details (takes remaining width and truncates) */}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">
-                            {tcase(c.firstName)} {tcase(c.lastName)}
-                          </div>
-                          <div className="text-xs text-gray-600 truncate">
-                            {[c.phone || null, c.address ? `• ${c.address}` : null].filter(Boolean).join(" ")}
-                          </div>
-                        </div>
-
-                        {/* Right: fixed-width button that never wraps */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            logVisit(c);
-                            setSelected(c);
-                          }}
-                          className={[
-                            // size: smaller on mobile
-                            "inline-flex items-center justify-center",
-                            "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
-                            // responsive min-width so it never collapses, but stays compact
-                            "min-w-[64px] sm:min-w-[92px]",
-                            // brand look
-                            "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
-                            "text-[13px] sm:text-[14px] font-medium",
-                            "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
-                            "hover:from-brand-500 hover:to-brand-600",
-                            "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
-                            "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                          ].join(" ")}
-                          aria-label="Log visit"
-                          title="Log visit"
-                        >
-                          <span className="sm:hidden">Log Visit</span>
-                          <span className="hidden sm:inline">Log Visit</span>
-                        </button>
-
-                      </li>
-                    ))}
-                    {items.length === 0 && (
-                      <li className="py-6 px-2 text-sm text-gray-600">
-                        {searchTokens.length ? "No matches." : "No clients yet."}
-                      </li>
+            {/* List — full list, comfortable scrolling */}
+            <div className="max-h-[70vh] md:max-h-[480px] overflow-auto pretty-scroll">
+              {(searchTokens.length > 0
+                ? [{ letter: null, items: filteredSorted }]
+                : grouped.map(([letter, items]) => ({ letter, items })))
+                .map(({ letter, items }) => (
+                  <div key={letter ?? "best"} className="mb-3">
+                    {letter && (
+                      <div className="sticky top-0 z-10 bg-white text-xs font-semibold text-brand-800 py-1 border-b border-brand-100">
+                        {letter}
+                      </div>
                     )}
-                  </ul>
+                    <ul className="divide-y">
+                      {items.map((c) => (
+                        <li
+                          key={c.id}
+                          onClick={() => setSelected(c)}
+                          className={`group flex items-center gap-3 py-2.5 px-2 rounded transition flex-nowrap ${
+                            selected?.id === c.id
+                              ? "bg-brand-50 hover:bg-brand-100"
+                              : "hover:bg-gray-100"
+                          }`}
+                        >
+                          {/* Left: name + details */}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">
+                              {tcase(c.firstName)} {tcase(c.lastName)}
+                            </div>
+                            <div className="text-xs text-gray-600 truncate">
+                              {[c.phone || null, c.address ? `• ${c.address}` : null]
+                                .filter(Boolean)
+                                .join(" ")}
+                            </div>
+                          </div>
 
-                </div>
-              ))}
+                          {/* Right: Log Visit (capability-gated) */}
+                          {canLogVisits ?? hasCapability?.("logVisits") ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                logVisit(c);
+                                setSelected(c);
+                              }}
+                              className={[
+                                "inline-flex items-center justify-center",
+                                "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                                "min-w-[64px] sm:min-w-[92px]",
+                                "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
+                                "text-[13px] sm:text-[14px] font-medium",
+                                "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
+                                "hover:from-brand-500 hover:to-brand-600",
+                                "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
+                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                              ].join(" ")}
+                              aria-label="Log visit"
+                              title="Log visit"
+                            >
+                              <span className="sm:hidden">Log Visit</span>
+                              <span className="hidden sm:inline">Log Visit</span>
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                      {items.length === 0 && (
+                        <li className="py-6 px-2 text-sm text-gray-600">
+                          {searchTokens.length ? "No matches." : "No clients yet."}
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+            </div>
           </div>
         </div>
-         </div>
 
         {/* right: quick details */}
         <aside className={`${cardCls} overflow-hidden`}>
@@ -564,28 +612,30 @@ useEffect(() => {
             <div className="text-sm font-semibold">Client Details</div>
             {selected && (
               <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
-                {/* Log Visit — matches client list button */}
-                <button
-                  onClick={() => logVisit(selected)}
-                  className={[
-                    "inline-flex items-center justify-center",
-                    "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
-                    "min-w-[64px] sm:min-w-[92px]",
-                    "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
-                    "text-[13px] sm:text-[14px] font-medium",
-                    "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
-                    "hover:from-brand-500 hover:to-brand-600",
-                    "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                  ].join(" ")}
-                  aria-label="Log visit"
-                  title="Log visit"
-                >
-                  Log Visit
-                </button>
+                {/* Log Visit — matches list button (capability-gated) */}
+                {(canLogVisits ?? hasCapability?.("logVisits")) && (
+                  <button
+                    onClick={() => logVisit(selected)}
+                    className={[
+                      "inline-flex items-center justify-center",
+                      "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                      "min-w-[64px] sm:min-w-[92px]",
+                      "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
+                      "text-[13px] sm:text-[14px] font-medium",
+                      "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
+                      "hover:from-brand-500 hover:to-brand-600",
+                      "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                    ].join(" ")}
+                    aria-label="Log visit"
+                    title="Log visit"
+                  >
+                    Log Visit
+                  </button>
+                )}
 
-                {/* Edit — outline mate */}
-                {isAdmin && (
+                {/* Edit — now capability-gated (admins + volunteers allowed) */}
+                {allowEditClient && (
                   <button
                     onClick={() => setEditor({ open: true, client: selected })}
                     className={[
@@ -597,7 +647,7 @@ useEffect(() => {
                       "border border-brand-300 shadow-sm",
                       "hover:bg-brand-50 hover:border-brand-400",
                       "active:translate-y-[1px]",
-                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
                     ].join(" ")}
                   >
                     Edit
@@ -606,7 +656,6 @@ useEffect(() => {
               </div>
             )}
           </div>
-
 
           {selected ? (
             <div className="p-4 space-y-4">
@@ -627,10 +676,14 @@ useEffect(() => {
                   <dd className="text-gray-900 break-words">{selected.county || "—"}</dd>
                   <dt className="text-gray-500 text-left">Household</dt>
                   <dd className="text-gray-900">
-                    {Number.isFinite(Number(selected.householdSize)) ? Number(selected.householdSize) : "—"}
+                    {Number.isFinite(Number(selected.householdSize))
+                      ? Number(selected.householdSize)
+                      : "—"}
                   </dd>
                   <dt className="text-gray-500 text-left">USDA this month</dt>
-                  <dd className="text-gray-900">{selectedVisits.length ? (usdaThisMonth ? "Yes" : "No") : "—"}</dd>
+                  <dd className="text-gray-900">
+                    {selectedVisits.length ? (usdaThisMonth ? "Yes" : "No") : "—"}
+                  </dd>
                 </dl>
               </div>
 
@@ -693,74 +746,81 @@ useEffect(() => {
         </div>
         <div className="p-3">
           <div className={`${subCardCls} overflow-auto`}>
-
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0 z-10">
-              <tr className="text-left text-gray-700">
-                <th className="px-3 py-2 w-1/2 font-semibold">Client</th>
-                <th className="px-3 py-2 font-semibold">Time</th>
-                <th className="px-3 py-2 font-semibold">HH</th>
-                <th className="px-3 py-2 font-semibold">USDA (mo)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentVisits.map((v) => {
-                const date = v.visitAt?.toDate ? v.visitAt.toDate() : new Date(v.visitAt);
-                const person = clientsById.get(v.clientId);
-                const fallback = `${tcase(v.clientFirstName || "")} ${tcase(v.clientLastName || "")}`.trim();
-                const label =
-                  person
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0 z-10">
+                <tr className="text-left text-gray-700">
+                  <th className="px-3 py-2 w-1/2 font-semibold">Client</th>
+                  <th className="px-3 py-2 font-semibold">Time</th>
+                  <th className="px-3 py-2 font-semibold">HH</th>
+                  <th className="px-3 py-2 font-semibold">USDA (mo)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentVisits.map((v) => {
+                  const date = v.visitAt?.toDate ? v.visitAt.toDate() : new Date(v.visitAt);
+                  const person = clientsById.get(v.clientId);
+                  const fallback = `${tcase(v.clientFirstName || "")} ${tcase(
+                    v.clientLastName || ""
+                  )}`.trim();
+                  const label = person
                     ? `${tcase(person.firstName)} ${tcase(person.lastName)}`.trim()
                     : fallback || v.clientId || "Deleted client";
 
-                return (
-                  <tr
-                    key={v.id}
-                    className="border-t odd:bg-gray-50 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => person && setSelected(person)}
-                  >
-                    <td className="px-3 py-2">{label}</td>
-                    <td className="px-3 py-2">{date.toLocaleString()}</td>
-                    <td className="px-3 py-2">
-                      {Number.isFinite(Number(v.householdSize)) ? Number(v.householdSize) : ""}
-                    </td>
-                    <td className="px-3 py-2">
-                      {v.usdaFirstTimeThisMonth === true ? "Yes" : v.usdaFirstTimeThisMonth === false ? "No" : ""}
-                    </td>
-                  </tr>
-                );
-              })}
-              {recentVisits.length === 0 && (
-                <tr>
-                  <td className="px-3 py-6 text-gray-600" colSpan={4}>
-                    {isAll
-                      ? "Choose a location to see recent activity for that location."
-                      : !location?.id
+                  return (
+                    <tr
+                      key={v.id}
+                      className="border-t odd:bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                      onClick={() => person && setSelected(person)}
+                    >
+                      <td className="px-3 py-2">{label}</td>
+                      <td className="px-3 py-2">{date.toLocaleString()}</td>
+                      <td className="px-3 py-2">
+                        {Number.isFinite(Number(v.householdSize)) ? Number(v.householdSize) : ""}
+                      </td>
+                      <td className="px-3 py-2">
+                        {v.usdaFirstTimeThisMonth === true
+                          ? "Yes"
+                          : v.usdaFirstTimeThisMonth === false
+                          ? "No"
+                          : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {recentVisits.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-6 text-gray-600" colSpan={4}>
+                      {isAll
+                        ? "Choose a location to see recent activity for that location."
+                        : !location?.id
                         ? "Select a location to see recent activity."
                         : "No activity yet."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
       </div>
 
       {/* mobile quick actions bar */}
       {selected && (
-<div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)]">       <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
+        <div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)]">
+          <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
             <div className="min-w-0 text-sm font-medium truncate">
               {tcase(selected.firstName)} {tcase(selected.lastName)}
             </div>
             <div className="flex gap-1.5">
-              <button
-                onClick={() => logVisit(selected)}
-                className="h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
-              >
-                Log Visit
-              </button>
-              {isAdmin && (
+              {(canLogVisits ?? hasCapability?.("logVisits")) && (
+                <button
+                  onClick={() => logVisit(selected)}
+                  className="h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
+                >
+                  Log Visit
+                </button>
+              )}
+              {allowEditClient && (
                 <button
                   onClick={() => setEditor({ open: true, client: selected })}
                   className="h-9 px-3 rounded-lg border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
@@ -820,7 +880,9 @@ useEffect(() => {
         client={visitSheet.client}
         onClose={() => setVisitSheet({ open: false, client: null })}
         onSaved={() => {
-          setToast({ msg: `Visit logged for ${visitSheet.client.firstName} ${visitSheet.client.lastName}` });
+          setToast({
+            msg: `Visit logged for ${visitSheet.client.firstName} ${visitSheet.client.lastName}`,
+          });
           setVisitSheet({ open: false, client: null });
           // refresh selection from current list in case counters changed
           setSelected((prev) => (prev ? clients.find((x) => x.id === prev.id) ?? prev : null));

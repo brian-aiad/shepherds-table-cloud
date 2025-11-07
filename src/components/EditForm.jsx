@@ -1,11 +1,12 @@
 // src/components/EditForm.jsx
-// Shepherds Table Cloud — Edit Client (Oct 2025 UI)
+// Shepherds Table Cloud — Edit Client (Oct 2025 UI, capability-ready)
 // - Mobile: slide-up bottom sheet (mirrors NewClientForm). Desktop: centered card.
 // - Sticky header/footer; pretty-scroll body; avatar initials chip.
 // - Emoji-safe, lucide icons on labels; Mapbox autocomplete matches NewClientForm.
-// - Keeps admin-only deactivate/reactivate. Enter key = next field navigation.
+// - Admin-only deactivate/reactivate now gated by capability 'deleteClients'.
+// - Enter key = next field navigation.
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { db, auth } from "../lib/firebase";
 import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../auth/useAuth";
@@ -116,7 +117,10 @@ const ICONS = {
    Component
 ========================= */
 export default function EditForm({ open, client, onClose, onSaved }) {
-  const { isAdmin, uid, org, location } = useAuth() || {};
+  // 🔐 capability-based auth
+  const { uid, org, location, hasCapability } = useAuth() || {};
+  const canEditClients = !!hasCapability?.("editClients");
+  const canDeleteClients = !!hasCapability?.("deleteClients");
 
   const [form, setForm] = useState({
     firstName: "",
@@ -322,6 +326,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    // 🚫 Capability check for editing
+    if (!canEditClients) {
+      setError("You don’t have permission to edit client profiles.");
+      return;
+    }
     if (!client?.id || !formValid || !hasChanges || saving) return;
     try {
       setSaving(true);
@@ -343,7 +352,8 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         county: normalized.county,
         dob: normalized.dob,
         householdSize: safeNum(normalized.householdSize),
-        inactive: normalized.inactive,
+        // Inactive flag can be toggled only if user has delete capability; otherwise preserve current
+        inactive: canDeleteClients ? normalized.inactive : !!current.inactive,
 
         // computed
         fullNameLower: normalized.fullNameLower,
@@ -368,8 +378,12 @@ export default function EditForm({ open, client, onClose, onSaved }) {
     }
   };
 
-  // "Delete" now means deactivate (soft delete)
+  // "Delete" now means deactivate (soft delete) — gated by 'deleteClients'
   const deactivateClient = async () => {
+    if (!canDeleteClients) {
+      setError("Only admins can deactivate clients.");
+      return;
+    }
     if (!client?.id || deactivating) return;
     if (client.inactive) return;
     const name = `${tcase(client.firstName || "")} ${tcase(client.lastName || "")}`.trim() || "this client";
@@ -403,6 +417,10 @@ export default function EditForm({ open, client, onClose, onSaved }) {
   };
 
   const reactivateClient = async () => {
+    if (!canDeleteClients) {
+      setError("Only admins can reactivate clients.");
+      return;
+    }
     if (!client?.id || reactivating) return;
     if (!client.inactive && !form.inactive) return;
 
@@ -432,7 +450,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   if (!open) return null;
 
-  const readOnlyBlock = !isAdmin;
+  const readOnlyBlock = !canEditClients;
   const headerName = `${tcase(client?.firstName || "")} ${tcase(client?.lastName || "")}`.trim();
 
   const fieldInputCls =
@@ -727,8 +745,8 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 </label>
               </div>
 
-              {/* Admin-only inactive toggle note (kept) */}
-              {isAdmin && (
+              {/* Inactive toggle — visible & writable only with delete capability */}
+              {canDeleteClients && (
                 <label className="text-sm flex items-center gap-2 mt-1">
                   <input
                     type="checkbox"
@@ -762,8 +780,8 @@ export default function EditForm({ open, client, onClose, onSaved }) {
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            {/* Danger / Reactivation (Admin only) */}
-            {isAdmin && (
+            {/* Danger / Reactivation — gated by 'deleteClients' */}
+            {canDeleteClients && (
               <div className="flex items-center gap-2">
                 {!client?.inactive ? (
                   <button
@@ -803,7 +821,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
                 title={
                   readOnlyBlock
-                    ? "Admins only"
+                    ? "Not allowed"
                     : !formValid
                     ? "Fix the highlighted fields"
                     : !hasChanges

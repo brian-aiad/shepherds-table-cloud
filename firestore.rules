@@ -7,14 +7,12 @@ service cloud.firestore {
     function lowerSafe(s) { return s == null ? null : lower(s); }
     function isAuthed()  { return request.auth != null; }
 
-    // 🔑 Master override — CURRENT: email gate; PREFERRED: custom claim.
+    // 🔑 Master override — PREFERRED: custom claim; TEMP: legacy email.
     function isMaster() {
       return isAuthed()
         && (
-          // Preferred (flip this on once you set the claim)
           (request.auth.token.master == true)
           ||
-          // Legacy (keep temporarily if you need a backdoor while rolling out claims)
           (lowerSafe(request.auth.token.email) == "csbrianaiad@gmail.com")
         );
     }
@@ -26,7 +24,7 @@ service cloud.firestore {
         : null;
     }
 
-    // Role checks (scoped to a specific org)
+    /** Role & Scope helpers (per-org) */
     function isAdminOfOrg(rawOrgId) {
       let ou = orgUser(rawOrgId);
       return isMaster() || (isAuthed() && ou != null && ou.role == "admin");
@@ -36,22 +34,39 @@ service cloud.firestore {
       return isAuthed() && ou != null && ou.role == "volunteer";
     }
 
-    // Volunteers must be assigned to the location they access.
-    function volunteerHasLocation(rawOrgId, rawLocationId) {
+    // Scoped location access:
+    // Returns true if the signed-in user's membership for orgId allows access
+    // to the given locationId (scope:"all" OR locationIds contains it).
+    function hasLocationAccess(rawOrgId, rawLocationId) {
       let ou = orgUser(rawOrgId);
-      return isVolunteerOfOrg(rawOrgId)
+      return isAuthed()
         && ou != null
-        && ou.locationIds is list
-        && (rawLocationId in ou.locationIds);
+        && (
+          (ou.scope == "all")
+          ||
+          (ou.locationIds is list && rawLocationId in ou.locationIds)
+        );
     }
 
-    // Convenience: read/write permission for a scoped (orgId, locationId) thing
-    function canReadScoped(orgId, locationId) {
-      return isAdminOfOrg(orgId) || volunteerHasLocation(orgId, locationId);
+    // Unified capability to act at (orgId, locationId) respecting role+scope.
+    // - Admins: may act only where their scope allows (all OR subset list).
+    // - Volunteers: may act only within their assigned locations.
+    function canActAt(rawOrgId, rawLocationId) {
+      let ou = orgUser(rawOrgId);
+      return isMaster()
+        || (
+          ou != null
+          && (
+            (ou.role == "admin"     && hasLocationAccess(rawOrgId, rawLocationId))
+            ||
+            (ou.role == "volunteer" && hasLocationAccess(rawOrgId, rawLocationId))
+          )
+        );
     }
-    function canWriteScoped(orgId, locationId) {
-      return isAdminOfOrg(orgId) || volunteerHasLocation(orgId, locationId);
-    }
+
+    // Convenience wrappers for read/write at (org, location)
+    function canReadScoped(orgId, locationId)  { return canActAt(orgId, locationId); }
+    function canWriteScoped(orgId, locationId) { return canActAt(orgId, locationId); }
 
     // Required fields for new tenant-scoped docs
     function hasOrgId()      { return (request.resource.data.orgId is string) && request.resource.data.orgId.size() > 0; }
@@ -63,7 +78,7 @@ service cloud.firestore {
       allow read, write: if isMaster();
     }
 
-    /** ============================== users ================================== */
+    /** ============================== users ================================= */
     // Per-account sticky scope, private to each user.
     match /users/{userId} {
       allow get, create, update: if isAuthed() && request.auth.uid == userId;
@@ -71,65 +86,63 @@ service cloud.firestore {
     }
 
     /** ============================= orgUsers ================================ */
-    // Users can read ONLY their own orgUsers docs.
+    // Users can read ONLY their own orgUsers docs. Membership writes are server-side (callables).
     match /orgUsers/{id} {
       allow read: if isAuthed()
         && resource.data != null
         && resource.data.userId == request.auth.uid;
-      allow create, update, delete: if false; // master covered by global
+      allow create, update, delete: if false; // (master handled by global block)
     }
 
     /** ========================== organizations ============================== */
     // Only members (admin or volunteer) of an org can read that org's doc.
     match /organizations/{orgId} {
       allow read: if isAuthed() && (isAdminOfOrg(orgId) || isVolunteerOfOrg(orgId));
-      allow create, update, delete: if false; // master via global
+      allow create, update, delete: if false; // (master via global)
     }
 
     /** ============================ locations ================================ */
-    // Only members of the parent org can read its locations.
+    // Only members of the parent org can read its locations (scope not required just to list names).
     match /locations/{locationId} {
       allow read: if isAuthed()
         && resource.data != null
         && (isAdminOfOrg(resource.data.orgId) || isVolunteerOfOrg(resource.data.orgId));
-      allow create, update, delete: if false; // master via global
+      allow create, update, delete: if false; // (master via global)
     }
 
     /** ============================== clients ================================
-     *  Admins: full CRUD inside their org (including hard delete).
+     *  Admins: full CRUD inside their *allowed scope* (org + allowed locations).
      *  Volunteers: READ at assigned locations; may update ONLY visit counters
      *  and last-visit metadata (no tenant-scope changes, no profile edits).
-     * =======================================================================
-     */
+     *  Volunteers may CREATE clients at assigned locations (dashboard flow).
+     * ======================================================================= */
     match /clients/{clientId} {
-      // Read: admin of org OR volunteer assigned to client.locationId
+
+      // Read: admin/volunteer WITH access to that location
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 
-      // Create: admin OR volunteer assigned to the target location.
-      // Must include orgId & locationId (comes from your form).
+      // Create: admin/volunteer WITH access to the target location.
+      // Must include orgId & locationId.
       allow create: if isAuthed()
         && hasOrgId()
         && hasLocationId()
-        && (
-          isAdminOfOrg(request.resource.data.orgId) ||
-          volunteerHasLocation(request.resource.data.orgId, request.resource.data.locationId)
-        );
+        && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId);
 
       // Update:
-      //  • Admins can update anything (tenant scope must remain unchanged).
-      //  • Volunteers at the client's location can ONLY change counter/last-visit fields.
+      //  • Admins (with scope) can update anything except tenant identity (org/location) must remain unchanged.
+      //  • Volunteers (with scope) can ONLY change counter/last-visit fields.
       allow update: if isAuthed()
         && request.resource.data.orgId      == resource.data.orgId
         && request.resource.data.locationId == resource.data.locationId
         && (
-          // Admin path
-          isAdminOfOrg(resource.data.orgId)
+          // Admin path (must have scope to this location)
+          (isAdminOfOrg(resource.data.orgId) && hasLocationAccess(resource.data.orgId, resource.data.locationId))
           ||
-          // Volunteer path: restrict field changes to these keys only
+          // Volunteer path: restricted fields & must have scope
           (
-            volunteerHasLocation(resource.data.orgId, resource.data.locationId)
-            &&
-            request.resource.data.diff(resource.data).changedKeys()
+            hasLocationAccess(resource.data.orgId, resource.data.locationId)
+            && isVolunteerOfOrg(resource.data.orgId)
+            && request.resource.data.diff(resource.data).changedKeys()
               .hasOnly([
                 "visitCountLifetime",
                 "visitCountByMonth",
@@ -142,11 +155,16 @@ service cloud.firestore {
           )
         );
 
-      // Delete: admin of the org may hard delete
-      allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
+      // Delete: admin WITH scope to that location may hard delete
+      allow delete: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && hasLocationAccess(resource.data.orgId, resource.data.locationId);
     }
 
-    /** ============================== visits ================================= */
+    /** ============================== visits =================================
+     *  Create/Update/Delete allowed only where the user has scope (admin or volunteer).
+     *  Identity fields (clientId/orgId/locationId/dateKey/monthKey) are immutable post-create.
+     * ======================================================================= */
     match /visits/{visitId} {
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 
@@ -171,12 +189,15 @@ service cloud.firestore {
         && request.resource.data.dateKey    == resource.data.dateKey
         && request.resource.data.monthKey   == resource.data.monthKey;
 
-      // Admins of the org may hard delete visits
-      allow delete: if isAuthed() && isAdminOfOrg(resource.data.orgId);
+      // Admin (WITH scope) may hard delete visits
+      allow delete: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && hasLocationAccess(resource.data.orgId, resource.data.locationId);
     }
 
     /** ============================== reports =============================== */
-    // Admin-only, org-scoped. (Fix: use request.resource on create.)
+    // Admin-only, org-scoped (no volunteer access). If you ever need location-scoped
+    // reports for subset-admins, add a locationId in the doc and mirror canActAt.
     match /reports/{reportId} {
       allow read:    if isAuthed() && isAdminOfOrg(resource.data.orgId);
       allow create:  if isAuthed() && hasOrgId() && isAdminOfOrg(request.resource.data.orgId);
@@ -185,7 +206,7 @@ service cloud.firestore {
     }
 
     /** ============================ usda_first =============================== */
-    // Restrict reads to the user's org/location (was: any authed user).
+    // Deterministic first-of-month markers; enforce (org,location) scope.
     match /usda_first/{markerId} {
       allow read: if isAuthed() && canReadScoped(resource.data.orgId, resource.data.locationId);
 

@@ -1,5 +1,5 @@
 // src/components/LogVisitForm.jsx
-// Shepherds Table Cloud — Log Visit (Oct 2025 UI parity)
+// Shepherds Table Cloud — Log Visit (Oct 2025 UI parity + capability guard)
 // - Bottom sheet on mobile / centered card on desktop
 // - Sticky gradient header/footer, initials avatar, icons on labels, pretty-scroll
 // - Single Firestore transaction: visit + client counters (+ optional USDA marker)
@@ -7,6 +7,7 @@
 // - weekKey (YYYY-Www) + weekday (0–6); resilient client name denorm
 // - Hard guard: blocks if client is inactive; preserves client's original org/location
 // - Household size: steppers + numeric input with clamping; Enter = next field
+// - 🚦 Capability-aware: requires `logVisits`
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -48,12 +49,17 @@ function handleFormKeyDown(e) {
   const tag = el.tagName.toLowerCase();
   const type = (el.getAttribute("type") || "").toLowerCase();
   const safe =
-    tag === "textarea" || tag === "select" || tag === "button" || type === "submit" || type === "button";
+    tag === "textarea" ||
+    tag === "select" ||
+    tag === "button" ||
+    type === "submit" ||
+    type === "button";
   if (safe) return;
   e.preventDefault();
   const form = e.currentTarget;
-  const focusables = Array.from(form.querySelectorAll("input, select, textarea"))
-    .filter((n) => !n.disabled && n.type !== "hidden" && n.tabIndex !== -1);
+  const focusables = Array.from(
+    form.querySelectorAll("input, select, textarea")
+  ).filter((n) => !n.disabled && n.type !== "hidden" && n.tabIndex !== -1);
   const idx = focusables.indexOf(el);
   if (idx > -1 && idx < focusables.length - 1) focusables[idx + 1].focus();
   else el.blur();
@@ -66,7 +72,7 @@ const ICONS = {
 
 export default function LogVisitForm({
   open,
-  client,          // { id, firstName, lastName, householdSize, inactive, ... }
+  client, // { id, firstName, lastName, householdSize, inactive, ... }
   onClose,
   onSaved,
   defaultOrgId,
@@ -83,10 +89,22 @@ export default function LogVisitForm({
 
   // Auth scope (read-only here)
   const authCtx = useAuth() || {};
-  const orgId   = defaultOrgId ?? authCtx.org?.id ?? authCtx.activeOrg?.id ?? null;
+  const orgId =
+    defaultOrgId ?? authCtx.org?.id ?? authCtx.activeOrg?.id ?? null;
   const locationId =
-    defaultLocationId ?? authCtx.location?.id ?? authCtx.activeLocation?.id ?? null;
+    defaultLocationId ??
+    authCtx.location?.id ??
+    authCtx.activeLocation?.id ??
+    null;
   const currentUserId = authCtx?.uid || auth.currentUser?.uid || null;
+
+  // 🔐 Capability check (prefers canLogVisits → hasCapability('logVisits') → isAdmin)
+  const canLog =
+    (typeof authCtx?.canLogVisits !== "undefined"
+      ? !!authCtx.canLogVisits
+      : typeof authCtx?.hasCapability === "function"
+      ? !!authCtx.hasCapability("logVisits")
+      : !!authCtx?.isAdmin) || false;
 
   const name = `${client?.firstName || ""} ${client?.lastName || ""}`.trim();
   const initials = useMemo(() => {
@@ -114,6 +132,12 @@ export default function LogVisitForm({
 
   async function submit() {
     if (busy) return;
+
+    // 🚦 Capability guard
+    if (!canLog) {
+      setErr("You do not have permission to log visits.");
+      return;
+    }
 
     // Scope + auth guards
     if (!orgId || !locationId) {
@@ -178,9 +202,8 @@ export default function LogVisitForm({
 
         // Snapshot address fields from the client for historical reporting
         const snapAddress = cur.address || client.address || "";
-        const snapZip     = cur.zip || client.zip || "";
-        const snapCounty  = cur.county || client.county || "";
-
+        const snapZip = cur.zip || client.zip || "";
+        const snapCounty = cur.county || client.county || "";
 
         // 3) Create the visit
         const visitRef = doc(collection(db, "visits"));
@@ -194,10 +217,10 @@ export default function LogVisitForm({
           clientFirstName: client.firstName || cur.firstName || "",
           clientLastName: client.lastName || cur.lastName || "",
 
-            // ⬇️ NEW: historical client snapshots
+          // ⬇️ Historical client snapshots
           clientAddress: snapAddress,
-          clientZip:     snapZip,
-          clientCounty:  snapCounty,
+          clientZip: snapZip,
+          clientCounty: snapCounty,
 
           // keys & timestamps
           visitAt: serverTimestamp(),
@@ -247,6 +270,67 @@ export default function LogVisitForm({
     if (e.key === "Enter") submit();
   }
 
+  // If the user lacks permission, show a simple, branded notice in the same shell
+  if (!canLog) {
+    return (
+      <div className="fixed inset-0 z-[1000]">
+        {/* Backdrop */}
+        <button
+          aria-label="Close"
+          className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+          onClick={onClose}
+        />
+        {/* Card */}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="no-cap-title"
+          className="
+            absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(560px,94vw)]
+            bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+            bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
+            overflow-hidden flex flex-col
+          "
+        >
+          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+              <h2 id="no-cap-title" className="text-base sm:text-xl font-semibold">
+                Log Visit
+              </h2>
+              <button
+                onClick={onClose}
+                className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                aria-label="Close"
+                title="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+          <div className="p-4 sm:p-6">
+            <div
+              role="alert"
+              className="rounded-2xl border border-amber-200 bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[13px] text-amber-900"
+            >
+              You don’t have permission to log visits. Ask an admin to update your role.
+            </div>
+          </div>
+          <div className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4">
+            <div className="flex items-center justify-end">
+              <button
+                className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)]"
+                onClick={onClose}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[1000]">
       {/* Backdrop */}
@@ -268,7 +352,10 @@ export default function LogVisitForm({
           overflow-hidden flex flex-col
         "
         onKeyDown={onKey}
-        style={{ maxHeight: "calc(100vh - 28px)", marginTop: "env(safe-area-inset-top, 8px)" }}
+        style={{
+          maxHeight: "calc(100vh - 28px)",
+          marginTop: "env(safe-area-inset-top, 8px)",
+        }}
       >
         {/* Header — matches NewClientForm/EditForm */}
         <div className="sticky top-0 z-10">
@@ -281,7 +368,10 @@ export default function LogVisitForm({
                     {initials}
                   </div>
                   <div className="min-w-0">
-                    <h2 id="log-visit-title" className="text-base sm:text-xl font-semibold truncate">
+                    <h2
+                      id="log-visit-title"
+                      className="text-base sm:text-xl font-semibold truncate"
+                    >
                       Log Visit
                     </h2>
                     <p className="text-[11px] sm:text-xs opacity-90 truncate">
@@ -292,8 +382,12 @@ export default function LogVisitForm({
 
                 {/* Scope (desktop) */}
                 <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
-                  <span>Org: <b>{orgId ?? "—"}</b></span>
-                  <span>Loc: <b>{locationId ?? "—"}</b></span>
+                  <span>
+                    Org: <b>{orgId ?? "—"}</b>
+                  </span>
+                  <span>
+                    Loc: <b>{locationId ?? "—"}</b>
+                  </span>
                 </div>
 
                 {/* Close */}
@@ -309,8 +403,12 @@ export default function LogVisitForm({
 
               {/* Scope (mobile) */}
               <div className="mt-2 sm:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
-                <span>Org: <b>{orgId ?? "—"}</b></span>
-                <span>Loc: <b>{locationId ?? "—"}</b></span>
+                <span>
+                  Org: <b>{orgId ?? "—"}</b>
+                </span>
+                <span>
+                  Loc: <b>{locationId ?? "—"}</b>
+                </span>
               </div>
             </div>
           </div>
@@ -322,16 +420,23 @@ export default function LogVisitForm({
             role="alert"
             className="mx-4 sm:mx-6 mt-3 rounded-2xl border border-red-200 bg-red-50 ring-1 ring-red-200 px-3 py-2 text-[13px] text-red-800"
           >
-            Select an Organization and Location from the navbar before logging a visit.
+            Select an Organization and Location from the navbar before logging a
+            visit.
           </div>
         ) : null}
 
         {/* Body (pretty-scroll) */}
         <form
-          onSubmit={(e) => { e.preventDefault(); submit(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
           onKeyDown={handleFormKeyDown}
           className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 grid gap-4 text-[17px] pretty-scroll"
-          style={{ maxHeight: "calc(100vh - 220px)", paddingBottom: "env(safe-area-inset-bottom)" }}
+          style={{
+            maxHeight: "calc(100vh - 220px)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
           noValidate
         >
           {/* USDA toggle — styled like NewClientForm active gradient */}
@@ -376,7 +481,8 @@ export default function LogVisitForm({
               </label>
             </div>
             <p className="mt-2 text-xs text-gray-600">
-              If “Yes”, we’ll record this as the first USDA visit for {monthKeyFor()} and create a monthly marker.
+              If “Yes”, we’ll record this as the first USDA visit for{" "}
+              {monthKeyFor()} and create a monthly marker.
             </p>
           </fieldset>
 
@@ -433,7 +539,10 @@ export default function LogVisitForm({
                 aria-label="Increase household size"
                 onClick={() =>
                   setHH((n) =>
-                    Math.max(MIN_HH, Math.min(MAX_HH, (Number(n) || MIN_HH) + 1))
+                    Math.max(
+                      MIN_HH,
+                      Math.min(MAX_HH, (Number(n) || MIN_HH) + 1)
+                    )
                   )
                 }
                 className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
@@ -459,7 +568,8 @@ export default function LogVisitForm({
 
         {/* Consent note (matches placement) */}
         <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
-          Visits are recorded for reporting and eligibility. Data stays within your organization unless required by law.
+          Visits are recorded for reporting and eligibility. Data stays within
+          your organization unless required by law.
         </div>
 
         {/* Footer — brand buttons */}
@@ -501,9 +611,27 @@ export default function LogVisitForm({
 /* ---------- tiny presentational helpers ---------- */
 function Spinner() {
   return (
-    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" role="img" aria-label="Loading">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" opacity="0.25" />
-      <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" fill="none" />
+    <svg
+      className="h-4 w-4 animate-spin"
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="Loading"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="3"
+        fill="none"
+        opacity="0.25"
+      />
+      <path
+        d="M22 12a10 10 0 0 1-10 10"
+        stroke="currentColor"
+        strokeWidth="3"
+        fill="none"
+      />
     </svg>
   );
 }

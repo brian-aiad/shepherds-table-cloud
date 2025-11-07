@@ -75,7 +75,8 @@ const monthLabel = (mk) =>
   });
 
 const toJSDate = (ts) => (ts?.toDate ? ts.toDate() : new Date(ts));
-const toISO = (d) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
+const toISO = (d) =>
+  d instanceof Date ? d.toISOString() : new Date(d).toISOString();
 
 const chunk = (arr, size = 10) => {
   const out = [];
@@ -193,7 +194,9 @@ function buildCsvGeneric(rows) {
   const header = Array.from(keys);
   const lines = [header.join(",")];
   for (const r of rows || []) {
-    const vals = header.map((k) => String(r?.[k] ?? "").replaceAll('"', '""'));
+    const vals = header.map((k) =>
+      String(r?.[k] ?? "").replaceAll('"', '""')
+    );
     lines.push(vals.map((v) => `"${v}"`).join(","));
   }
   return lines.join("\n");
@@ -238,10 +241,7 @@ function aggregateMonthForPdf(visits) {
   }
 
   const undHH = firsts.size;
-  const undPP = Array.from(firsts.values()).reduce(
-    (s, x) => s + x.persons,
-    0
-  );
+  const undPP = Array.from(firsts.values()).reduce((s, x) => s + x.persons, 0);
 
   return {
     byDay,
@@ -443,7 +443,9 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e) => {
-      const pop = document.querySelector('[role="dialog"][aria-label="Select month and year"]');
+      const pop = document.querySelector(
+        '[role="dialog"][aria-label="Select month and year"]'
+      );
       const trigger = e.target.closest?.('[aria-haspopup="dialog"]');
       if (pop && !pop.contains(e.target) && !trigger) setOpen(false);
     };
@@ -463,28 +465,40 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
     [setMonthKey, setSelectedDate]
   );
 
-const MonthCell = ({ mIndex0 }) => {
-  const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const isCurrent =
-    Number(monthKey.slice(0, 4)) === yearView &&
-    Number(monthKey.slice(5, 7)) === mIndex0 + 1;
+  const MonthCell = ({ mIndex0 }) => {
+    const names = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const isCurrent =
+      Number(monthKey.slice(0, 4)) === yearView &&
+      Number(monthKey.slice(5, 7)) === mIndex0 + 1;
 
-  return (
-    <button
-      onClick={() => commit(yearView, mIndex0)}
-      className={
-        "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition " +
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
-        (isCurrent
-          ? "bg-brand-700 text-white"
-          : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
-      }
-    >
-      {names[mIndex0]}
-    </button>
-  );
-};
-
+    return (
+      <button
+        onClick={() => commit(yearView, mIndex0)}
+        className={
+          "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition " +
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 " +
+          (isCurrent
+            ? "bg-brand-700 text-white"
+            : "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50/60")
+        }
+      >
+        {names[mIndex0]}
+      </button>
+    );
+  };
 
   const baseBtn =
     "inline-flex items-center justify-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50";
@@ -505,16 +519,27 @@ const MonthCell = ({ mIndex0 }) => {
         {/* Prev */}
         <button
           onClick={() => jump(-1)}
-          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}          aria-label="Previous month"
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}
+          aria-label="Previous month"
           title="Previous month"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            fill="none"
+            aria-hidden="true"
+          >
             <path d="M15 6l-6 6 6 6" strokeWidth="2" />
           </svg>
         </button>
 
         {/* divider */}
-        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+        <span
+          className="mx-1 h-7 md:h-8 w-px bg-black/10"
+          aria-hidden="true"
+        />
 
         {/* Month button */}
         <div className="relative z-50">
@@ -534,8 +559,15 @@ const MonthCell = ({ mIndex0 }) => {
             aria-expanded={open}
             title="Jump to a specific month/year"
           >
-            <span className="text-[15px] md:text-[16px]">{label}</span>
-            <svg className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" stroke="currentColor" fill="none">
+            <span className="text-[15px] md:text[16px]">{label}</span>
+            <svg
+              className={`h-4 w-4 transition-transform ${
+                open ? "rotate-180" : ""
+              }`}
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              fill="none"
+            >
               <path d="M6 9l6 6 6-6" strokeWidth="2" />
             </svg>
           </button>
@@ -557,7 +589,13 @@ const MonthCell = ({ mIndex0 }) => {
                   onClick={() => setYearView((y) => y - 1)}
                   aria-label="Previous year"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    fill="none"
+                  >
                     <path d="M15 6l-6 6 6 6" strokeWidth="2" />
                   </svg>
                 </button>
@@ -569,7 +607,13 @@ const MonthCell = ({ mIndex0 }) => {
                   onClick={() => setYearView((y) => y + 1)}
                   aria-label="Next year"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    fill="none"
+                  >
                     <path d="M9 6l6 6-6 6" strokeWidth="2" />
                   </svg>
                 </button>
@@ -587,7 +631,9 @@ const MonthCell = ({ mIndex0 }) => {
                 <input
                   type="month"
                   className="w-full rounded-lg border border-black/20 px-2 py-2 text-sm"
-                  value={`${String(yearView)}-${String(Number(monthKey.slice(5,7))).padStart(2, "0")}`}
+                  value={`${String(yearView)}-${String(
+                    Number(monthKey.slice(5, 7))
+                  ).padStart(2, "0")}`}
                   onChange={(e) => {
                     const [y, m] = e.target.value.split("-").map(Number);
                     if (!y || !m) return;
@@ -608,21 +654,35 @@ const MonthCell = ({ mIndex0 }) => {
         </div>
 
         {/* divider */}
-        <span className="mx-1 h-7 md:h-8 w-px bg-black/10" aria-hidden="true" />
+        <span
+          className="mx-1 h-7 md:h-8 w-px bg-black/10"
+          aria-hidden="true"
+        />
 
         {/* Next */}
         <button
           onClick={() => jump(1)}
-          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}          aria-label="Next month"
+          className={`${baseBtn} ${size} rounded-xl hover:bg-gray-50 active:bg-gray-100 text-gray-900`}
+          aria-label="Next month"
           title="Next month"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" fill="none" aria-hidden="true">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            fill="none"
+            aria-hidden="true"
+          >
             <path d="M9 6l6 6-6 6" strokeWidth="2" />
           </svg>
         </button>
 
         {/* divider */}
-        <span className="mx-1 h-7 md:h-8 w-px bg-black/10 hidden md:block" aria-hidden="true" />
+        <span
+          className="mx-1 h-7 md:h-8 w-px bg-black/10 hidden md:block"
+          aria-hidden="true"
+        />
 
         {/* Today (md+) */}
         <button
@@ -637,32 +697,47 @@ const MonthCell = ({ mIndex0 }) => {
   );
 }
 
-
-
-
 /* =======================================================================================
    PAGE COMPONENT
    ======================================================================================= */
 export default function Reports() {
   const routeLocation = useRouteLocation();
   const {
-  loading: authLoading,
-  org,
-  orgSettings,
-  location,
-  locations = [],
-  canPickAllLocations = false,
-  isAdmin,
-  email,
-  setActiveLocation,
-} = useAuth() || {};
+    loading: authLoading,
+    org,
+    orgSettings,
+    location,
+    locations = [],
+    canPickAllLocations = false,
+    // legacy flag may still exist:
+    isAdmin,
+    // NEW capability API from AuthProvider.tsx:
+    hasCapability,
+    email,
+    setActiveLocation,
+  } = useAuth() || {};
 
+  // Capability-derived booleans (fallback to legacy isAdmin when needed)
+  const canDeleteVisits = useMemo(
+    () => (typeof hasCapability === "function" ? hasCapability("deleteVisits") : !!isAdmin),
+    [hasCapability, isAdmin]
+  );
+  const canLogVisits = useMemo(
+    () => (typeof hasCapability === "function" ? hasCapability("logVisits") : !!isAdmin),
+    [hasCapability, isAdmin]
+  );
+  const canViewReports = useMemo(
+    () => (typeof hasCapability === "function" ? hasCapability("viewReports") : !!isAdmin),
+    [hasCapability, isAdmin]
+  );
 
   // UI/state
   const [exportingPdf, setExportingPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedMonthKey, setSelectedMonthKey] = useState(monthKeyFor(new Date()));
+  const [selectedMonthKey, setSelectedMonthKey] = useState(
+    monthKeyFor(new Date())
+  );
   const [selectedDate, setSelectedDate] = useState(fmtDateKey(new Date()));
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
@@ -673,7 +748,10 @@ export default function Reports() {
   useEffect(() => {
     const tick = () => {
       if (!lastSyncedAt) return setSyncAgo("");
-      const secs = Math.max(0, Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000));
+      const secs = Math.max(
+        0,
+        Math.floor((Date.now() - lastSyncedAt.getTime()) / 1000)
+      );
       if (secs < 60) setSyncAgo(`${secs}s ago`);
       else setSyncAgo(`${Math.floor(secs / 60)}m ago`);
     };
@@ -699,7 +777,8 @@ export default function Reports() {
   useEffect(() => {
     const onDocClick = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
-      if (kebabRef.current && !kebabRef.current.contains(e.target)) setKebabOpen(false);
+      if (kebabRef.current && !kebabRef.current.contains(e.target))
+        setKebabOpen(false);
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
@@ -739,29 +818,28 @@ export default function Reports() {
   /* --------------------------------
      Scoped live query: visits for month (RANGE BY dateKey)
      -------------------------------- */
-useEffect(() => {
-  if (authLoading) return;
-  if (!org?.id) {
-    setVisits([]);
-    return;
-  }
-
-  // If the user is NOT allowed org-wide scope, they must have a location selected.
-  if (!canPickAllLocations && !location?.id) {
-    // Try auto-selecting their first permitted location if we have it
-    if (locations.length && typeof setActiveLocation === "function") {
-      setActiveLocation(locations[0].id);
-    } else {
+  useEffect(() => {
+    if (authLoading) return;
+    if (!org?.id) {
       setVisits([]);
-      setError("You don’t have an active location. Ask an admin to assign one.");
+      return;
     }
-    return; // don’t run an org-wide query
-  }
 
-  setLoading(true);
-  setError("");
-  let off;
+    // If the user is NOT allowed org-wide scope, they must have a location selected.
+    if (!canPickAllLocations && !location?.id) {
+      // Try auto-selecting their first permitted location if we have it
+      if (locations.length && typeof setActiveLocation === "function") {
+        setActiveLocation(locations[0].id);
+      } else {
+        setVisits([]);
+        setError("You don’t have an active location. Ask an admin to assign one.");
+      }
+      return; // don’t run an org-wide query
+    }
 
+    setLoading(true);
+    setError("");
+    let off;
 
     // Compute month range on dateKey (YYYY-MM-DD)
     const d = dateFromMonthKey(selectedMonthKey);
@@ -802,7 +880,10 @@ useEffect(() => {
               const snap2 = await getDocs(qv);
               setVisits(snap2.docs.map((d) => ({ id: d.id, ...d.data() })));
             } catch (err) {
-              setError(extractIndexHelp(err) || "Failed to load visits for this month.");
+              setError(
+                extractIndexHelp(err) ||
+                  "Failed to load visits for this month."
+              );
             } finally {
               setLoading(false);
               setLastSyncedAt(new Date());
@@ -811,13 +892,23 @@ useEffect(() => {
         );
       } catch (e) {
         console.error(e);
-        setError(extractIndexHelp(e) || "Failed to load visits for this month.");
+        setError(
+          extractIndexHelp(e) || "Failed to load visits for this month."
+        );
         setLoading(false);
       }
     })();
 
     return () => (off ? off() : undefined);
-  }, [authLoading, org?.id, location?.id, selectedMonthKey, isAdmin]);
+  }, [
+    authLoading,
+    org?.id,
+    location?.id,
+    selectedMonthKey,
+    canPickAllLocations,
+    locations.length,
+    setActiveLocation,
+  ]);
 
   /* --------------------------------
      Hydrate client docs in small batches (by id)
@@ -825,14 +916,18 @@ useEffect(() => {
   useEffect(() => {
     (async () => {
       try {
-        const ids = Array.from(new Set(visits.map((v) => v.clientId).filter(Boolean)));
+        const ids = Array.from(
+          new Set(visits.map((v) => v.clientId).filter(Boolean))
+        );
         if (!ids.length) {
           setClientsById(new Map());
           return;
         }
         const m = new Map();
         for (const part of chunk(ids, 10)) {
-          const qs = await getDocs(query(collection(db, "clients"), where("__name__", "in", part)));
+          const qs = await getDocs(
+            query(collection(db, "clients"), where("__name__", "in", part))
+          );
           for (const d of qs.docs) m.set(d.id, { id: d.id, ...d.data() });
         }
         setClientsById(m);
@@ -894,22 +989,14 @@ useEffect(() => {
       const d = toJSDate(v.visitAt);
       const person = clientsById.get(v.clientId) || {};
       const labelName =
-        `${person.firstName || v.clientFirstName || ""} ${person.lastName || v.clientLastName || ""}`.trim() ||
-        v.clientId;
+        `${person.firstName || v.clientFirstName || ""} ${
+          person.lastName || v.clientLastName || ""
+        }`.trim() || v.clientId;
 
-       // Prefer visit snapshot so we never depend on client read permissions
- const county =
-   v.clientCounty ||
-   person.county ||
-   "";
+      // Prefer visit snapshot so we never depend on client read permissions
+      const county = v.clientCounty || person.county || "";
 
- const zip =
-   v.clientZip ||
-   v.zip ||
-   person.zip ||
-   "";
-
-
+      const zip = v.clientZip || v.zip || person.zip || "";
 
       return {
         visitId: v.id,
@@ -918,7 +1005,6 @@ useEffect(() => {
         lastName: person.lastName || "",
         county,
         zip,
-
 
         visitHousehold: v.householdSize ?? "",
         usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
@@ -959,15 +1045,17 @@ useEffect(() => {
           (r.labelName || "").toLowerCase().includes(q) ||
           (r.county || "").toLowerCase().includes(q) ||
           (r.zip || "").toLowerCase().includes(q)
-
       );
     }
 
     const cmp = (a, b) => {
       let d = 0;
       if (sortKey === "time") d = a.visitAtISO.localeCompare(b.visitAtISO);
-      else if (sortKey === "name") d = (a.labelName || "").localeCompare(b.labelName || "");
-      else if (sortKey === "hh") d = Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
+      else if (sortKey === "name")
+        d = (a.labelName || "").localeCompare(b.labelName || "");
+      else if (sortKey === "hh")
+        d =
+          Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
       return sortDir === "asc" ? d : -d;
     };
     return [...rows].sort(cmp);
@@ -978,8 +1066,14 @@ useEffect(() => {
      -------------------------------- */
   const dayTotals = useMemo(() => {
     const count = filteredSortedRows.length;
-    const hh = filteredSortedRows.reduce((s, r) => s + Number(r.visitHousehold || 0), 0);
-    const usdaYes = filteredSortedRows.reduce((s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
+    const hh = filteredSortedRows.reduce(
+      (s, r) => s + Number(r.visitHousehold || 0),
+      0
+    );
+    const usdaYes = filteredSortedRows.reduce(
+      (s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0),
+      0
+    );
     return { count, hh, usdaYes };
   }, [filteredSortedRows]);
 
@@ -987,7 +1081,10 @@ useEffect(() => {
      Month aggregates (KPI + charts)
      -------------------------------- */
   const monthAgg = useMemo(() => {
-    const totalHH = visits.reduce((s, v) => s + Number(v.householdSize || 0), 0);
+    const totalHH = visits.reduce(
+      (s, v) => s + Number(v.householdSize || 0),
+      0
+    );
     const usdaUnits = visits.reduce((s, v) => s + usdaUnitsOf(v), 0);
 
     const byDay = new Map();
@@ -1005,12 +1102,20 @@ useEffect(() => {
       .map(([dateKey, arr]) => ({
         date: dateKey.slice(5), // "MM-DD"
         visits: arr.length,
-        people: arr.reduce((s, v) => s + Number(v.householdSize || 0), 0),
-        usdaYes: arr.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0),
+        people: arr.reduce(
+          (s, v) => s + Number(v.householdSize || 0),
+          0
+        ),
+        usdaYes: arr.reduce(
+          (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
+          0
+        ),
       }))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
 
-    const usdaYesTotal = visits.filter((v) => v.usdaFirstTimeThisMonth === true).length;
+    const usdaYesTotal = visits.filter(
+      (v) => v.usdaFirstTimeThisMonth === true
+    ).length;
     const usdaNoTotal = visits.length - usdaYesTotal;
 
     return {
@@ -1034,7 +1139,7 @@ useEffect(() => {
   const removeVisit = useCallback(
     async (visitId) => {
       if (!visitId) return;
-      if (!isAdmin) return toast.show("Only admins can delete.", "warn");
+      if (!canDeleteVisits) return toast.show("You don’t have permission to delete.", "warn");
       const ok = confirm("Delete this visit from the database?");
       if (!ok) return;
       try {
@@ -1046,7 +1151,7 @@ useEffect(() => {
         alert("Failed to delete visit. Please try again.");
       }
     },
-    [isAdmin, toast]
+    [canDeleteVisits, toast]
   );
 
   const exportOneDayCsv = useCallback(
@@ -1056,8 +1161,16 @@ useEffect(() => {
         const d = toJSDate(v.visitAt);
         const p = clientsById.get(v.clientId) || {};
         const address =
-          p.address || p.addr || p.street || p.street1 || p.line1 || p.address1 ||
-          v.clientAddress || v.clientStreet || v.clientLine1 || "";
+          p.address ||
+          p.addr ||
+          p.street ||
+          p.street1 ||
+          p.line1 ||
+          p.address1 ||
+          v.clientAddress ||
+          v.clientStreet ||
+          v.clientLine1 ||
+          "";
 
         const zip = p.zip || v.clientZip || v.zip || "";
 
@@ -1083,67 +1196,65 @@ useEffect(() => {
     [visitsByDay, clientsById, toast]
   );
 
- const buildEfapBytesForDay = useCallback(
-  (dayKey) => {
-    const src = visitsByDay.get(dayKey) || [];
+  const buildEfapBytesForDay = useCallback(
+    (dayKey) => {
+      const src = visitsByDay.get(dayKey) || [];
 
-    const rows = src.map((v) => {
-      const p = clientsById.get(v.clientId) || {};
+      const rows = src.map((v) => {
+        const p = clientsById.get(v.clientId) || {};
 
-      // --- Name: match the table’s fallback behavior (NO clientId fallback) ---
-      const first =
-        p.firstName ??
-        v.clientFirstName ??
-        (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
-        "";
-      const last =
-        p.lastName ??
-        v.clientLastName ??
-        (typeof p.name === "string" ? p.name.split(" ").slice(1).join(" ") : "") ??
-        "";
-      const name = `${first} ${last}`.trim() ||
-        (typeof v.clientName === "string" ? v.clientName : ""); // final human fallback
+        // --- Name: match the table’s fallback behavior (NO clientId fallback) ---
+        const first =
+          p.firstName ??
+          v.clientFirstName ??
+          (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
+          "";
+        const last =
+          p.lastName ??
+          v.clientLastName ??
+          (typeof p.name === "string"
+            ? p.name.split(" ").slice(1).join(" ")
+            : "") ?? "";
+        const name =
+          `${first} ${last}`.trim() ||
+          (typeof v.clientName === "string" ? v.clientName : ""); // final human fallback
 
-      // --- county
-      const county =
-        v.clientCounty ||
-        p.county ||
-        "";
+        // --- county
+        const county = v.clientCounty || p.county || "";
 
-      const zip = p.zip || v.clientZip || "";
+        const zip = p.zip || v.clientZip || "";
 
-      return {
-        name,
-        county,
-        zip,
-        householdSize: Number(v.householdSize || 0),
-        firstTime:
-          v.usdaFirstTimeThisMonth === true
-            ? true
-            : v.usdaFirstTimeThisMonth === false
-            ? false
-            : "",
-      };
-    });
+        return {
+          name,
+          county,
+          zip,
+          householdSize: Number(v.householdSize || 0),
+          firstTime:
+            v.usdaFirstTimeThisMonth === true
+              ? true
+              : v.usdaFirstTimeThisMonth === false
+              ? false
+              : "",
+        };
+      });
 
-    // Pass org branding so Food Bank Name fills correctly
-    return buildEfapDailyPdf(rows, {
-      dateStamp: dayKey,
-      orgSettings,
-      orgName: org?.name,
-      org,
-    });
-  },
-  [visitsByDay, clientsById, org, orgSettings]
-);
-
-
+      // Pass org branding so Food Bank Name fills correctly
+      return buildEfapDailyPdf(rows, {
+        dateStamp: dayKey,
+        orgSettings,
+        orgName: org?.name,
+        org,
+      });
+    },
+    [visitsByDay, clientsById, org, orgSettings]
+  );
 
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
         const pdfBytes = await buildEfapBytesForDay(dayKey);
-        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable").replace(/\s+/g, "_");
+        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
+          .replace(/\s+/g, "_");
         const fileName = efapSuggestedFileName(dayKey, site);
 
         downloadBytes(pdfBytes, fileName, "application/pdf");
@@ -1153,14 +1264,15 @@ useEffect(() => {
         alert("Couldn’t build the EFAP PDF for that day.");
       }
     },
-    [buildEfapBytesForDay, toast]
+    [buildEfapBytesForDay, toast, orgSettings?.brandText, org?.name]
   );
 
   const shareEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
         const pdfBytes = await buildEfapBytesForDay(dayKey);
-        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable").replace(/\s+/g, "_");
+        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
+          .replace(/\s+/g, "_");
         const fileName = efapSuggestedFileName(dayKey, site);
 
         const file = new File([toUint8Array(pdfBytes)], fileName, {
@@ -1173,7 +1285,7 @@ useEffect(() => {
         alert("Couldn’t share the EFAP PDF for that day.");
       }
     },
-    [buildEfapBytesForDay, toast]
+    [buildEfapBytesForDay, toast, orgSettings?.brandText, org?.name]
   );
 
   /* ---------- Export USDA Monthly (dedicated builder) ---------- */
@@ -1187,10 +1299,13 @@ useEffect(() => {
 
       const agg = aggregateMonthForPdf(visits);
 
-      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(undefined, {
-        month: "long",
-        year: "numeric",
-      });
+      const monthLabelStr = new Date(year, monthIndex0, 1).toLocaleString(
+        undefined,
+        {
+          month: "long",
+          year: "numeric",
+        }
+      );
 
       await downloadEfapMonthlyPdf(
         {
@@ -1218,6 +1333,21 @@ useEffect(() => {
      RENDER
      ======================================================================================= */
 
+  // If a user landed here without the right capability (defense in depth)
+  if (!canViewReports) {
+    return (
+      <div className="max-w-3xl mx-auto p-6">
+        <div className="rounded-2xl border bg-white p-6 shadow-sm">
+          <div className="text-lg font-semibold mb-1">Restricted</div>
+          <p className="text-sm text-gray-600">
+            You don’t have access to Reports. If you think this is a mistake,
+            ask an admin to update your permissions.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Scope chip
   const scopeChip = (
     <span
@@ -1241,7 +1371,6 @@ useEffect(() => {
       ) : (
         <span className="text-gray-600">(select location)</span>
       )}
-
     </span>
   );
 
@@ -1254,38 +1383,38 @@ useEffect(() => {
   );
 
   // Accessible aria-sort helper for table headers
-  const ariaSortFor = (key) => (sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none");
+  const ariaSortFor = (key) =>
+    sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
-     {/* ===== THEMED TOOLBAR ===== */}
-<div className="rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
-  {/* Brand gradient header (pill sits on the seam) */}
-  <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-10 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
-    <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
-      <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
-        Reports
-      </h1>
-      <div className="hidden md:flex items-center gap-2">{syncChip}</div>
-    </div>
-    <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-      {scopeChip}
-    </div>
+      {/* ===== THEMED TOOLBAR ===== */}
+      <div className="rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+        {/* Brand gradient header (pill sits on the seam) */}
+        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-10 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+              Reports
+            </h1>
+            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+          </div>
+          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+            {scopeChip}
+          </div>
 
-    {/* Month nav floats between header and controls */}
-    <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
-      <ReportsMonthNav
-        monthKey={selectedMonthKey}
-        setMonthKey={setSelectedMonthKey}
-        setSelectedDate={setSelectedDate}
-      />
-    </div>
-  </div>
+          {/* Month nav floats between header and controls */}
+          <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
+            <ReportsMonthNav
+              monthKey={selectedMonthKey}
+              setMonthKey={setSelectedMonthKey}
+              setSelectedDate={setSelectedDate}
+            />
+          </div>
+        </div>
 
-  {/* Controls surface – just reserves space under the pill */}
-  <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-8 pb-3" />
-</div>
-
+        {/* Controls surface – just reserves space under the pill */}
+        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-8 pb-3" />
+      </div>
 
       {/* ===== KPI Row (wording tightened) ===== */}
       <div className="mt-4">
@@ -1308,10 +1437,16 @@ useEffect(() => {
                 <KpiModern title="Households (Month)" value={monthAgg.households} />
               </div>
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern title="USDA First-Time (Month)" value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0} />
+                <KpiModern
+                  title="USDA First-Time (Month)"
+                  value={monthAgg.charts?.usdaPie?.[0]?.value ?? 0}
+                />
               </div>
               <div className="snap-start md:snap-none flex-none">
-                <KpiModern title="Active Service Days (Month)" value={Array.from(monthAgg.byDay.keys()).length} />
+                <KpiModern
+                  title="Active Service Days (Month)"
+                  value={Array.from(monthAgg.byDay.keys()).length}
+                />
               </div>
             </div>
           </div>
@@ -1326,14 +1461,21 @@ useEffect(() => {
         <Card title="Visits per Day">
           <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
-              <LineChart data={monthAgg.charts.visitsPerDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <LineChart
+                data={monthAgg.charts.visitsPerDay}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
                 <defs>
                   <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 11, fill: "#6b7280" }}
@@ -1348,7 +1490,10 @@ useEffect(() => {
                   tickLine={false}
                   width={30}
                 />
-                <Tooltip contentStyle={tooltipBoxStyle} cursor={{ stroke: "#ef4444", opacity: 0.25 }} />
+                <Tooltip
+                  contentStyle={tooltipBoxStyle}
+                  cursor={{ stroke: "#ef4444", opacity: 0.25 }}
+                />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Line
                   type="monotone"
@@ -1356,7 +1501,12 @@ useEffect(() => {
                   stroke="url(#lineGradient)"
                   strokeWidth={3}
                   dot={false}
-                  activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2, fill: "#991b1b" }}
+                  activeDot={{
+                    r: 5,
+                    stroke: "#fff",
+                    strokeWidth: 2,
+                    fill: "#991b1b",
+                  }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -1364,66 +1514,89 @@ useEffect(() => {
         </Card>
 
         {/* USDA Yes vs No (mobile-safe: center label, no clipping) */}
-<Card title="USDA Yes vs No">
-  <div className="h-[260px] flex items-center justify-center px-3 sm:px-4 overflow-visible">
-    <ResponsiveContainer width="96%" height="96%">
-      <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
-        <Pie
-          data={monthAgg.charts.usdaPie}
-          dataKey="value"
-          nameKey="name"
-          // Slightly smaller on small screens to prevent edge clipping
-          innerRadius={window.innerWidth < 640 ? "58%" : "55%"}
-          outerRadius={window.innerWidth < 640 ? "74%" : "78%"}
-          paddingAngle={2}
-          // On mobile we don't draw outside labels (they clip); desktop keeps them
-          label={window.innerWidth >= 640 ? ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%` : false}
-          labelLine={window.innerWidth >= 640}
-          isAnimationActive={false}
-        >
-          {monthAgg.charts.usdaPie.map((_, i) => (
-            <Cell key={i} fill={i === 0 ? "#991b1b" : "#fecaca"} stroke="#fff" strokeWidth={1.5} />
-          ))}
+        <Card title="USDA Yes vs No">
+          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4 overflow-visible">
+            <ResponsiveContainer width="96%" height="96%">
+              <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
+                <Pie
+                  data={monthAgg.charts.usdaPie}
+                  dataKey="value"
+                  nameKey="name"
+                  // Slightly smaller on small screens to prevent edge clipping
+                  innerRadius={window.innerWidth < 640 ? "58%" : "55%"}
+                  outerRadius={window.innerWidth < 640 ? "74%" : "78%"}
+                  paddingAngle={2}
+                  // On mobile we don't draw outside labels (they clip); desktop keeps them
+                  label={
+                    window.innerWidth >= 640
+                      ? ({ name, percent }) =>
+                          `${name} ${(percent * 100).toFixed(0)}%`
+                      : false
+                  }
+                  labelLine={window.innerWidth >= 640}
+                  isAnimationActive={false}
+                >
+                  {monthAgg.charts.usdaPie.map((_, i) => (
+                    <Cell
+                      key={i}
+                      fill={i === 0 ? "#991b1b" : "#fecaca"}
+                      stroke="#fff"
+                      strokeWidth={1.5}
+                    />
+                  ))}
 
-          {/* Mobile center label so numbers never clip */}
-          {window.innerWidth < 640 ? (
-            <text
-              x="50%"
-              y="50%"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              style={{ fontWeight: 700, fontSize: 14, fill: "#991b1b" }}
-            >
-              {(() => {
-                const yes = monthAgg.charts.usdaPie?.[0]?.value ?? 0;
-                const total = (monthAgg.charts.usdaPie || []).reduce((s, d) => s + (d.value || 0), 0) || 1;
-                return `${Math.round((yes / total) * 100)}% USDA`;
-              })()}
-            </text>
-          ) : null}
-        </Pie>
+                  {/* Mobile center label so numbers never clip */}
+                  {window.innerWidth < 640 ? (
+                    <text
+                      x="50%"
+                      y="50%"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      style={{ fontWeight: 700, fontSize: 14, fill: "#991b1b" }}
+                    >
+                      {(() => {
+                        const yes = monthAgg.charts.usdaPie?.[0]?.value ?? 0;
+                        const total =
+                          (monthAgg.charts.usdaPie || []).reduce(
+                            (s, d) => s + (d.value || 0),
+                            0
+                          ) || 1;
+                        return `${Math.round((yes / total) * 100)}% USDA`;
+                      })()}
+                    </text>
+                  ) : null}
+                </Pie>
 
-        {/* Tooltip works for both; legend only on md+ */}
-        <Tooltip contentStyle={tooltipBoxStyle} />
-        {window.innerWidth >= 640 ? <Legend wrapperStyle={{ fontSize: 11 }} /> : null}
-      </PieChart>
-    </ResponsiveContainer>
-  </div>
-</Card>
-
+                {/* Tooltip works for both; legend only on md+ */}
+                <Tooltip contentStyle={tooltipBoxStyle} />
+                {window.innerWidth >= 640 ? (
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                ) : null}
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
 
         {/* People Served per Day */}
         <Card title="People Served per Day">
           <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
-              <BarChart data={monthAgg.charts.visitsPerDay} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barCategoryGap={10}>
+              <BarChart
+                data={monthAgg.charts.visitsPerDay}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                barCategoryGap={10}
+              >
                 <defs>
                   <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
                     <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 11, fill: "#6b7280" }}
@@ -1451,7 +1624,9 @@ useEffect(() => {
         {/* Days list */}
         <aside className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div className="font-semibold">Days in {monthLabel(selectedMonthKey)}</div>
+            <div className="font-semibold">
+              Days in {monthLabel(selectedMonthKey)}
+            </div>
             <input
               className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
               placeholder="Filter (YYYY-MM-DD)"
@@ -1470,8 +1645,14 @@ useEffect(() => {
             <ul className="space-y-2">
               {sortedDayKeys.map((k) => {
                 const items = visitsByDay.get(k) || [];
-                const dayHH = items.reduce((s, v) => s + Number(v.householdSize || 0), 0);
-                const dayUsda = items.reduce((s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0), 0);
+                const dayHH = items.reduce(
+                  (s, v) => s + Number(v.householdSize || 0),
+                  0
+                );
+                const dayUsda = items.reduce(
+                  (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
+                  0
+                );
                 const isSelected = selectedDate === k;
                 const isToday = k === todayKey;
 
@@ -1506,7 +1687,8 @@ useEffect(() => {
                       )}
                       <div className="font-medium">{k}</div>
                       <div className="text-xs text-gray-500">
-                        {items.length} visit{items.length === 1 ? "" : "s"} • HH {dayHH} • USDA {dayUsda}
+                        {items.length} visit{items.length === 1 ? "" : "s"} • HH{" "}
+                        {dayHH} • USDA {dayUsda}
                       </div>
                     </div>
 
@@ -1539,152 +1721,162 @@ useEffect(() => {
         {/* Table / details */}
         <section className="lg:col-span-2 rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3">
           {/* Header: date + actions (mobile = tidy grid) */}
-<div className="mb-3">
-  {/* Title + desktop actions */}
-  <div className="hidden sm:flex items-center justify-between">
-    <div className="font-semibold text-lg">
-      {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
-    </div>
+          <div className="mb-3">
+            {/* Title + desktop actions */}
+            <div className="hidden sm:flex items-center justify-between">
+              <div className="font-semibold text-lg">
+                {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
+              </div>
 
-    {/* Desktop actions: EFAP + split menu + Add Visit (if admin) */}
-    <div className="flex items-center gap-1.5" ref={menuRef}>
-      {/* Split menu (desktop) */}
-      <div className="relative">
-        <button
-          className={BTN.icon}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-label="More actions"
-          title="More actions"
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          <KebabIcon className="h-5 w-5" />
-        </button>
-        {menuOpen && (
-          <div
-            role="menu"
-            className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-          >
-            <button
-              role="menuitem"
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-              onClick={() => { setMenuOpen(false); shareEfapDailyPdfForDay(selectedDate); }}
-              disabled={!selectedDate}
-              aria-label="Share EFAP"
-            >
-              <ShareIcon className="h-4 w-4" />
-              <span>Share EFAP</span>
-            </button>
-            <button
-              role="menuitem"
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-              onClick={() => { setMenuOpen(false); exportOneDayCsv(selectedDate); }}
-              disabled={!selectedDate}
-              aria-label="Export CSV"
-            >
-              <DownloadIcon className="h-4 w-4" />
-              <span>Export CSV</span>
-            </button>
+              {/* Desktop actions: EFAP + split menu + Add Visit (by capability) */}
+              <div className="flex items-center gap-1.5" ref={menuRef}>
+                {/* Split menu (desktop) */}
+                <div className="relative">
+                  <button
+                    className={BTN.icon}
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    aria-label="More actions"
+                    title="More actions"
+                    onClick={() => setMenuOpen((v) => !v)}
+                  >
+                    <KebabIcon className="h-5 w-5" />
+                  </button>
+                  {menuOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+                    >
+                      <button
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          shareEfapDailyPdfForDay(selectedDate);
+                        }}
+                        disabled={!selectedDate}
+                        aria-label="Share EFAP"
+                      >
+                        <ShareIcon className="h-4 w-4" />
+                        <span>Share EFAP</span>
+                      </button>
+                      <button
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          exportOneDayCsv(selectedDate);
+                        }}
+                        disabled={!selectedDate}
+                        aria-label="Export CSV"
+                      >
+                        <DownloadIcon className="h-4 w-4" />
+                        <span>Export CSV</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  className={BTN.primary + " min-w-[120px]"}
+                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+                  disabled={!selectedDate}
+                  title="Download EFAP PDF for this day"
+                  aria-label="EFAP PDF"
+                >
+                  EFAP PDF
+                </button>
+
+                {selectedDate && canLogVisits && (
+                  <AddVisitButton
+                    org={org}
+                    location={location}
+                    selectedDate={selectedDate}
+                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Mobile: tidy 2-row grid */}
+            <div className="sm:hidden">
+              <div className="font-semibold text-base mb-2">
+                {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {/* Row 1: EFAP full-width */}
+                <button
+                  className={BTN.primary + " col-span-2 h-11 w-full"}
+                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+                  disabled={!selectedDate}
+                  aria-label="EFAP PDF"
+                  title="Download EFAP PDF"
+                >
+                  EFAP PDF
+                </button>
+
+                {/* Row 2: Add Visit (by capability) + kebab */}
+                {canLogVisits ? (
+                  <AddVisitButton
+                    org={org}
+                    location={location}
+                    selectedDate={selectedDate}
+                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
+                    className={BTN.secondary + " !h-11 w-full"}
+                  />
+                ) : (
+                  <div />
+                )}
+
+                <div className="relative" ref={kebabRef}>
+                  <button
+                    className={BTN.icon + " !h-11 w-full"}
+                    aria-haspopup="menu"
+                    aria-expanded={kebabOpen}
+                    aria-label="More actions"
+                    title="More actions"
+                    onClick={() => setKebabOpen((v) => !v)}
+                  >
+                    <KebabIcon className="h-5 w-5" />
+                  </button>
+                  {kebabOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+                    >
+                      <button
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                        onClick={() => {
+                          setKebabOpen(false);
+                          shareEfapDailyPdfForDay(selectedDate);
+                        }}
+                        disabled={!selectedDate}
+                        aria-label="Share EFAP"
+                      >
+                        <ShareIcon className="h-4 w-4" />
+                        <span>Share EFAP</span>
+                      </button>
+                      <button
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                        onClick={() => {
+                          setKebabOpen(false);
+                          exportOneDayCsv(selectedDate);
+                        }}
+                        disabled={!selectedDate}
+                        aria-label="Export CSV"
+                      >
+                        <DownloadIcon className="h-4 w-4" />
+                        <span>Export CSV</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-      
-      <button
-        className={BTN.primary + " min-w-[120px]"}
-        onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-        disabled={!selectedDate}
-        title="Download EFAP PDF for this day"
-        aria-label="EFAP PDF"
-      >
-        EFAP PDF
-      </button>
-
-      
-
-      {selectedDate && isAdmin && (
-        <AddVisitButton
-          org={org}
-          location={location}
-          selectedDate={selectedDate}
-          onAdded={(v) => setVisits((prev) => [v, ...prev])}
-        />
-      )}
-    </div>
-  </div>
-
-  {/* Mobile: tidy 2-row grid */}
-  <div className="sm:hidden">
-    <div className="font-semibold text-base mb-2">
-      {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
-    </div>
-
-    <div className="grid grid-cols-2 gap-2">
-      {/* Row 1: EFAP full-width */}
-      <button
-        className={BTN.primary + " col-span-2 h-11 w-full"}
-        onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-        disabled={!selectedDate}
-        aria-label="EFAP PDF"
-        title="Download EFAP PDF"
-      >
-        EFAP PDF
-      </button>
-
-      {/* Row 2: Add Visit (if admin) + kebab */}
-      {isAdmin ? (
-        <AddVisitButton
-          org={org}
-          location={location}
-          selectedDate={selectedDate}
-          onAdded={(v) => setVisits((prev) => [v, ...prev])}
-          className={BTN.secondary + " !h-11 w-full"}
-        />
-      ) : (
-        <div />
-      )}
-
-      <div className="relative" ref={kebabRef}>
-        <button
-          className={BTN.icon + " !h-11 w-full"}
-          aria-haspopup="menu"
-          aria-expanded={kebabOpen}
-          aria-label="More actions"
-          title="More actions"
-          onClick={() => setKebabOpen((v) => !v)}
-        >
-          <KebabIcon className="h-5 w-5" />
-        </button>
-        {kebabOpen && (
-          <div
-            role="menu"
-            className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-          >
-            <button
-              role="menuitem"
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-              onClick={() => { setKebabOpen(false); shareEfapDailyPdfForDay(selectedDate); }}
-              disabled={!selectedDate}
-              aria-label="Share EFAP"
-            >
-              <ShareIcon className="h-4 w-4" />
-              <span>Share EFAP</span>
-            </button>
-            <button
-              role="menuitem"
-              className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-              onClick={() => { setKebabOpen(false); exportOneDayCsv(selectedDate); }}
-              disabled={!selectedDate}
-              aria-label="Export CSV"
-            >
-              <DownloadIcon className="h-4 w-4" />
-              <span>Export CSV</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-</div>
 
           {/* Subheading separator above filters (visual polish) */}
           <div className="border-t border-gray-200 pt-3 mb-3">
@@ -1731,30 +1923,42 @@ useEffect(() => {
 
               <button
                 className={BTN.secondary + " px-2 py-2"}
-                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                onClick={() =>
+                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                }
                 title="Toggle sort direction"
                 aria-label="Toggle sort direction"
               >
-                {sortDir === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+                {sortDir === "asc" ? (
+                  <ArrowUp className="h-4 w-4" />
+                ) : (
+                  <ArrowDown className="h-4 w-4" />
+                )}
               </button>
-
-              
             </div>
           </div>
 
           {/* Summary stripe */}
           <div className="mb-2 text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
             <span className="inline-flex items-center gap-1">
-              <strong>{dayTotals.count}</strong> visit{dayTotals.count === 1 ? "" : "s"}
+              <strong>{dayTotals.count}</strong> visit
+              {dayTotals.count === 1 ? "" : "s"}
             </span>
-            <span className="inline-flex items-center gap-1">HH <strong className="tabular-nums">{dayTotals.hh}</strong></span>
             <span className="inline-flex items-center gap-1">
-              USDA first-time <strong className="tabular-nums">{dayTotals.usdaYes}</strong>
+              HH <strong className="tabular-nums">{dayTotals.hh}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              USDA first-time{" "}
+              <strong className="tabular-nums">{dayTotals.usdaYes}</strong>
             </span>
           </div>
 
           {/* DESKTOP TABLE */}
-          <div className={`hidden md:block overflow-hidden rounded-xl border ${loading ? "opacity-60" : ""}`}>
+          <div
+            className={`hidden md:block overflow-hidden rounded-xl border ${
+              loading ? "opacity-60" : ""
+            }`}
+          >
             <table className="w-full table-auto text-sm">
               <colgroup>
                 <col className="w-[22%]" />
@@ -1768,7 +1972,9 @@ useEffect(() => {
 
               <thead className="bg-gray-100">
                 <tr className="text-left">
-                  <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>Client</th>
+                  <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>
+                    Client
+                  </th>
                   <th className="px-4 py-2">County</th>
                   <th className="px-4 py-2">Zip</th>
                   <th className="px-4 py-2">HH</th>
@@ -1780,11 +1986,16 @@ useEffect(() => {
 
               <tbody className="divide-y divide-gray-200 align-top">
                 {filteredSortedRows.map((r) => (
-                  <tr key={r.visitId} className="odd:bg-white even:bg-gray-50 hover:bg-gray-100">
+                  <tr
+                    key={r.visitId}
+                    className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
+                  >
                     <td className="px-4 py-3 break-words">
                       <div className="font-medium">{r.labelName}</div>
                       {r.addedByReports && r.addedLocalTime ? (
-                        <div className="mt-0.5 text-xs text-gray-500">added {r.addedLocalTime}</div>
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          added {r.addedLocalTime}
+                        </div>
                       ) : null}
                     </td>
                     <td className="px-4 py-3 break-words">{r.county}</td>
@@ -1809,7 +2020,7 @@ useEffect(() => {
                       {r.localTime}
                     </td>
                     <td className="px-4 py-3">
-                      {isAdmin ? (
+                      {canDeleteVisits ? (
                         <button
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
                           onClick={() => removeVisit(r.visitId)}
@@ -1819,7 +2030,9 @@ useEffect(() => {
                           <TrashIcon className="h-5 w-5" />
                         </button>
                       ) : (
-                        <span className="text-[11px] text-gray-500">view-only</span>
+                        <span className="text-[11px] text-gray-500">
+                          view-only
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -1827,7 +2040,10 @@ useEffect(() => {
 
                 {filteredSortedRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    <td
+                      colSpan={7}
+                      className="px-4 py-8 text-center text-gray-500"
+                    >
                       {loading ? (
                         <span className="inline-flex items-center gap-2">
                           <Spinner className="h-4 w-4" /> Loading…
@@ -1836,13 +2052,15 @@ useEffect(() => {
                         <div className="flex flex-col items-center gap-2">
                           <div className="text-2xl">🗓️</div>
                           <div>No visits on this day.</div>
-                          {isAdmin && selectedDate ? (
+                          {canLogVisits && selectedDate ? (
                             <div className="mt-1">
                               <AddVisitButton
                                 org={org}
                                 location={location}
                                 selectedDate={selectedDate}
-                                onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                                onAdded={(newVisit) =>
+                                  setVisits((prev) => [newVisit, ...prev])
+                                }
                               />
                             </div>
                           ) : null}
@@ -1868,22 +2086,30 @@ useEffect(() => {
           </div>
 
           {/* MOBILE LIST */}
-          <ul className={`md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden ${loading ? "opacity-60" : ""}`}>
+          <ul
+            className={`md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden ${
+              loading ? "opacity-60" : ""
+            }`}
+          >
             {filteredSortedRows.map((r, i) => (
-              <li key={r.visitId} className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
+              <li
+                key={r.visitId}
+                className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-medium truncate">{r.labelName}</div>
-                    {(r.county || r.zip) ? (
+                    {r.county || r.zip ? (
                       <div className="text-xs text-gray-700 truncate">
                         {r.county || ""}
                         {r.zip ? (r.county ? `, ${r.zip}` : r.zip) : ""}
                       </div>
                     ) : null}
 
-
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
-                      <span className="px-1.5 py-0.5 rounded border bg-white">HH {r.visitHousehold || 0}</span>
+                      <span className="px-1.5 py-0.5 rounded border bg-white">
+                        HH {r.visitHousehold || 0}
+                      </span>
                       {r.usdaFirstTimeThisMonth !== "" && (
                         <span className="px-1.5 py-0.5 rounded border bg-white">
                           {r.usdaFirstTimeThisMonth ? "USDA Yes" : "USDA No"}
@@ -1892,7 +2118,9 @@ useEffect(() => {
                     </div>
 
                     {r.addedByReports && r.addedLocalTime ? (
-                      <div className="text-[11px] text-gray-500 mt-0.5">Added {r.addedLocalTime}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5">
+                        Added {r.addedLocalTime}
+                      </div>
                     ) : null}
                   </div>
 
@@ -1903,7 +2131,7 @@ useEffect(() => {
                     >
                       {r.localTime}
                     </div>
-                    {isAdmin ? (
+                    {canDeleteVisits ? (
                       <button
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-700 hover:bg-red-50"
                         onClick={() => removeVisit(r.visitId)}
@@ -1928,13 +2156,15 @@ useEffect(() => {
                   <div className="flex flex-col items-center gap-2">
                     <div className="text-2xl">🗓️</div>
                     <div>No visits on this day.</div>
-                    {isAdmin && selectedDate ? (
+                    {canLogVisits && selectedDate ? (
                       <div className="mt-1">
                         <AddVisitButton
                           org={org}
                           location={location}
                           selectedDate={selectedDate}
-                          onAdded={(newVisit) => setVisits((prev) => [newVisit, ...prev])}
+                          onAdded={(newVisit) =>
+                            setVisits((prev) => [newVisit, ...prev])
+                          }
                         />
                       </div>
                     ) : null}
@@ -1947,7 +2177,11 @@ useEffect(() => {
       </div>
 
       {/* Error helper (index enable hint if present) */}
-      {!!error && <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">{error}</div>}
+      {!!error && (
+        <div className="mt-4 p-3 rounded-xl bg-amber-50 text-amber-900 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Toast */}
       {toast.open && (
@@ -2033,8 +2267,14 @@ function KpiModern({ title, value, sub }) {
     <div className="rounded-2xl border border-rose-200 ring-1 ring-rose-100 bg-white shadow-sm p-4 sm:p-5">
       <div className="text-xs sm:text-sm text-gray-600 mb-2">{title}</div>
       <div className="flex items-end gap-2">
-        <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">{value ?? "—"}</div>
-        {sub ? <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">{sub}</div> : null}
+        <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">
+          {value ?? "—"}
+        </div>
+        {sub ? (
+          <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">
+            {sub}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -2043,7 +2283,14 @@ function KpiModern({ title, value, sub }) {
 /* ---------- icons ---------- */
 function ShareIcon({ className = "h-5 w-5" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
       <path d="M12 16V4" />
       <path d="M7 9l5-5 5 5" />
@@ -2071,7 +2318,14 @@ function TrashIcon({ className = "h-5 w-5" }) {
 }
 function SearchIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.3-4.3" />
     </svg>
@@ -2087,7 +2341,14 @@ function Spinner({ className = "h-4 w-4" }) {
 }
 function DownloadIcon({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M12 3v12" />
       <path d="M7 10l5 5 5-5" />
       <path d="M5 21h14" />
@@ -2096,7 +2357,14 @@ function DownloadIcon({ className = "h-4 w-4" }) {
 }
 function ChevronDown({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M6 9l6 6 6-6" />
     </svg>
   );
@@ -2112,7 +2380,14 @@ function KebabIcon({ className = "h-5 w-5" }) {
 }
 function ArrowUp({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M12 19V5" />
       <path d="M5 12l7-7 7 7" />
     </svg>
@@ -2120,7 +2395,14 @@ function ArrowUp({ className = "h-4 w-4" }) {
 }
 function ArrowDown({ className = "h-4 w-4" }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
       <path d="M12 5v14" />
       <path d="M5 12l7 7 7-7" />
     </svg>
@@ -2130,7 +2412,9 @@ function ArrowDown({ className = "h-4 w-4" }) {
 /* ---------- helpers ---------- */
 function extractIndexHelp(err) {
   const msg = String(err?.message || "");
-  const urlMatch = msg.match(/https:\/\/console\.firebase\.google\.com\/[^\s)]+/i);
+  const urlMatch = msg.match(
+    /https:\/\/console\.firebase\.google\.com\/[^\s)]+/i
+  );
   if (err?.code === "failed-precondition" && urlMatch) {
     return `A Firestore index is required for this query. Click "Enable index" → ${urlMatch[0]}`;
   }

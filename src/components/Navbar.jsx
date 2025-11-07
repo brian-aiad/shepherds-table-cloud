@@ -4,12 +4,13 @@ import { NavLink, useNavigate, useLocation as useRouteLoc } from "react-router-d
 import { useAuth } from "../auth/useAuth";
 
 /**
- * Shepherd’s Table Cloud — Navbar (SEAMLESS VERSION)
+ * Shepherd’s Table Cloud — Navbar (SEAMLESS VERSION, capability-aware)
  * - Solid brand background (no white in the gradient).
  * - Context panel renders above everything.
  * - ADMIN LOCATION SCOPE: “All locations” shows only when canPickAllLocations === true.
- * - NEW: Tenant org logo (organizations/{orgId}.logoUrl) with graceful fallback.
- * - NEW: Mobile “Current location” badge for at-a-glance scope awareness.
+ * - Tenant org logo (organizations/{orgId}.logoUrl) with graceful fallback.
+ * - Mobile “Current location” badge for at-a-glance scope awareness.
+ * - Capability-based links: Reports/USDA visible iff hasCapability('viewReports').
  */
 
 export default function Navbar() {
@@ -18,12 +19,12 @@ export default function Navbar() {
 
   const {
     email,
-    role,
+    role, // 'admin' | 'volunteer' | 'manager' | 'viewer' (or undefined while loading)
     org,
     orgs = [],
     location,
     locations = [],
-    isAdmin,
+    isAdmin, // kept for admin-only org-wide scope affordances
     // Only admins with org-wide access can pick “All locations”
     canPickAllLocations = false,
     loading,
@@ -31,7 +32,18 @@ export default function Navbar() {
     setActiveLocation,
     signOutNow,
     saveDeviceDefaultScope,
+    // NEW (from capability system; safe-optional)
+    hasCapability,
+    canViewReports, // convenience boolean if your AuthProvider exposes it
   } = useAuth() || {};
+
+  // Resolve capability checks with graceful fallback (works before you wire AuthProvider)
+  const canViewReportsResolved =
+    typeof canViewReports === "boolean"
+      ? canViewReports
+      : typeof hasCapability === "function"
+        ? !!hasCapability("viewReports")
+        : !!isAdmin; // fallback to prior behavior if capability API not yet present
 
   // UI state
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -67,7 +79,13 @@ export default function Navbar() {
 
   const roleBadge = useMemo(() => {
     if (!role) return null;
-    const label = role === "admin" ? "Admin" : "Volunteer";
+    const labels = {
+      admin: "Admin",
+      volunteer: "Volunteer",
+      manager: "Manager",
+      viewer: "Viewer",
+    };
+    const label = labels[role] || String(role).charAt(0).toUpperCase() + String(role).slice(1);
     return (
       <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/15 text-white select-none">
         {label}
@@ -94,7 +112,7 @@ export default function Navbar() {
     async (nextLocId) => {
       // Admins may send "" ONLY if they actually have org-wide access.
       if (nextLocId === "" && !(isAdmin && canPickAllLocations)) return;
-      // Volunteers cannot clear or pick ""
+      // Non-admins cannot clear or pick ""
       if ((nextLocId == null || nextLocId === "") && !isAdmin) return;
 
       await setActiveLocation(nextLocId); // IMPORTANT: pass through "" (don’t coerce to null)
@@ -236,39 +254,38 @@ export default function Navbar() {
             </svg>
           </button>
 
-         {/* Brand (org-aware, compact + polished) */}
-<NavLink
-  to="/"
-  className="inline-flex items-center gap-3 rounded-xl px-2.5 py-1.5 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
-  aria-label="Go to Dashboard"
->
-  {/* Logo with graceful org fallback */}
-  <div className="relative shrink-0">
-    <img
-      src={org?.logoUrl || brandLogoSrc}
-      alt={org?.name ? `${org.name} logo` : brandAlt}
-      className="h-10 w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
-      referrerPolicy="no-referrer"
-      loading="eager"
-    />
-    {/* subtle glow overlay */}
-    <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
-  </div>
+          {/* Brand (org-aware, compact + polished) */}
+          <NavLink
+            to="/"
+            className="inline-flex items-center gap-3 rounded-xl px-2.5 py-1.5 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
+            aria-label="Go to Dashboard"
+          >
+            {/* Logo with graceful org fallback */}
+            <div className="relative shrink-0">
+              <img
+                src={org?.logoUrl || brandLogoSrc}
+                alt={org?.name ? `${org.name} logo` : brandAlt}
+                className="h-10 w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
+                referrerPolicy="no-referrer"
+                loading="eager"
+              />
+              {/* subtle glow overlay */}
+              <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
+            </div>
 
-  {/* Brand text block */}
-  <div className="flex flex-col leading-tight min-w-0">
-    <span className="font-semibold text-white text-[17px] sm:text-[19px] md:text-[21px] tracking-tight truncate">
-      Shepherd’s Table 
-    </span>
+            {/* Brand text block */}
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="font-semibold text-white text-[17px] sm:text-[19px] md:text-[21px] tracking-tight truncate">
+                Shepherd’s Table
+              </span>
 
-    {org?.name && (
-      <span className="text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[160px] sm:max-w-none">
-        {org.name}
-      </span>
-    )}
-  </div>
-</NavLink>
-
+              {org?.name && (
+                <span className="text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[160px] sm:max-w-none">
+                  {org.name}
+                </span>
+              )}
+            </div>
+          </NavLink>
 
           {/* Mobile Sign out */}
           <button
@@ -278,12 +295,12 @@ export default function Navbar() {
             Sign out
           </button>
 
-          {/* Primary links */}
+          {/* Primary links (capability-aware) */}
           <nav aria-label="Primary" className="hidden md:flex items-center justify-center flex-1 gap-6">
             <TopLink to="/" end className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
               Dashboard
             </TopLink>
-            {isAdmin && (
+            {canViewReportsResolved && (
               <>
                 <TopLink to="/reports" className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
                   Reports
@@ -371,10 +388,10 @@ export default function Navbar() {
             background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
           }}
         >
-          {/* Primary quick links */}
+          {/* Primary quick links (capability-aware) */}
           <div className="flex gap-2 pt-3">
             <QuickLink to="/" end>Dashboard</QuickLink>
-            {isAdmin && (
+            {canViewReportsResolved && (
               <>
                 <QuickLink to="/reports">Reports</QuickLink>
                 <QuickLink to="/usda-monthly">USDA</QuickLink>
@@ -382,7 +399,7 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* NEW: Mobile Current Location badge (always visible) */}
+          {/* Mobile Current Location badge (always visible) */}
           <div className="mt-3">
             <span
               className="inline-flex items-center gap-2 rounded-full bg-white/15 text-white ring-1 ring-white/20 px-3 py-1.5 text-[12px] font-medium"

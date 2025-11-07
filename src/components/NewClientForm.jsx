@@ -8,6 +8,7 @@
 // - Two-commit flow (create client, then first visit), atomic counters, serverTimestamp().
 // - NEW: Admin-only "Merge into Existing" on duplicate card (clean visit + counter merge).
 // - NEW: Autosave draft in localStorage, scoped by org/location.
+// - ROLES: Capability gates for create/edit/log actions (admin has everything).
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
@@ -84,6 +85,10 @@ const I18N = {
     mergedOk: "Merged into existing client ✅",
     draftLoaded: "Draft loaded",
     clear: "Clear",
+    // Roles/capability copy
+    permNoCreate: "You don’t have permission to create clients.",
+    permNoEdit: "You don’t have permission to edit clients.",
+    permNoLog: "You don’t have permission to log visits.",
   },
   es: {
     titleNew: "Nueva admisión",
@@ -126,6 +131,10 @@ const I18N = {
     mergedOk: "Fusionado con el cliente existente ✅",
     draftLoaded: "Borrador cargado",
     clear: "Borrar",
+    // Roles/capability copy
+    permNoCreate: "No tienes permiso para crear clientes.",
+    permNoEdit: "No tienes permiso para editar clientes.",
+    permNoLog: "No tienes permiso para registrar visitas.",
   },
 };
 const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
@@ -239,7 +248,14 @@ export default function NewClientForm({
 }) {
   const editing = !!client?.id;
   const authCtx = useAuth() || {};
-  const { isAdmin } = authCtx || {};
+  const {
+    isAdmin,
+    hasCapability,
+    canCreateClients,
+    canEditClients,
+    canLogVisits,
+    canPickAllLocations, // org-wide scope vs location-only
+  } = authCtx || {};
 
   // Device-scoped fallback (keep your behavior)
   const lsScope = (() => {
@@ -446,6 +462,18 @@ export default function NewClientForm({
      Validation & dedupe
   ========================== */
   function validate() {
+    // Capability gates
+    if (editing) {
+      if (!canEditClients && !(hasCapability && hasCapability("editClients"))) {
+        return t(lang, "permNoEdit");
+      }
+    } else {
+      const canCreate = canCreateClients || (hasCapability && hasCapability("createClients"));
+      const canLog = canLogVisits || (hasCapability && hasCapability("logVisits"));
+      if (!canCreate) return t(lang, "permNoCreate");
+      if (!canLog) return t(lang, "permNoLog");
+    }
+
     const fn = form.firstName.trim();
     const ln = form.lastName.trim();
     if (!fn || !ln) return t(lang, "errRequiredName");
@@ -459,8 +487,9 @@ export default function NewClientForm({
   }
 
   async function preflightDedupe({ phoneDigits, nameDobHash }) {
+    // Always org-scoped; further restrict to location if user lacks org-wide scope
     const baseFilters = [where("orgId", "==", orgId)];
-    if (!authCtx?.isAdmin && locationId) baseFilters.push(where("locationId", "==", locationId));
+    if (!canPickAllLocations && locationId) baseFilters.push(where("locationId", "==", locationId));
 
     if (phoneDigits) {
       const qs = await getDocs(
@@ -663,6 +692,11 @@ export default function NewClientForm({
   // Log visit for duplicate
   async function logVisitForDuplicate() {
     if (!dup?.id || busy) return;
+    const canLog = canLogVisits || (hasCapability && hasCapability("logVisits"));
+    if (!canLog) {
+      setMsg(t(lang, "permNoLog"));
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -736,17 +770,10 @@ export default function NewClientForm({
      ADMIN MERGE: new → existing
      - Reassigns all visits from source (new data) to target (dup)
      - Rolls up counters; soft-deactivates source & sets mergedIntoId
+     - Admin-only (capability modeled in AuthProvider as admin override)
   ========================== */
   async function mergeIntoExistingAdmin() {
     if (!isAdmin || !dup?.id) return;
-    // Build a "virtual source" from the in-progress form (not yet saved).
-    // We'll create it, merge its visits (none yet), then roll any counters if needed.
-    // But more practical: allow merging *when user intentionally tried to create a duplicate*,
-    // meaning we just fold the would-be new data into the existing record and DO NOT create a new client.
-    // Strategy:
-    //   - No new client is created.
-    //   - Optionally, we can copy the freshest contact fields onto target if blank (conservative).
-    //   - Done: show success and clear form.
     const ok = confirm(
       "Merge this intake into the existing client?\n\nThis will keep the existing client's ID and optionally update blank contact fields. No new client will be created."
     );
@@ -815,6 +842,11 @@ export default function NewClientForm({
     </span>
   );
 
+  // Capability flags for button states
+  const canSubmitNew = (canCreateClients || (hasCapability && hasCapability("createClients")))
+    && (canLogVisits || (hasCapability && hasCapability("logVisits")));
+  const canSubmitEdit = canEditClients || (hasCapability && hasCapability("editClients"));
+
   return (
     <div className="fixed inset-0 z-[1000]">
       {/* Backdrop */}
@@ -830,7 +862,7 @@ export default function NewClientForm({
         aria-modal="true"
         aria-labelledby="new-client-title"
         className="
-          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(820px,94vw)]
+          absolute left-1/2 -translate-x-1/2 w-full sm:w=[min(820px,94vw)]
           bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
           bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
           overflow-hidden flex flex-col
@@ -1191,16 +1223,16 @@ export default function NewClientForm({
                 <button
                   type="button"
                   onClick={logVisitForDuplicate}
-                  disabled={busy || mergeBusy}
+                  disabled={busy || mergeBusy || !(canLogVisits || (hasCapability && hasCapability("logVisits")))}
                   className="h-10 px-3 rounded-xl bg-[color:var(--brand-700)] text-white text-sm font-medium hover:bg-[color:var(--brand-600)] disabled:opacity-50"
                 >
                   {t(lang, "dupLogVisit")}
                 </button>
                 <button
                   type="button"
-                  disabled={busy || mergeBusy}
+                  disabled={busy || mergeBusy || !(canCreateClients || (hasCapability && hasCapability("createClients")))}
                   onClick={createAnyway}
-                  className="h-10 px-3 rounded-xl border text-sm hover:bg-gray-50"
+                  className="h-10 px-3 rounded-xl border text-sm hover:bg-gray-50 disabled:opacity-50"
                   title="Create a brand-new client even if a match exists"
                 >
                   {t(lang, "dupUseAnyways")}
@@ -1245,8 +1277,13 @@ export default function NewClientForm({
             <button
               type="submit"
               form="new-client-form"
-              disabled={busy || mergeBusy}
+              disabled={busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)}
               className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50"
+              title={
+                editing
+                  ? (!canSubmitEdit ? t(lang, "permNoEdit") : "")
+                  : (!canSubmitNew ? `${!canCreateClients ? t(lang,"permNoCreate") : ""} ${!canLogVisits ? t(lang,"permNoLog") : ""}`.trim() : "")
+              }
             >
               {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
             </button>

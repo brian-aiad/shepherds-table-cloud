@@ -2,7 +2,7 @@
 // Shepherds Table Cloud — App Router (Nov 2025)
 // - React Router v6 with Suspense + lazy routes
 // - Protected shell for all authenticated pages
-// - AdminRoute guards admin-only pages via useAuth().isAdmin
+// - Capability-based guards per route (dashboard, reports, etc.)
 // - Auth-aware NotFound: unauth → /login, authed → /
 // - Public marketing + legal pages included (about/pricing/privacy/terms/usage)
 
@@ -10,7 +10,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { useAuth } from "./auth/useAuth";
 import Layout from "./components/Layout";
 import UsagePolicy from "./pages/UsagePolicy.jsx";
 
@@ -25,39 +24,15 @@ const About = lazy(() => import("./pages/About"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 
 // ─────────────────────────────────────────────────────────────
-// AdminRoute — simple wrapper to guard admin-only routes
-// ─────────────────────────────────────────────────────────────
-function AdminRoute({ children }) {
-  const { loading, isAdmin } = useAuth();
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-600" aria-busy="true">
-        Loading…
-      </div>
-    );
-  }
-  if (!isAdmin) return <Navigate to="/" replace />;
-  return children;
-}
-
-// ─────────────────────────────────────────────────────────────
 // AuthAwareNotFound — redirect based on auth state
 //  • unauthenticated → /login
 //  • authenticated   → /
 // ─────────────────────────────────────────────────────────────
 function AuthAwareNotFound() {
-  const { loading, uid } = useAuth() || {};
-  if (loading) {
-    return (
-      <div
-        className="min-h-[40vh] grid place-items-center p-6 text-sm text-gray-600"
-        aria-busy="true"
-      >
-        Loading…
-      </div>
-    );
-  }
-  return <Navigate to={uid ? "/" : "/login"} replace />;
+  // useAuth is read inside ProtectedRoute, so here we do a simple auth-aware redirect:
+  // If ProtectedRoute isn't mounted, fall back to sending the user to /login.
+  // This keeps the catch-all simple and avoids importing auth state here.
+  return <Navigate to="/login" replace />;
 }
 
 // Shared Suspense fallback (accessible)
@@ -97,24 +72,33 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          {/* Default Dashboard */}
-          <Route index element={<Dashboard />} />
+          {/* Default Dashboard (capability-based) */}
+          <Route
+            index
+            element={
+              <ProtectedRoute capability="dashboard">
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
 
-          {/* Admin-only routes */}
+          {/* Reports (capability-based) */}
           <Route
             path="reports"
             element={
-              <AdminRoute>
+              <ProtectedRoute capability="viewReports">
                 <Reports />
-              </AdminRoute>
+              </ProtectedRoute>
             }
           />
+
+          {/* USDA Monthly (capability-based; grouped with reports) */}
           <Route
             path="usda-monthly"
             element={
-              <AdminRoute>
+              <ProtectedRoute capability="viewReports">
                 <UsdaMonthly />
-              </AdminRoute>
+              </ProtectedRoute>
             }
           />
 

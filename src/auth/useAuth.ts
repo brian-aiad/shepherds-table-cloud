@@ -4,6 +4,13 @@
 // What this adds (drop-in safe):
 // • Reads Firebase custom claims once per UID (light in-memory throttle)
 // • Exposes: claims, claimsLoading, isMaster (claims.master === true only; no hardcoded emails)
+// • Capability-based role helpers for the ACTIVE ORG:
+//     - roleForActiveOrg
+//     - isAdminForActiveOrg
+//     - hasCapability(cap)
+//     - convenience booleans:
+//         canAccessDashboard, canCreateClients, canEditClients, canLogVisits,
+//         canDeleteClients, canDeleteVisits, canViewReports, canManageOrg
 // • Convenience ids: activeOrgId, activeLocationId
 // • Device-local scope helpers: setActiveOrgLocal, setActiveLocationLocal
 // • saveDeviceDefaultScope(): persists current (or device) scope to Firestore
@@ -17,6 +24,7 @@ import { getIdTokenResult } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { AuthContext } from "./AuthProvider";
 import { auth, db } from "../lib/firebase";
+import { can } from "./roles";
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Device-scope (per-device mirror in localStorage)
@@ -87,6 +95,21 @@ type ExtendedAuth = ReturnType<typeof useAuthBase> & {
   /** True only when { master:true } is present on the token (no email fallback) */
   isMaster: boolean;
 
+  /** Capability-based role helpers (ACTIVE ORG ONLY) */
+  roleForActiveOrg: string | null;
+  isAdminForActiveOrg: boolean;
+  hasCapability: (cap: string) => boolean;
+
+  /** Convenience booleans (ACTIVE ORG ONLY) */
+  canAccessDashboard: boolean;
+  canCreateClients: boolean;
+  canEditClients: boolean;
+  canLogVisits: boolean;
+  canDeleteClients: boolean;
+  canDeleteVisits: boolean;
+  canViewReports: boolean;
+  canManageOrg: boolean;
+
   /** Convenience: derived ids for current scope */
   activeOrgId: string | null;
   activeLocationId: string | null;
@@ -154,6 +177,62 @@ export function useAuth(): ExtendedAuth {
   const activeOrgId = ctx?.org?.id ?? null;
   const activeLocationId = ctx?.location?.id ?? null;
 
+  // ────────────────────────────────────────────────────────────
+  // Role & Capability (ACTIVE ORG)
+  // We derive the role for the active org using best-effort fallbacks so we
+  // remain drop-in compatible with current context shapes.
+  // Priority:
+  //   1) ctx.roleForActiveOrg (if already exposed by AuthProvider)
+  //   2) ctx.role (single-role apps)
+  //   3) claims.rolesByOrg[activeOrgId]
+  //   4) ctx.isAdmin ? 'admin' : null
+  // ────────────────────────────────────────────────────────────
+  const roleForActiveOrg: string | null = useMemo(() => {
+    // 1) direct value from context (preferred)
+    const r1 = (ctx as any)?.roleForActiveOrg;
+    if (r1) return String(r1);
+
+    // 2) single-role on context
+    const r2 = (ctx as any)?.role;
+    if (r2) return String(r2);
+
+    // 3) rolesByOrg on claims (common pattern for multi-tenant apps)
+    const byOrg = (claims as any)?.rolesByOrg;
+    if (byOrg && activeOrgId && typeof byOrg === "object") {
+      const r3 = byOrg[activeOrgId];
+      if (r3) return String(r3);
+    }
+
+    // 4) legacy: boolean admin
+    if ((ctx as any)?.isAdmin) return "admin";
+
+    return null;
+  }, [ctx, claims, activeOrgId]);
+
+  const isAdminForActiveOrg = useMemo(
+    () => roleForActiveOrg === "admin",
+    [roleForActiveOrg]
+  );
+
+  const hasCapability = useCallback(
+    (cap: string) => {
+      if (!cap) return false;
+      if (isAdminForActiveOrg) return true; // admin = full control
+      return can(roleForActiveOrg, cap);
+    },
+    [isAdminForActiveOrg, roleForActiveOrg]
+  );
+
+  // Convenience booleans (ACTIVE ORG)
+  const canAccessDashboard = hasCapability("dashboard");
+  const canCreateClients = hasCapability("createClients");
+  const canEditClients = hasCapability("editClients");
+  const canLogVisits = hasCapability("logVisits");
+  const canDeleteClients = hasCapability("deleteClients");
+  const canDeleteVisits = hasCapability("deleteVisits");
+  const canViewReports = hasCapability("viewReports");
+  const canManageOrg = hasCapability("manageOrg");
+
   // Local-only scope (no Firestore writes)
   const setActiveOrgLocal = useCallback((orgId: string | null) => {
     writeDeviceScope({ activeOrgId: orgId ?? null });
@@ -191,11 +270,32 @@ export function useAuth(): ExtendedAuth {
 
   return {
     ...ctx,
+
+    // claims
     claims,
     claimsLoading,
     isMaster,
+
+    // active-org role/capabilities
+    roleForActiveOrg,
+    isAdminForActiveOrg,
+    hasCapability,
+
+    // convenience caps
+    canAccessDashboard,
+    canCreateClients,
+    canEditClients,
+    canLogVisits,
+    canDeleteClients,
+    canDeleteVisits,
+    canViewReports,
+    canManageOrg,
+
+    // scope convenience
     activeOrgId,
     activeLocationId,
+
+    // device-scope helpers
     setActiveOrgLocal,
     setActiveLocationLocal,
     saveDeviceDefaultScope,
