@@ -43,6 +43,26 @@ const LB_PROX = "-118.1937,33.7701";
 /* =========================
    I18N
 ========================= */
+// ZIP codes and counties for dropdowns
+const NEARBY_ZIPS = [
+  { code: "90813", city: "Long Beach" },
+  { code: "90802", city: "Long Beach" },
+  { code: "90804", city: "Long Beach" },
+  { code: "90805", city: "Long Beach" },
+  { code: "90806", city: "Long Beach" },
+];
+
+const COUNTIES = [
+  { id: "los-angeles", name: "Los Angeles County" },
+  { id: "orange", name: "Orange County" },
+];
+
+// Address presets for quick selection
+const ADDRESS_PRESETS = [
+  { id: "homeless", label: "Homeless/Unhoused", value: "Homeless/Unhoused" },
+  { id: "shelter", label: "Local Shelter", value: "Local Shelter" },
+];
+
 const I18N = {
   en: {
     titleNew: "New Intake",
@@ -223,6 +243,7 @@ function hashDJB2(str = "") {
 }
 
 /* Model */
+
 const initialForm = {
   firstName: "",
   lastName: "",
@@ -233,6 +254,7 @@ const initialForm = {
   county: "",
   householdSize: 1,
   firstTimeThisMonth: null, // true | false | null
+  autoClose: false, // auto-close after save
 };
 
 /* =========================
@@ -287,7 +309,11 @@ export default function NewClientForm({
   );
 
   // UI state
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState({
+    ...initialForm,
+    zip: "90813",
+    county: "Los Angeles County"
+  });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [dup, setDup] = useState(null);
@@ -322,8 +348,8 @@ export default function NewClientForm({
         dob: client?.dob || "",
         phone: client?.phone || "",
         address: client?.address || "",
-        zip: client?.zip || "",
-        county: client?.county || "",
+        zip: client?.zip || "90813",
+        county: client?.county || "Los Angeles County",
         householdSize: Number(client?.householdSize ?? 1),
         firstTimeThisMonth:
           typeof client?.firstTimeThisMonth === "boolean" ? client.firstTimeThisMonth : null,
@@ -341,6 +367,8 @@ export default function NewClientForm({
       if (restored && typeof restored === "object") {
         setForm({
           ...initialForm,
+          zip: "90813",
+          county: "Los Angeles County",
           ...restored,
           householdSize: Number(restored.householdSize ?? 1),
           firstTimeThisMonth:
@@ -348,7 +376,7 @@ export default function NewClientForm({
         });
         setDraftLoaded(true);
       } else {
-        setForm({ ...initialForm, firstTimeThisMonth: true });
+        setForm({ ...initialForm, zip: "90813", county: "Los Angeles County ", firstTimeThisMonth: true });
         setDraftLoaded(false);
       }
     }
@@ -446,7 +474,12 @@ export default function NewClientForm({
 
   function onPickSuggestion(feat) {
     const { displayAddress, zip, county } = parseFeatureAddressParts(feat._raw || feat);
-    setForm((f) => ({ ...f, address: displayAddress, zip: zip || f.zip, county: county || f.county }));
+    setForm((f) => ({
+      ...f,
+      address: displayAddress,
+      zip: zip || f.zip,
+      county: county || f.county
+    }));
     setSuggestions([]);
     setShowDropdown(false);
     setAddrLocked(true);
@@ -474,14 +507,14 @@ export default function NewClientForm({
       if (!canLog) return t(lang, "permNoLog");
     }
 
+    // Required fields: first name, last name, ZIP code, county
     const fn = form.firstName.trim();
     const ln = form.lastName.trim();
     if (!fn || !ln) return t(lang, "errRequiredName");
-    const phoneDigits = normalizePhone(form.phone);
-    if (!phoneDigits && !form.dob.trim()) return t(lang, "errDobOrPhone");
-    if (!Number(form.householdSize || 0) || Number(form.householdSize) < 1) return t(lang, "errHH");
     const zip = (form.zip || "").trim();
-    if (zip && !/^\d{5}$/.test(zip)) return t(lang, "errZip");
+    if (!zip) return "ZIP code is required";
+    if (!/^\d{5}$/.test(zip)) return t(lang, "errZip");
+    if (!form.county?.trim()) return "County is required";
     if (!orgId || !locationId) return t(lang, "errOrgLoc");
     return "";
   }
@@ -668,10 +701,14 @@ export default function NewClientForm({
       if (!editing) clearDraft();
 
       if (!editing) {
-        setForm(initialForm);
-        setAddrLocked(false);
-        setLastPicked("");
-        firstRef.current?.focus();
+        if (form.autoClose) {
+          onClose?.();
+        } else {
+          setForm({ ...initialForm, autoClose: form.autoClose }); // Preserve auto-close setting
+          setAddrLocked(false);
+          setLastPicked("");
+          firstRef.current?.focus();
+        }
       }
     } catch (err) {
       console.error(err);
@@ -862,15 +899,15 @@ export default function NewClientForm({
         aria-modal="true"
         aria-labelledby="new-client-title"
         className="
-          absolute left-1/2 -translate-x-1/2 w-full sm:w=[min(820px,94vw)]
-          bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(560px,94vw)]
+          bottom-0 sm:bottom-auto sm:top-[55%] sm:-translate-y-1/2
           bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
           overflow-hidden flex flex-col
+          sm:max-h-[90vh]
         "
-        // ↓ keep a small gap at the very top on mobile, and account for notches
         style={{
           maxHeight: "calc(100vh - 28px)",
-          marginTop: "env(safe-area-inset-top, 8px)",
+          marginTop: `calc(env(safe-area-inset-top, 24px) + 12px)`,
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -1255,38 +1292,49 @@ export default function NewClientForm({
         </form>
 
         {/* Consent notice */}
-        <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
-          Client consents to the collection and secure storage of their information for
-          food program eligibility and reporting. Data is not shared outside the
-          organization except as required by law.
+        <div className="mt-1 text-[9px] leading-snug text-gray-400 text-center px-2 max-w-md mx-auto">
+          Client consents to data collection for food program eligibility. Data stays within organization unless required by law.
         </div>
-
+        
         {/* Footer (sticky) */}
         <div
-          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+          className="sticky bottom-0 z-10 bg-white/95 backdrop-blur px-3 sm:px-6 pt-2 pb-4 flex flex-col items-center"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
         >
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => { onClose?.(); clearDraft(); }}
-              className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-            >
-              {t(lang, "cancel")}
-            </button>
-            <button
-              type="submit"
-              form="new-client-form"
-              disabled={busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)}
-              className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50"
-              title={
-                editing
-                  ? (!canSubmitEdit ? t(lang, "permNoEdit") : "")
-                  : (!canSubmitNew ? `${!canCreateClients ? t(lang,"permNoCreate") : ""} ${!canLogVisits ? t(lang,"permNoLog") : ""}`.trim() : "")
-              }
-            >
-              {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
-            </button>
+          {/* Divider for separation */}
+          <div className="w-full h-px bg-gray-200 mb-2" />
+          <div className="flex items-center justify-between gap-2 w-full max-w-md mx-auto">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                checked={form.autoClose}
+                onChange={(e) => setForm(f => ({ ...f, autoClose: e.target.checked }))}
+              />
+              <span className="text-xs sm:text-sm text-gray-700 font-medium">Auto-Close After Save</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { onClose?.(); clearDraft(); }}
+                className="h-9 sm:h-10 px-4 sm:px-5 rounded-xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 text-xs sm:text-sm font-semibold"
+              >
+                {t(lang, "cancel")}
+              </button>
+              <button
+                type="submit"
+                form="new-client-form"
+                disabled={busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)}
+                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-[color:var(--brand-700)] text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50 transition-all duration-150"
+                title={
+                  editing
+                    ? (!canSubmitEdit ? t(lang, "permNoEdit") : "")
+                    : (!canSubmitNew ? `${!canCreateClients ? t(lang,"permNoCreate") : ""} ${!canLogVisits ? t(lang,"permNoLog") : ""}`.trim() : "")
+                }
+              >
+                {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
+              </button>
+            </div>
           </div>
 
           {msg && (

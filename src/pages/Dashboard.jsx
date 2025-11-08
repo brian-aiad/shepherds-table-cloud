@@ -35,11 +35,11 @@ function relevanceScore(c, tks) {
   return score;
 }
 
+// Capitalize first letter of each word for professional display
 const tcase = (s = "") =>
   s
     .toLowerCase()
-    .replace(/[\p{L}]+('[\p{L}]+)?/gu, (w) => w[0].toUpperCase() + w.slice(1))
-    .replace(/([- ][\p{L}])/gu, (m) => m[0] + m[1].toUpperCase());
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 
 const localDateKey = (d = new Date()) => {
   const y = d.getFullYear();
@@ -58,6 +58,19 @@ const fmtLocal = (ts) => {
     return "";
   }
 };
+
+// Missing-info helpers — used to surface lightweight UI hints
+const missingFieldsFor = (c = {}) => {
+  const miss = [];
+  // intake requires at least a phone or DOB; surface if both missing
+  if (!((c.phone || "").toString().trim() || (c.dob || "").toString().trim())) {
+    miss.push("phone or DOB");
+  }
+  if (!((c.address || "").toString().trim())) miss.push("address");
+  if (!((c.zip || "").toString().trim())) miss.push("ZIP");
+  return miss;
+};
+const hasMissingInfo = (c = {}) => missingFieldsFor(c).length > 0;
 
 // UI atoms
 const cardCls = "rounded-2xl border border-brand-100 bg-white shadow-soft";
@@ -342,151 +355,191 @@ export default function Dashboard() {
   const allowEditClient = (canEditClients ?? hasCapability?.("editClients")) === true;
 
   return (
-    <div key={scopeKey} className="max-w-6xl mx-auto p-4 md:p-6">
-      {/* toast */}
-      {toast && (
-        <div
-          className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-50"
-          aria-live="polite"
-        >
-          <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
-            <span className="text-sm">{toast.msg}</span>
-            <button
-              className="text-gray-300 text-sm"
-              onClick={() => setToast(null)}
-              aria-label="Dismiss"
-            >
-              ×
-            </button>
+    <>
+      <div key={scopeKey} className="max-w-6xl mx-auto p-4 md:p-6">
+        {/* toast */}
+        {toast && (
+          <div
+            className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-50"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-3 rounded-lg bg-gray-900 text-white px-4 py-2 shadow-lg border border-brand-300">
+              <span className="text-sm">{toast.msg}</span>
+              <button
+                className="text-gray-300 text-sm"
+                onClick={() => setToast(null)}
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
           </div>
+        )}
+
+        
+        {/* scope pill (below Today on mobile) */}
+        <div className="mb-2 text-xs text-brand-900">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/90 ring-1 ring-brand-100 shadow px-4 py-2 text-[13px] font-semibold"
+            aria-label="Current scope"
+          >
+            <span className="text-gray-600">Scope</span>
+            <span className="text-gray-400">•</span>
+            <span className="font-semibold">{org?.name || "—"}</span>
+            {isAll ? (
+              <>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-700">All locations</span>
+              </>
+            ) : location?.name ? (
+              <>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-700">{location.name}</span>
+              </>
+            ) : canPickAllLocations ? (
+              <span className="text-gray-600">(all locations)</span>
+            ) : (
+              <span className="text-gray-600">(select location)</span>
+            )}
+          </span>
         </div>
-      )}
 
-      {/* scope pill (above search) */}
-      <div className="mb-2 text-xs text-gray-700">
-        <span
-          className="
-            inline-flex items-center gap-1.5
-            rounded-full bg-white text-brand-900
-            ring-1 ring-black/5 shadow-sm
-            px-3 py-1 text-[12px]
-          "
-          aria-label="Current scope"
-        >
-          <span className="text-gray-600">Scope</span>
-          <span className="text-gray-400">•</span>
-          <span className="font-semibold">{org?.name || "—"}</span>
-
-          {isAll ? (
-            <>
-              <span className="text-gray-400">/</span>
-              <span className="text-gray-700">All locations</span>
-            </>
-          ) : location?.name ? (
-            <>
-              <span className="text-gray-400">/</span>
-              <span className="text-gray-700">{location.name}</span>
-            </>
-          ) : canPickAllLocations ? (
-            <span className="text-gray-600">(all locations)</span>
-          ) : (
-            <span className="text-gray-600">(select location)</span>
-          )}
-        </span>
+{/* Visits Today + CTA (mobile-only, extra-tight) */}
+<div className="block md:hidden mb-3">
+  <section
+    className="rounded-2xl bg-white/95 ring-1 ring-brand-100 shadow-sm p-2.5"
+    aria-labelledby="kpi-today"
+  >
+    <div className="flex items-center gap-3">
+      {/* Icon chip */}
+      <div className="h-8 w-8 grid place-items-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-brand-200 shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
       </div>
 
-      {/* top bar */}
-      <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
-        {/* search */}
-        <div className="relative w-full min-w-0 rounded-2xl border border-brand-200 bg-white shadow-sm">
-          <input
-            className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-3 text-[17px] focus:outline-none"
-            placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            type="search"
-            enterKeyHint="search"
-            autoCapitalize="none"
-            inputMode="search"
-            aria-label="Search clients by name or phone"
-          />
-          {/* lens */}
-          <div
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            aria-hidden="true"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          {term && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              onClick={() => setTerm("")}
-              className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
-                        w-7 h-7 text-[18px] font-semibold text-gray-500 
-                        hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-            >
-              ×
-            </button>
-          )}
+      {/* Label + count */}
+      <div className="min-w-0 mr-auto">
+        <div id="kpi-today" className="text-[11px] text-gray-600 leading-tight">Visits Today</div>
+        <div className="text-[26px] leading-none font-extrabold tracking-tight tabular-nums text-brand-800" aria-live="polite">
+          {todayCount}
         </div>
+      </div>
 
-        {/* actions */}
-        <div className="flex items-center gap-3 md:gap-4 md:ml-auto shrink-0">
-          {/* Today (smaller; left) */}
-          <span
-            role="status"
-            aria-label={`Visits today ${todayCount}`}
-            className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0"
-          >
-            <span className="text-sm font-semibold whitespace-nowrap">
-              <span className="hidden md:inline">Visits </span>Today
-            </span>
-            <span className="h-4 w-px bg-brand-200 md:h-5" aria-hidden="true" />
-            <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">
-              {todayCount}
-            </span>
+      {/* CTA (never wraps on tiny phones) */}
+      {allowNewClient && (
+        <button
+          onClick={() => setShowNew(true)}
+          className="inline-flex items-center h-10 px-3 rounded-xl font-semibold text-white ring-1 ring-brand-800/20 
+                     bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
+                     hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)]
+                     active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)]
+                     focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200
+                     max-w-[58%] sm:max-w-none"
+          aria-label="Add new client"
+        >
+          <span className="mr-2 grid place-items-center h-6 w-6 rounded-full bg-white/20 shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+              <path fillRule="evenodd" d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
           </span>
+          <span className="truncate">Add New Client</span>
+        </button>
+      )}
+    </div>
+  </section>
+</div>
 
-          {/* Add New Client (capability-gated) */}
-          {allowNewClient && (
-            <button
-              onClick={() => setShowNew(true)}
-              className="btn btn-brand-grad px-6 min-w-[184px] md:min-w-[208px]"
-              aria-label="Add new client"
+
+
+
+        {/* top bar (desktop only) */}
+        <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
+          {/* search */}
+          <div className="relative w-full min-w-0 rounded-2xl border border-brand-200 bg-white shadow-sm">
+            <input
+              className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-3 text-[17px] focus:outline-none"
+              placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              type="search"
+              enterKeyHint="search"
+              autoCapitalize="none"
+              inputMode="search"
+              aria-label="Search clients by name or phone"
+            />
+            {/* lens */}
+            <div
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              aria-hidden="true"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="h-4 w-4 align-middle"
-                aria-hidden="true"
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
               >
                 <path
-                  fillRule="evenodd"
-                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                  clipRule="evenodd"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
-              <span className="md:hidden align-middle">Add New Client</span>
-              <span className="hidden md:inline align-middle">Add New Client</span>
-            </button>
-          )}
+            </div>
+            {term && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setTerm("")}
+                className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
+                          w-7 h-7 text-[18px] font-semibold text-gray-500 
+                          hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* actions (desktop only) */}
+          <div className="hidden md:flex items-center gap-3 md:gap-4 md:ml-auto shrink-0">
+            {/* Today (desktop only) */}
+            <span
+              role="status"
+              aria-label={`Visits today ${todayCount}`}
+              className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0"
+            >
+              <span className="text-sm font-semibold whitespace-nowrap">
+                <span className="hidden md:inline">Visits </span>Today
+              </span>
+              <span className="h-4 w-px bg-brand-200 md:h-5" aria-hidden="true" />
+              <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">
+                {todayCount}
+              </span>
+            </span>
+
+            {/* Desktop Add New Client button, right-aligned */}
+            {allowNewClient && (
+              <button
+                onClick={() => setShowNew(true)}
+                className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-brand-700 text-white font-bold text-lg shadow-lg hover:bg-brand-800 active:bg-brand-900 transition-all duration-150 border border-brand-800/20 ml-4"
+                aria-label="Add new client"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Add New Client
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
       {err && (
         <div
@@ -501,27 +554,23 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
         {/* left: list */}
         <div className={`lg:col-span-2 ${cardCls} p-0`}>
-          <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
-            Client List
-          </div>
+          <div className={`${sectionHdrCls} text-[15px] font-bold rounded-t-3xl shadow bg-white/90 border-b border-brand-100/70`}>Client List</div>
           <div className="p-3">
-            <div className="text-sm text-gray-600 mb-2 flex items-center justify-between">
+            <div className="text-sm text-brand-900 mb-3 flex items-center justify-between font-semibold">
               <span>
                 {searchTokens.length > 0
-                  ? `Showing ${filteredSorted.length} best match${
-                      filteredSorted.length === 1 ? "" : "es"
-                    }`
+                  ? `Showing ${filteredSorted.length} best match${filteredSorted.length === 1 ? "" : "es"}`
                   : `Showing ${clients.length} client${clients.length === 1 ? "" : "s"}`}
               </span>
             </div>
 
             {/* Letter chips (when not searching) */}
             {letterChips.length > 0 && searchTokens.length === 0 && (
-              <div className="flex gap-2 pb-2 overflow-x-auto no-scrollbar">
+              <div className="flex gap-2 pb-2 pt-2 pl-2 overflow-x-auto no-scrollbar">
                 {letterChips.map((L) => (
                   <button
                     key={L}
-                    className="px-2 py-1 rounded-md text-xs bg-brand-50 text-brand-900 ring-1 ring-brand-100 hover:bg-brand-100 active:bg-brand-200"
+                    className="px-2 py-1 rounded-lg text-xs bg-white/90 text-brand-900 ring-1 ring-brand-100 shadow hover:bg-brand-50 active:bg-brand-200 mt-0.5 ml-0.5 font-semibold"
                     onClick={() => setTerm((t) => (t === L ? "" : L))}
                     aria-label={`Jump to ${L}`}
                   >
@@ -544,67 +593,70 @@ export default function Dashboard() {
                       </div>
                     )}
                     <ul className="divide-y">
-                      {items.map((c) => (
-                        <li
-                          key={c.id}
-                          onClick={() => setSelected(c)}
-                          className={`group flex items-center gap-3 py-2.5 px-2 rounded transition flex-nowrap ${
-                            selected?.id === c.id
-                              ? "bg-brand-50 hover:bg-brand-100"
-                              : "hover:bg-gray-100"
-                          }`}
-                        >
-                          {/* Left: name + details */}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">
-                              {tcase(c.firstName)} {tcase(c.lastName)}
+                      {items.map((c) => {
+                        return (
+                          <li
+                            key={c.id}
+                            onClick={() => setSelected(c)}
+                            className={`group flex items-center gap-3 py-2.5 px-3 rounded-2xl transition flex-nowrap border-b border-brand-100/60 last:border-0 ${
+                              selected?.id === c.id
+                                ? "bg-brand-50/80 shadow"
+                                : "hover:bg-brand-50/60"
+                            }`}
+                          >
+                            <div className="flex items-center w-full">
+                              {/* Left: name + details */}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold truncate flex items-center gap-2 text-brand-900">
+                                  <span className="truncate" style={{ userSelect: 'text', pointerEvents: 'none' }}>{tcase(c.firstName)} {tcase(c.lastName)}</span>
+                                </div>
+                                <div className="text-xs text-gray-600 truncate">
+                                  <span style={{ userSelect: 'text', pointerEvents: 'none' }}>{[c.phone || null, c.address ? `• ${c.address}` : null].filter(Boolean).join(" ")}</span>
+                                </div>
+                              </div>
+                              {/* Right: icon + Log Visit */}
+                              {hasMissingInfo(c) && (
+                                <span
+                                  className="inline-flex items-center justify-center mr-2"
+                                  title={missingFieldsFor(c).join(", ")}
+                                  aria-label="Missing info"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 16 16"
+                                    width="16"
+                                    height="16"
+                                    style={{ display: 'block' }}
+                                  >
+                                    <circle cx="8" cy="8" r="6.5" fill="#FEF3C7" />
+                                    <text x="8" y="12" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#B45309" fontFamily="Arial, sans-serif">!</text>
+                                  </svg>
+                                </span>
+                              )}
+                              {canLogVisits ?? hasCapability?.("logVisits") ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    logVisit(c);
+                                    setSelected(c);
+                                  }}
+                                  className={["inline-flex items-center justify-center","h-9 px-4 rounded-lg bg-brand-700 text-white font-bold shadow hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"].join(" ")}
+                                  aria-label="Log visit"
+                                  title="Log visit"
+                                >
+                                  Log Visit
+                                </button>
+                              ) : null}
                             </div>
-                            <div className="text-xs text-gray-600 truncate">
-                              {[c.phone || null, c.address ? `• ${c.address}` : null]
-                                .filter(Boolean)
-                                .join(" ")}
-                            </div>
-                          </div>
-
-                          {/* Right: Log Visit (capability-gated) */}
-                          {canLogVisits ?? hasCapability?.("logVisits") ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                logVisit(c);
-                                setSelected(c);
-                              }}
-                              className={[
-                                "inline-flex items-center justify-center",
-                                "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
-                                "min-w-[64px] sm:min-w-[92px]",
-                                "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
-                                "text-[13px] sm:text-[14px] font-medium",
-                                "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
-                                "hover:from-brand-500 hover:to-brand-600",
-                                "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
-                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-                              ].join(" ")}
-                              aria-label="Log visit"
-                              title="Log visit"
-                            >
-                              <span className="sm:hidden">Log Visit</span>
-                              <span className="hidden sm:inline">Log Visit</span>
-                            </button>
-                          ) : null}
-                        </li>
-                      ))}
-                      {items.length === 0 && (
-                        <li className="py-6 px-2 text-sm text-gray-600">
-                          {searchTokens.length ? "No matches." : "No clients yet."}
-                        </li>
-                      )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
+              </div>
             </div>
           </div>
-        </div>
 
         {/* right: quick details */}
         <aside className={`${cardCls} overflow-hidden`}>
@@ -658,7 +710,33 @@ export default function Dashboard() {
           </div>
 
           {selected ? (
-            <div className="p-4 space-y-4">
+            <div className="p-5 space-y-4">
+              {/* Selected client quick-warning for missing info (all required fields, improved) */}
+              {(() => {
+                const missing = [];
+                if (!selected.address) missing.push("Address");
+                if (!selected.dob) missing.push("DOB");
+                if (!selected.phone) missing.push("Phone");
+                if (!selected.zip) missing.push("ZIP");
+                if (!selected.county) missing.push("County");
+                if (missing.length === 0) return null;
+                return (
+                  <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-4 py-3 text-sm shadow-sm">
+                    <span className="inline-flex items-center justify-center pt-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" fill="#FEF3C7" /><text x="12" y="16" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#B45309" fontFamily="Arial, sans-serif">!</text></svg>
+                    </span>
+                    <span>
+                      <span className="font-semibold">Missing:</span>
+                      <ul className="list-disc ml-5 mt-1">
+                        {missing.map((field) => (
+                          <li key={field}>{field}</li>
+                        ))}
+                      </ul>
+                      <span className="block mt-1 font-normal">Please edit to complete.</span>
+                    </span>
+                  </div>
+                );
+              })()}
               <div>
                 <div className="text-base font-semibold leading-tight mb-3 border-b border-gray-100 pb-2">
                   {tcase(selected.firstName)} {tcase(selected.lastName)}
@@ -806,16 +884,16 @@ export default function Dashboard() {
 
       {/* mobile quick actions bar */}
       {selected && (
-        <div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)]">
-          <div className={`${cardCls} p-2 flex items-center justify-between gap-2`}>
-            <div className="min-w-0 text-sm font-medium truncate">
+        <div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-md">
+          <div className="rounded-3xl border-2 border-brand-700 bg-white/80 shadow-2xl px-3 py-2 flex items-center justify-between gap-3 ring-1 ring-brand-100/60" style={{borderWidth: '2px', borderColor: '#b91c1c'}}>
+            <div className="min-w-0 text-base font-semibold text-brand-900 truncate">
               {tcase(selected.firstName)} {tcase(selected.lastName)}
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-2">
               {(canLogVisits ?? hasCapability?.("logVisits")) && (
                 <button
                   onClick={() => logVisit(selected)}
-                  className="h-9 px-3 rounded-lg bg-brand-700 text-white font-medium shadow-sm hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap"
+                  className="h-8 px-3 rounded-lg bg-brand-700 text-white font-bold shadow-lg hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap text-base"
                 >
                   Log Visit
                 </button>
@@ -823,7 +901,7 @@ export default function Dashboard() {
               {allowEditClient && (
                 <button
                   onClick={() => setEditor({ open: true, client: selected })}
-                  className="h-9 px-3 rounded-lg border border-brand-300 text-brand-800 bg-white font-medium hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap"
+                  className="h-8 px-4 rounded-lg border-2 border-brand-300 text-brand-800 bg-white font-bold shadow-lg hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap text-base"
                 >
                   Edit
                 </button>
@@ -834,6 +912,7 @@ export default function Dashboard() {
       )}
 
       {/* modals */}
+      </div>
       <NewClientForm
         open={showNew}
         onClose={() => setShowNew(false)}
@@ -889,7 +968,9 @@ export default function Dashboard() {
           setTimeout(() => setToast(null), 4000);
         }}
       />
-    </div>
+      {/* Mobile Add Client button next to Visits Today */}
+      {/* Add Client button is now only at the top next to Visits Today, larger and more prominent */}
+    </>
   );
 }
 
