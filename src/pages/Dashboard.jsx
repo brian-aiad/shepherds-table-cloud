@@ -551,11 +551,11 @@ export default function Dashboard() {
       )}
 
       {/* main content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4" style={{ alignItems: 'stretch', minHeight: 0 }}>
         {/* left: list */}
-        <div className={`lg:col-span-2 ${cardCls} p-0`}>
+  <div className={`lg:col-span-2 ${cardCls} p-0 flex flex-col h-full`} style={{ minHeight: 0 }}>
           <div className={`${sectionHdrCls} text-[15px] font-bold rounded-t-3xl shadow bg-white/90 border-b border-brand-100/70`}>Client List</div>
-          <div className="p-3">
+          <div className="p-3 flex-1 flex flex-col h-full" style={{ minHeight: 0 }}>
             <div className="text-sm text-brand-900 mb-3 flex items-center justify-between font-semibold">
               <span>
                 {searchTokens.length > 0
@@ -566,7 +566,7 @@ export default function Dashboard() {
 
             {/* Letter chips (when not searching) */}
             {letterChips.length > 0 && searchTokens.length === 0 && (
-              <div className="flex gap-2 pb-2 pt-2 pl-2 overflow-x-auto no-scrollbar">
+              <div className="flex gap-2 pb-2 pt-2 pl-2 overflow-x-auto desktop-scrollbar">
                 {letterChips.map((L) => (
                   <button
                     key={L}
@@ -581,7 +581,7 @@ export default function Dashboard() {
             )}
 
             {/* List — full list, comfortable scrolling */}
-            <div className="max-h-[70vh] md:max-h-[480px] overflow-auto pretty-scroll">
+            <div className="max-h-[70vh] md:max-h-[480px] overflow-auto desktop-scrollbar">
               {(searchTokens.length > 0
                 ? [{ letter: null, items: filteredSorted }]
                 : grouped.map(([letter, items]) => ({ letter, items })))
@@ -659,7 +659,7 @@ export default function Dashboard() {
           </div>
 
         {/* right: quick details */}
-        <aside className={`${cardCls} overflow-hidden`}>
+  <aside className={`${cardCls} overflow-hidden h-full`} style={{ height: '100%' }}>
           <div className={`${sectionHdrCls} flex items-center justify-between`}>
             <div className="text-sm font-semibold">Client Details</div>
             {selected && (
@@ -771,7 +771,7 @@ export default function Dashboard() {
                   <div className="text-[11px] text-gray-500">{selectedVisits.length} total</div>
                 </div>
                 {/* cap to ~5 rows before scrolling on desktop */}
-                <ul className="divide-y max-h-52 md:max-h-56 overflow-y-auto overflow-x-hidden px-2 pr-1 pretty-scroll">
+                <ul className="divide-y max-h-52 md:max-h-56 overflow-y-auto overflow-x-hidden px-2 pr-1 desktop-scrollbar">
                   {selectedVisits.length === 0 && (
                     <li className="py-3 text-sm text-gray-500">No visits yet.</li>
                   )}

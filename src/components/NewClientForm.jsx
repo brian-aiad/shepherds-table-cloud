@@ -1,36 +1,16 @@
 // src/components/NewClientForm.jsx
 // Shepherds Table Cloud — New Client Intake (bottom sheet on mobile, Nov 2025)
-// - Mobile: slide-up bottom sheet (mirrors LogVisitForm). Desktop: centered card.
-// - Language: single <select> dropdown (no toggle pills); persists in localStorage.
-// - Professional emoji-leading labels for quick scanning (a11y-safe).
-// - Stable header/body/footer; sticky header/footer; pretty-scroll body.
-// - Keeps your I18N, Mapbox autocomplete, dedupe + "Log Visit for Existing", USDA marker.
-// - Two-commit flow (create client, then first visit), atomic counters, serverTimestamp().
-// - NEW: Admin-only "Merge into Existing" on duplicate card (clean visit + counter merge).
-// - NEW: Autosave draft in localStorage, scoped by org/location.
-// - ROLES: Capability gates for create/edit/log actions (admin has everything).
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
-  collection, doc, serverTimestamp, runTransaction, getDocs, setDoc, updateDoc, writeBatch,
-  query, where, limit as qLimit, orderBy, increment
+  collection, doc, serverTimestamp, runTransaction, getDocs, setDoc,
+  query, where, limit as qLimit, increment
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
 import {
-  User,
-  IdCard,
-  Calendar,
-  Phone,
-  MapPin,
-  Tag,
-  Landmark,
-  Users,
-  Soup,
-  Languages,
-  ChevronDown,
-  ShieldCheck,
-  GitMerge,
+  User, IdCard, Calendar, Phone, MapPin, Tag, Landmark, Users, Soup,
+  Languages, ChevronDown, ShieldCheck, GitMerge,
 } from "lucide-react";
 
 /* =========================
@@ -39,30 +19,50 @@ import {
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "";
 const GEOCODE_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 const LB_PROX = "-118.1937,33.7701";
+// California bounding box: [W,S,E,N]
+const CA_BBOX = "-124.48,32.53,-114.13,42.01";
+// Counties we consider "LA and surrounding"
+const NEARBY_COUNTIES = new Set([
+  "Los Angeles County",
+  "Orange County",
+  "Riverside County",
+  "San Bernardino County",
+  "Ventura County",
+]);
+
+/* =========================
+   Sticky user prefs (localStorage)
+========================= */
+const PREFS_KEY = "newClientForm.prefs";
+const FALLBACK_DEFAULTS = {
+  zipDefault: "90813",
+  countyDefault: "Los Angeles County",
+  autoClose: false,
+};
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return { ...FALLBACK_DEFAULTS };
+    const p = JSON.parse(raw);
+    return {
+      zipDefault: p.zipDefault || FALLBACK_DEFAULTS.zipDefault,
+      countyDefault: p.countyDefault || FALLBACK_DEFAULTS.countyDefault,
+      autoClose: !!p.autoClose,
+    };
+  } catch {
+    return { ...FALLBACK_DEFAULTS };
+  }
+}
+function savePrefs(next) {
+  try {
+    const merged = { ...loadPrefs(), ...next };
+    localStorage.setItem(PREFS_KEY, JSON.stringify(merged));
+  } catch {}
+}
 
 /* =========================
    I18N
 ========================= */
-// ZIP codes and counties for dropdowns
-const NEARBY_ZIPS = [
-  { code: "90813", city: "Long Beach" },
-  { code: "90802", city: "Long Beach" },
-  { code: "90804", city: "Long Beach" },
-  { code: "90805", city: "Long Beach" },
-  { code: "90806", city: "Long Beach" },
-];
-
-const COUNTIES = [
-  { id: "los-angeles", name: "Los Angeles County" },
-  { id: "orange", name: "Orange County" },
-];
-
-// Address presets for quick selection
-const ADDRESS_PRESETS = [
-  { id: "homeless", label: "Homeless/Unhoused", value: "Homeless/Unhoused" },
-  { id: "shelter", label: "Local Shelter", value: "Local Shelter" },
-];
-
 const I18N = {
   en: {
     titleNew: "New Intake",
@@ -86,9 +86,7 @@ const I18N = {
     savedMsg: "Saved + Visit Logged ✅",
     savedEdit: "Saved ✅",
     errRequiredName: "First and last name are required.",
-    errDobOrPhone: "Provide at least a phone number or date of birth.",
     errZip: "ZIP code must be 5 digits.",
-    errHH: "Household size must be at least 1.",
     errOrgLoc: "Organization and Location are required (use the switcher in the navbar).",
     errSave: "Error saving, please try again.",
     dupFoundTitle: "Existing client found",
@@ -105,10 +103,11 @@ const I18N = {
     mergedOk: "Merged into existing client ✅",
     draftLoaded: "Draft loaded",
     clear: "Clear",
-    // Roles/capability copy
     permNoCreate: "You don’t have permission to create clients.",
     permNoEdit: "You don’t have permission to edit clients.",
     permNoLog: "You don’t have permission to log visits.",
+    quickOptions: "Quick options",
+    homelessQuick: "Homeless/Unhoused (no fixed address)",
   },
   es: {
     titleNew: "Nueva admisión",
@@ -132,9 +131,7 @@ const I18N = {
     savedMsg: "Guardado + Visita registrada ✅",
     savedEdit: "Guardado ✅",
     errRequiredName: "El nombre y los apellidos son obligatorios.",
-    errDobOrPhone: "Proporcione al menos un teléfono o fecha de nacimiento.",
     errZip: "El código postal debe tener 5 dígitos.",
-    errHH: "El tamaño del hogar debe ser al menos 1.",
     errOrgLoc: "Se requieren Organización y Ubicación (use el selector en la barra).",
     errSave: "Error al guardar. Intente de nuevo.",
     dupFoundTitle: "Cliente existente encontrado",
@@ -151,10 +148,11 @@ const I18N = {
     mergedOk: "Fusionado con el cliente existente ✅",
     draftLoaded: "Borrador cargado",
     clear: "Borrar",
-    // Roles/capability copy
     permNoCreate: "No tienes permiso para crear clientes.",
     permNoEdit: "No tienes permiso para editar clientes.",
     permNoLog: "No tienes permiso para registrar visitas.",
+    quickOptions: "Opciones rápidas",
+    homelessQuick: "Personas sin domicilio (sin dirección fija)",
   },
 };
 const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
@@ -162,7 +160,6 @@ const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
 /* =========================
    Helpers
 ========================= */
-
 const ICONS = {
   firstName: <User size={16} className="text-brand-600 inline mr-1" />,
   lastName: <IdCard size={16} className="text-brand-600 inline mr-1" />,
@@ -221,20 +218,21 @@ function parseFeatureAddressParts(feature) {
   const street = feature.place_type?.includes("address")
     ? `${feature.address ?? ""} ${feature.text ?? ""}`.trim()
     : feature.text || "";
-  let city = ""; let county = ""; let zip = "";
+  let city = ""; let county = ""; let zip = ""; let region = "";
   if (Array.isArray(feature.context)) {
     for (const c of feature.context) {
       const id = c.id || "";
       if (!city && (id.startsWith("locality") || id.startsWith("place"))) city = c.text || city;
       if (!county && id.startsWith("district")) county = c.text || county;
       if (!zip && id.startsWith("postcode")) zip = (c.text || "").replace(/\D/g, "");
+      if (!region && id.startsWith("region")) region = c.text || region;
     }
   }
   if (!city && (feature.place_type?.includes("place") || feature.place_type?.includes("locality"))) {
     city = feature.text || city;
   }
   const displayAddress = street && city ? `${street}, ${city}` : feature.place_name?.split(",")[0] || "";
-  return { displayAddress, zip, county };
+  return { displayAddress, zip, county, region };
 }
 function hashDJB2(str = "") {
   let h = 5381;
@@ -243,7 +241,6 @@ function hashDJB2(str = "") {
 }
 
 /* Model */
-
 const initialForm = {
   firstName: "",
   lastName: "",
@@ -253,8 +250,8 @@ const initialForm = {
   zip: "",
   county: "",
   householdSize: 1,
-  firstTimeThisMonth: null, // true | false | null
-  autoClose: false, // auto-close after save
+  firstTimeThisMonth: null,
+  autoClose: false,
 };
 
 /* =========================
@@ -276,10 +273,9 @@ export default function NewClientForm({
     canCreateClients,
     canEditClients,
     canLogVisits,
-    canPickAllLocations, // org-wide scope vs location-only
+    canPickAllLocations,
   } = authCtx || {};
 
-  // Device-scoped fallback (keep your behavior)
   const lsScope = (() => {
     try { return JSON.parse(localStorage.getItem("stc_scope") || "{}"); } catch { return {}; }
   })();
@@ -302,25 +298,26 @@ export default function NewClientForm({
     lsScope.activeLocationId ??
     null;
 
-  // Autosave key (scoped by org/location so different sites don't collide)
+  const sticky = useMemo(() => loadPrefs(), [open]);
+
   const DRAFT_KEY = useMemo(
     () => (orgId ? `newClientForm.draft.${orgId}.${locationId ?? "none"}` : null),
     [orgId, locationId]
   );
 
-  // UI state
-  const [form, setForm] = useState({
-    ...initialForm,
-    zip: "90813",
-    county: "Los Angeles County"
-  });
+  const [form, setForm] = useState(() => ({
+  ...initialForm,
+  zip: FALLBACK_DEFAULTS.zipDefault,
+  county: FALLBACK_DEFAULTS.countyDefault,
+  autoClose: sticky.autoClose, // keep user's autoClose preference only
+}));
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [dup, setDup] = useState(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [draftLoaded, setDraftLoaded] = useState(false);
 
-  // Language: dropdown (persisted)
   const [lang, setLang] = useState(() => {
     const saved = localStorage.getItem("newClientForm.lang");
     if (saved === "en" || saved === "es") return saved;
@@ -341,6 +338,8 @@ export default function NewClientForm({
   // Load form on open
   useEffect(() => {
     if (!open) return;
+    const prefs = loadPrefs();
+
     if (editing) {
       setForm({
         firstName: client?.firstName || "",
@@ -348,15 +347,15 @@ export default function NewClientForm({
         dob: client?.dob || "",
         phone: client?.phone || "",
         address: client?.address || "",
-        zip: client?.zip || "90813",
-        county: client?.county || "Los Angeles County",
+        zip: client?.zip || prefs.zipDefault,
+        county: client?.county || prefs.countyDefault,
         householdSize: Number(client?.householdSize ?? 1),
         firstTimeThisMonth:
           typeof client?.firstTimeThisMonth === "boolean" ? client.firstTimeThisMonth : null,
+        autoClose: prefs.autoClose,
       });
-      setDraftLoaded(false); // ignore drafts when editing
+      setDraftLoaded(false);
     } else {
-      // New intake: try to restore draft if available
       let restored = null;
       if (DRAFT_KEY) {
         try {
@@ -366,25 +365,38 @@ export default function NewClientForm({
       }
       if (restored && typeof restored === "object") {
         setForm({
-          ...initialForm,
-          zip: "90813",
-          county: "Los Angeles County",
-          ...restored,
-          householdSize: Number(restored.householdSize ?? 1),
-          firstTimeThisMonth:
-            typeof restored.firstTimeThisMonth === "boolean" ? restored.firstTimeThisMonth : true,
-        });
+        ...initialForm,
+        ...restored,
+        // keep whatever was in the draft; if missing, fall back to the hard defaults
+        zip: restored.zip || FALLBACK_DEFAULTS.zipDefault,
+        county: restored.county || FALLBACK_DEFAULTS.countyDefault,
+        autoClose: prefs.autoClose,
+        householdSize: Number(restored.householdSize ?? 1),
+        firstTimeThisMonth:
+          typeof restored.firstTimeThisMonth === "boolean" ? restored.firstTimeThisMonth : null,
+      });
+
         setDraftLoaded(true);
       } else {
-        setForm({ ...initialForm, zip: "90813", county: "Los Angeles County ", firstTimeThisMonth: true });
+        setForm({
+          ...initialForm,
+          zip: FALLBACK_DEFAULTS.zipDefault,
+          county: FALLBACK_DEFAULTS.countyDefault,
+          autoClose: prefs.autoClose,
+          firstTimeThisMonth: null,
+        });
+
         setDraftLoaded(false);
       }
+      savePrefs({});
     }
-    setMsg("");
     setDup(null);
-  }, [open, editing, client, DRAFT_KEY]);
+  }, [open, editing, client, DRAFT_KEY]); // eslint-disable-line
 
-  // AUTOSAVE: debounce to localStorage (new intake only)
+  useEffect(() => {
+    savePrefs({ autoClose: !!form.autoClose });
+  }, [form.autoClose]);
+
   useEffect(() => {
     if (!open || editing || !DRAFT_KEY) return;
     const id = setTimeout(() => {
@@ -397,12 +409,9 @@ export default function NewClientForm({
             dob: form.dob ?? "",
             phone: form.phone ?? "",
             address: form.address ?? "",
-            zip: form.zip ?? "",
-            county: form.county ?? "",
             householdSize: Number(form.householdSize || 1),
             firstTimeThisMonth:
-              typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : true,
-          })
+              typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,          })
         );
       } catch {}
     }, 350);
@@ -416,7 +425,7 @@ export default function NewClientForm({
   }, [DRAFT_KEY]);
 
   /* =========================
-     Address autocomplete
+     Address autocomplete + Homeless quick-pick
   ========================== */
   const addrEnabled = Boolean(MAPBOX_TOKEN);
   const [addrQ, setAddrQ] = useState("");
@@ -429,11 +438,46 @@ export default function NewClientForm({
   const dropdownRef = useRef(null);
   useEffect(() => setAddrQ(form.address), [form.address]);
 
+  // Quick action: choose Homeless/Unhoused
+  const chooseHomeless = useCallback(() => {
+    const prefs = loadPrefs();
+    setForm((f) => ({
+      ...f,
+      address: "Homeless/Unhoused",
+      zip: prefs.zipDefault,
+      county: prefs.countyDefault,
+    }));
+    setSuggestions([]);
+    setShowDropdown(false);
+    setAddrLocked(true);
+    setLastPicked("Homeless/Unhoused");
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     if (!addrEnabled) { setSuggestions([]); setShowDropdown(false); return; }
-    const q = (addrQ || "").trim();
-    if (q.length < 3 || addrLocked) { setSuggestions([]); setShowDropdown(false); return; }
+
+    const qRaw = (addrQ || "");
+    const q = qRaw.trim();
+
+    // Show "Quick options" ONLY if the input is empty.
+    const showQuick = q.length === 0;
+
+    // If input is empty and not locked, open the panel for quick picks; else we'll open on fetch.
+    if (showQuick && !addrLocked) {
+      setSuggestions([]);
+      setShowDropdown(true);
+    }
+
+   if (q.length < 3 || addrLocked) {
+      setSuggestions([]);
+      // Show quick options only when the field is empty and not locked; otherwise hide.
+      setShowDropdown(showQuick && !addrLocked);
+      return;
+    }
+
+
+
     let alive = true;
     const id = setTimeout(async () => {
       setAddrLoading(true);
@@ -443,19 +487,47 @@ export default function NewClientForm({
         url.searchParams.set("autocomplete", "true");
         url.searchParams.set("proximity", LB_PROX);
         url.searchParams.set("country", "US");
+        // Keep search strictly inside California
+        url.searchParams.set("bbox", CA_BBOX);
         url.searchParams.set("limit", "7");
-        url.searchParams.set("types", "address,locality,place");
+        url.searchParams.set("types", "address,locality,place,poi");
+
         const res = await fetch(url.toString());
         const data = await res.json();
         const feats = Array.isArray(data.features) ? data.features : [];
-        const cleaned = feats.map((f) => ({
-          id: f.id, place_name: f.place_name, text: f.text,
-          address: f.address, place_type: f.place_type || [],
-          context: f.context || [], _raw: f,
-        }));
-        if (alive) { setSuggestions(cleaned); setShowDropdown(true); }
+
+        // Keep only results inside California, preferring LA & nearby counties
+        const cleaned = feats
+          .map((f) => ({
+            id: f.id,
+            place_name: f.place_name,
+            text: f.text,
+            address: f.address,
+            place_type: f.place_type || [],
+            context: f.context || [],
+            _raw: f,
+          }))
+          .filter((f) => {
+            const { region, county } = parseFeatureAddressParts(f._raw);
+            const inCA = (region || "").toLowerCase().includes("california");
+            if (!inCA) return false;
+            // If county present, prefer the nearby ring
+            if (county) return true; // keep all CA, we’ll sort below
+            return true;
+          })
+          // Sort: nearby counties first, then others
+          .sort((a, b) => {
+            const pa = NEARBY_COUNTIES.has(parseFeatureAddressParts(a._raw).county || "");
+            const pb = NEARBY_COUNTIES.has(parseFeatureAddressParts(b._raw).county || "");
+            return Number(pb) - Number(pa);
+          });
+
+        if (alive) {
+          setSuggestions(cleaned);
+          setShowDropdown(cleaned.length > 0 || showQuick);
+        }
       } catch {
-        if (alive) { setSuggestions([]); setShowDropdown(true); }
+        if (alive) { setSuggestions([]); setShowDropdown(showQuick); }
       } finally { if (alive) setAddrLoading(false); }
     }, 220);
     return () => { clearTimeout(id); alive = false; };
@@ -489,13 +561,17 @@ export default function NewClientForm({
     const v = e.target.value;
     setForm((f) => ({ ...f, address: v }));
     if (addrLocked && v !== lastPicked) setAddrLocked(false);
+    // As soon as the user types, keep the panel open (Quick options will disappear automatically)
+    const len = v.trim().length;
+      setShowDropdown(len === 0 ? !addrLocked : len >= 3);
+
+
   }
 
   /* =========================
      Validation & dedupe
   ========================== */
   function validate() {
-    // Capability gates
     if (editing) {
       if (!canEditClients && !(hasCapability && hasCapability("editClients"))) {
         return t(lang, "permNoEdit");
@@ -507,7 +583,6 @@ export default function NewClientForm({
       if (!canLog) return t(lang, "permNoLog");
     }
 
-    // Required fields: first name, last name, ZIP code, county
     const fn = form.firstName.trim();
     const ln = form.lastName.trim();
     if (!fn || !ln) return t(lang, "errRequiredName");
@@ -520,7 +595,6 @@ export default function NewClientForm({
   }
 
   async function preflightDedupe({ phoneDigits, nameDobHash }) {
-    // Always org-scoped; further restrict to location if user lacks org-wide scope
     const baseFilters = [where("orgId", "==", orgId)];
     if (!canPickAllLocations && locationId) baseFilters.push(where("locationId", "==", locationId));
 
@@ -595,7 +669,6 @@ export default function NewClientForm({
       }
 
       if (!editing) {
-        // 1) CREATE CLIENT (separate commit)
         const clientRef = doc(collection(db, "clients"));
         await setDoc(clientRef, {
           ...base,
@@ -613,7 +686,6 @@ export default function NewClientForm({
           lastVisitMonthKey: null,
         });
 
-        // Optional USDA marker — best effort
         if (form.firstTimeThisMonth === true) {
           const mk = monthKey(new Date());
           const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
@@ -626,10 +698,9 @@ export default function NewClientForm({
               createdAt: serverTimestamp(),
               createdByUserId: auth.currentUser?.uid || null,
             });
-          } catch { /* ignore collisions */ }
+          } catch {}
         }
 
-        // 2) FIRST VISIT + COUNTERS (transaction)
         await runTransaction(db, async (tx) => {
           const now = new Date();
           const mk = monthKey(now);
@@ -675,7 +746,6 @@ export default function NewClientForm({
 
         createdId = clientRef.id;
       } else {
-        // EDITING: preserve tenant scope
         await runTransaction(db, async (tx) => {
           if (!client?.id) throw new Error("Missing client id for edit.");
           const clientRef = doc(db, "clients", client.id);
@@ -697,14 +767,32 @@ export default function NewClientForm({
       setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
       setDup(null);
 
-      // Clear draft after a successful create
       if (!editing) clearDraft();
+
+      const prefsNow = loadPrefs();
+      const changedZip = form.zip && form.zip !== prefsNow.zipDefault;
+      const changedCounty = form.county && form.county.trim() && form.county !== prefsNow.countyDefault;
+      if (changedZip || changedCounty) {
+        savePrefs({
+          zipDefault: changedZip ? form.zip : prefsNow.zipDefault,
+          countyDefault: changedCounty ? form.county : prefsNow.countyDefault,
+        });
+      }
+
 
       if (!editing) {
         if (form.autoClose) {
           onClose?.();
         } else {
-          setForm({ ...initialForm, autoClose: form.autoClose }); // Preserve auto-close setting
+          const prefs = loadPrefs();
+          setForm({
+            ...initialForm,
+            zip: FALLBACK_DEFAULTS.zipDefault,
+            county: FALLBACK_DEFAULTS.countyDefault,
+            autoClose: prefs.autoClose, // still respect autoClose
+            firstTimeThisMonth: null,
+          });
+
           setAddrLocked(false);
           setLastPicked("");
           firstRef.current?.focus();
@@ -722,18 +810,12 @@ export default function NewClientForm({
     e.preventDefault();
     await saveClient({ force: false });
   }
-  async function createAnyway() {
-    await saveClient({ force: true });
-  }
+  async function createAnyway() { await saveClient({ force: true }); }
 
-  // Log visit for duplicate
   async function logVisitForDuplicate() {
     if (!dup?.id || busy) return;
     const canLog = canLogVisits || (hasCapability && hasCapability("logVisits"));
-    if (!canLog) {
-      setMsg(t(lang, "permNoLog"));
-      return;
-    }
+    if (!canLog) { setMsg(t(lang, "permNoLog")); return; }
     setBusy(true);
     setMsg("");
     try {
@@ -790,7 +872,9 @@ export default function NewClientForm({
       setMsg("Visit logged for existing client ✅");
       onSaved?.({ ...(dup || {}) });
       setDup(null);
-      setForm(initialForm);
+
+      const prefs = loadPrefs();
+      setForm({ ...initialForm, zip: prefs.zipDefault, county: prefs.countyDefault, autoClose: prefs.autoClose, firstTimeThisMonth: null });
       setAddrLocked(false);
       setLastPicked("");
       clearDraft();
@@ -803,12 +887,6 @@ export default function NewClientForm({
     }
   }
 
-  /* =========================
-     ADMIN MERGE: new → existing
-     - Reassigns all visits from source (new data) to target (dup)
-     - Rolls up counters; soft-deactivates source & sets mergedIntoId
-     - Admin-only (capability modeled in AuthProvider as admin override)
-  ========================== */
   async function mergeIntoExistingAdmin() {
     if (!isAdmin || !dup?.id) return;
     const ok = confirm(
@@ -818,22 +896,18 @@ export default function NewClientForm({
 
     try {
       setMergeBusy(true);
-      const base = buildBasePayload();
-
-      // conservative merge: fill blanks only (avoid clobbering)
       const targetRef = doc(db, "clients", dup.id);
+      const base = buildBasePayload();
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(targetRef);
         if (!snap.exists()) throw new Error("Target client no longer exists.");
         const cur = snap.data() || {};
         const patch = {
-          // only copy if missing/blank on target
           phone: cur.phone || base.phone || cur.phone || "",
           phoneDigits: cur.phoneDigits || normalizePhone(base.phone) || cur.phoneDigits || "",
           address: cur.address || base.address || cur.address || "",
           zip: cur.zip || base.zip || cur.zip || "",
           county: cur.county || base.county || cur.county || "",
-          // audit
           updatedAt: serverTimestamp(),
           updatedByUserId: auth.currentUser?.uid || null,
         };
@@ -843,7 +917,9 @@ export default function NewClientForm({
       setMsg(t(lang, "mergedOk"));
       onSaved?.({ ...(dup || {}) });
       setDup(null);
-      setForm(initialForm);
+
+      const prefs = loadPrefs();
+      setForm({ ...initialForm, zip: prefs.zipDefault, county: prefs.countyDefault, autoClose: prefs.autoClose, firstTimeThisMonth: null });
       setAddrLocked(false);
       setLastPicked("");
       clearDraft();
@@ -856,7 +932,6 @@ export default function NewClientForm({
     }
   }
 
-  // Initials avatar (must live before any early returns so hooks order is stable)
   const initials = useMemo(() => {
     const name = `${form.firstName || ""} ${form.lastName || ""}`.trim();
     if (!name) return "👤";
@@ -870,7 +945,6 @@ export default function NewClientForm({
 
   if (!open) return null;
 
-  // Small helper to show bilingual hint only if Spanish chosen
   const showAssist = lang === "es";
   const dual = (primary, hint) => (
     <span className="flex flex-col">
@@ -879,10 +953,11 @@ export default function NewClientForm({
     </span>
   );
 
-  // Capability flags for button states
   const canSubmitNew = (canCreateClients || (hasCapability && hasCapability("createClients")))
     && (canLogVisits || (hasCapability && hasCapability("logVisits")));
   const canSubmitEdit = canEditClients || (hasCapability && hasCapability("editClients"));
+
+  const quickMode = !form.address || !form.address.trim();
 
   return (
     <div className="fixed inset-0 z-[1000]">
@@ -906,8 +981,9 @@ export default function NewClientForm({
           sm:max-h-[90vh]
         "
         style={{
+          // Lower the sheet more on mobile so header never clips behind the app navbar / status bar
           maxHeight: "calc(100vh - 28px)",
-          marginTop: `calc(env(safe-area-inset-top, 24px) + 12px)`,
+          marginTop: `calc(env(safe-area-inset-top, 56px) + 24px)`,
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -980,7 +1056,6 @@ export default function NewClientForm({
                 </div>
               </div>
 
-              {/* Draft chip */}
               {draftLoaded && !editing && (
                 <div className="mt-2 inline-flex items-center gap-2 text-[11px] font-medium bg-white/15 text-white px-2.5 py-1 rounded-full ring-1 ring-white/25">
                   <ShieldCheck className="h-3.5 w-3.5" />
@@ -1097,7 +1172,12 @@ export default function NewClientForm({
               onChange={onAddressInputChange}
               enterKeyHint="next"
               autoComplete="street-address"
-              onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
+              onFocus={() => {
+                if (!addrEnabled) return;
+                const empty = !form.address || !form.address.trim();
+                // Only open the dropdown on focus if the field is empty.
+                setShowDropdown(empty && !addrLocked);
+              }}
               aria-autocomplete="list"
               aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
               aria-controls="addr-nearby-panel"
@@ -1111,28 +1191,57 @@ export default function NewClientForm({
                 role="listbox"
                 aria-label="Nearby results"
               >
-                <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
-                  {addrLoading ? t(lang, "searching") : "Nearby results"}
-                </div>
-                <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
-                  {!addrLoading && suggestions.length === 0 && (
-                    <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
-                  )}
-                  {suggestions.map((sug) => (
-                    <li key={sug.id}>
-                      <button
-                        type="button"
-                        role="option"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
-                        onClick={() => onPickSuggestion(sug)}
-                        title={sug.place_name}
-                      >
-                        <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
-                        <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {/* Quick options — only when input is empty */}
+                {quickMode && (
+                  <>
+                    <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
+                      {t(lang, "quickOptions")}
+                    </div>
+                    <ul className="divide-y">
+                      <li>
+                        <button
+                          type="button"
+                          role="option"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); chooseHomeless(); }}
+                          title={t(lang, "homelessQuick")}
+                        >
+                          {t(lang, "homelessQuick")}
+                        </button>
+                      </li>
+                    </ul>
+                  </>
+                )}
+
+                {/* Nearby results — only when user has started typing */}
+                {!quickMode && (
+                  <>
+                    <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-y">
+                      {addrLoading ? t(lang, "searching") : "Nearby results"}
+                    </div>
+                    <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
+                      {!addrLoading && suggestions.length === 0 && (
+                        <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
+                      )}
+                      {suggestions.map((sug) => (
+                        <li key={sug.id}>
+                          <button
+                            type="button"
+                            role="option"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => onPickSuggestion(sug)}
+                            title={sug.place_name}
+                          >
+                            <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
+                            <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
                 <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
                   <button
                     type="button"
@@ -1154,6 +1263,10 @@ export default function NewClientForm({
                   placeholder={` ${lang === "es" ? "Código postal" : "ZIP code"}`}
                   value={form.zip}
                   onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                  onBlur={() => {
+                    const v = (form.zip || "").trim();
+                    if (/^\d{5}$/.test(v)) savePrefs({ zipDefault: v });
+                  }}
                   inputMode="numeric"
                   pattern="\d{5}"
                   autoComplete="postal-code"
@@ -1168,11 +1281,16 @@ export default function NewClientForm({
                   placeholder={` ${lang === "es" ? "Condado" : "County"}`}
                   value={form.county}
                   onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
+                  onBlur={() => {
+                    const v = (form.county || "").trim();
+                    if (v) savePrefs({ countyDefault: v });
+                  }}
                   enterKeyHint="next"
                 />
               </label>
             </div>
           </div>
+
 
           {/* Household + USDA */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -1295,13 +1413,12 @@ export default function NewClientForm({
         <div className="mt-1 text-[9px] leading-snug text-gray-400 text-center px-2 max-w-md mx-auto">
           Client consents to data collection for food program eligibility. Data stays within organization unless required by law.
         </div>
-        
+
         {/* Footer (sticky) */}
         <div
           className="sticky bottom-0 z-10 bg-white/95 backdrop-blur px-3 sm:px-6 pt-2 pb-4 flex flex-col items-center"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
         >
-          {/* Divider for separation */}
           <div className="w-full h-px bg-gray-200 mb-2" />
           <div className="flex items-center justify-between gap-2 w-full max-w-md mx-auto">
             <label className="flex items-center gap-2">

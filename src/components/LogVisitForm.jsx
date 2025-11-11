@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
+  getDoc,            // ⬅️ pre-check for monthly USDA marker
   runTransaction,
   serverTimestamp,
   increment,
@@ -85,6 +86,10 @@ export default function LogVisitForm({
   // Manual USDA toggle — default No; setting Yes will upsert a monthly marker (never deletes)
   const [usdaFirstThisMonth, setUsdaFirstThisMonth] = useState(false);
 
+  // ⬇️ NEW: USDA monthly eligibility state
+  const [usdaAllowed, setUsdaAllowed] = useState(true);
+  const [usdaChecking, setUsdaChecking] = useState(false);
+
   const inputRef = useRef(null);
 
   // Auth scope (read-only here)
@@ -127,6 +132,34 @@ export default function LogVisitForm({
     const t = setTimeout(() => inputRef.current?.focus(), 100);
     return () => clearTimeout(t);
   }, [open, client?.id]);
+
+  // ⬇️ NEW: Pre-check USDA marker existence for this month; disable toggle if already counted
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!open || !client?.id) return;
+      const mk = monthKeyFor(new Date());
+      // If org isn't resolved yet, keep it allowed so user isn't blocked incorrectly
+      if (!orgId) {
+        setUsdaAllowed(true);
+        return;
+      }
+      try {
+        setUsdaChecking(true);
+        const markerId = `${orgId}_${client.id}_${mk}`;
+        const snap = await getDoc(doc(db, "usda_first", markerId));
+        if (cancelled) return;
+        const allowed = !snap.exists();
+        setUsdaAllowed(allowed);
+        if (!allowed) setUsdaFirstThisMonth(false); // force OFF if already counted
+      } finally {
+        if (!cancelled) setUsdaChecking(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, client?.id, orgId, locationId]);
 
   if (!open || !client) return null;
 
@@ -181,24 +214,30 @@ export default function LogVisitForm({
           throw new Error("Client belongs to a different organization.");
         }
 
-        // 2) If toggled Yes, create-once USDA marker (no pre-read; ignore if it exists)
-        if (usdaFirstThisMonth) {
-          const markerId = `${orgId}_${client.id}_${mKey}`;
-          const markerRef = doc(db, "usda_first", markerId);
-          try {
-            // true create → passes your rules only when it doesn't exist
-            tx.create(markerRef, {
-              orgId,
-              clientId: client.id,
-              locationId,
-              monthKey: mKey,
-              createdAt: serverTimestamp(),
-              createdByUserId: currentUserId,
-            });
-          } catch (_e) {
-            // If it already exists or create is disallowed, we ignore—visit can still proceed.
-          }
-        }
+// 2) If toggled Yes *and allowed*, create USDA marker exactly once
+const wantsUsda = usdaFirstThisMonth && usdaAllowed;
+let usdaMarkerCreated = false;
+if (wantsUsda) {
+  const markerId = `${orgId}_${client.id}_${mKey}`;
+  const markerRef = doc(db, "usda_first", markerId);
+
+  // Check within the same transaction so we don't rely on a stale pre-check
+  const markerSnap = await tx.get(markerRef);
+  if (!markerSnap.exists()) {
+    // Using set() here still hits the "create" rule when it doesn't exist
+    tx.set(markerRef, {
+      orgId,
+      clientId: client.id,
+      locationId,
+      monthKey: mKey,
+      createdAt: serverTimestamp(),
+      createdByUserId: currentUserId,
+    });
+    usdaMarkerCreated = true;
+  }
+}
+
+
 
         // Snapshot address fields from the client for historical reporting
         const snapAddress = cur.address || client.address || "";
@@ -232,7 +271,7 @@ export default function LogVisitForm({
 
           // inputs & flags
           householdSize: Number(hhValue),
-          usdaFirstTimeThisMonth: !!usdaFirstThisMonth,
+          usdaFirstTimeThisMonth: !!(usdaFirstThisMonth && usdaAllowed),
 
           // audit
           createdByUserId: currentUserId,
@@ -439,11 +478,12 @@ export default function LogVisitForm({
           }}
           noValidate
         >
-          {/* USDA toggle — styled like NewClientForm active gradient */}
+          {/* USDA toggle — now auto-disables if already counted this month */}
           <fieldset className="rounded-2xl border border-brand-200 p-3 sm:p-4">
             <legend className="text-xs font-medium text-gray-700 px-1">
               {ICONS.usda}USDA first time this month?
             </legend>
+
             <div className="mt-2 grid grid-cols-2 gap-2">
               <label
                 className={[
@@ -451,7 +491,16 @@ export default function LogVisitForm({
                   usdaFirstThisMonth
                     ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                     : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
+                  (usdaChecking || !usdaAllowed) && "!opacity-60 !cursor-not-allowed",
                 ].join(" ")}
+                aria-disabled={usdaChecking || !usdaAllowed}
+                title={
+                  usdaChecking
+                    ? "Checking eligibility…"
+                    : !usdaAllowed
+                    ? "Already counted this month"
+                    : "Mark this as the first USDA visit for the month"
+                }
               >
                 <input
                   type="radio"
@@ -459,9 +508,11 @@ export default function LogVisitForm({
                   className="sr-only"
                   checked={usdaFirstThisMonth === true}
                   onChange={() => setUsdaFirstThisMonth(true)}
+                  disabled={usdaChecking || !usdaAllowed}
                 />
                 Yes
               </label>
+
               <label
                 className={[
                   "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
@@ -480,9 +531,13 @@ export default function LogVisitForm({
                 No
               </label>
             </div>
+
             <p className="mt-2 text-xs text-gray-600">
-              If “Yes”, we’ll record this as the first USDA visit for{" "}
-              {monthKeyFor()} and create a monthly marker.
+              {usdaChecking
+                ? "Checking eligibility…"
+                : usdaAllowed
+                ? `If “Yes”, we’ll record this as the first USDA visit for ${monthKeyFor()} and create a monthly marker.`
+                : "Already counted this month — this option will re-enable next month."}
             </p>
           </fieldset>
 

@@ -332,11 +332,17 @@ export default function Navbar() {
             </button>
 
             <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
-              <span className="h-7 w-7 rounded-full bg-white/20 grid place-items-center text-[11px] font-semibold">
-                {initials}
-              </span>
-              <span className="max-w-[240px] truncate text-xs text-white/95">{email || "—"}</span>
-              {roleBadge}
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 ring-1 ring-white/15">
+                <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[13px] font-bold text-white shadow-sm">
+                  {initials}
+                </span>
+                <span className="max-w-[180px] truncate text-xs text-white/95 font-medium">{email || "—"}</span>
+                {roleBadge && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-500/80 text-white text-[11px] font-semibold shadow-sm border border-white/20">
+                    Admin
+                  </span>
+                )}
+              </div>
             </div>
 
             <button

@@ -98,6 +98,43 @@
   }
 }
 
+/* Custom desktop-only scrollbar for client list and visit history: invisible unless hovered/touched */
+@media (min-width: 768px) {
+  .desktop-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.3s;
+  }
+  .desktop-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    background: transparent;
+    border-radius: 8px;
+    transition: background 0.3s;
+  }
+  .desktop-scrollbar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 8px;
+    opacity: 0;
+    transition: opacity 0.3s, background 0.3s;
+  }
+  .desktop-scrollbar:hover,
+  .desktop-scrollbar:active,
+  .desktop-scrollbar:focus-within {
+    scrollbar-color: var(--scroll-thumb-hover) var(--scroll-track);
+  }
+  .desktop-scrollbar:hover::-webkit-scrollbar,
+  .desktop-scrollbar:active::-webkit-scrollbar,
+  .desktop-scrollbar:focus-within::-webkit-scrollbar {
+    background: var(--scroll-track);
+  }
+  .desktop-scrollbar:hover::-webkit-scrollbar-thumb,
+  .desktop-scrollbar:active::-webkit-scrollbar-thumb,
+  .desktop-scrollbar:focus-within::-webkit-scrollbar-thumb {
+    opacity: 1;
+    background: var(--scroll-thumb-hover);
+  }
+}
+
 /* ================== Motion safety ================== */
 /* Default: smooth scrolling + soft transitions when motion is allowed */
 @media (prefers-reduced-motion: no-preference) {

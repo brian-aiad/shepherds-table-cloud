@@ -17,9 +17,8 @@ import {
   orderBy,
   doc,
   deleteDoc,
-  startAt,
-  endAt,
 } from "firebase/firestore";
+
 
 // 🔐 project paths
 import { db } from "../lib/firebase";
@@ -49,7 +48,10 @@ import {
   LineChart,
   Line,
   Legend,
+  ReferenceLine,
+  LabelList,
 } from "recharts";
+
 
 /* =======================================================================================
    UTILITIES (date, grouping, CSV, PDF, share, tiny toast)
@@ -85,6 +87,45 @@ const chunk = (arr, size = 10) => {
 };
 
 const todayKey = fmtDateKey(new Date());
+
+/* ---------- manual empty day helpers (persisted per org/location/month) ---------- */
+const monthRangeFor = (monthKey) => {
+  const d = dateFromMonthKey(monthKey);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return {
+    start,
+    end,
+    startKey: fmtDateKey(start),
+    endKey: fmtDateKey(end),
+  };
+};
+
+const mdStorageKey = (orgId, locId, monthKey) =>
+  `stc.manualDays:${orgId || "-"}/${locId || "-"}/${monthKey}`;
+
+const loadManualDays = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const saveManualDays = (key, set) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.from(set || [])));
+  } catch {}
+};
+
+const isDateKeyInMonth = (dateKey, monthKey) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+  const { startKey, endKey } = monthRangeFor(monthKey);
+  return dateKey >= startKey && dateKey <= endKey;
+};
+
 
 /* ---------- tiny toast ---------- */
 function useToast() {
@@ -739,6 +780,18 @@ export default function Reports() {
     monthKeyFor(new Date())
   );
   const [selectedDate, setSelectedDate] = useState(fmtDateKey(new Date()));
+  // Manual "empty" days (unioned with visit days)
+  const [manualDays, setManualDays] = useState(new Set());
+  // Input control for adding a day
+  const [addDayInput, setAddDayInput] = useState("");
+
+  // Load when org/location/month changes
+  useEffect(() => {
+    const key = mdStorageKey(org?.id, location?.id, selectedMonthKey);
+    setManualDays(loadManualDays(key));
+    setAddDayInput("");
+  }, [org?.id, location?.id, selectedMonthKey]);
+
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
 
@@ -856,13 +909,17 @@ export default function Reports() {
       return; // safety: never fall through to org-wide when not permitted
     }
 
-    const qv = query(
-      collection(db, "visits"),
-      ...filters,
-      orderBy("dateKey", "asc"),
-      startAt(startKey),
-      endAt(endKey)
-    );
+// Add the month range as range filters on the same field you order by
+filters.push(where("dateKey", ">=", startKey));
+filters.push(where("dateKey", "<=", endKey));
+
+const qv = query(
+  collection(db, "visits"),
+  ...filters,
+  orderBy("dateKey", "asc")
+);
+
+
 
     (async () => {
       try {
@@ -952,33 +1009,44 @@ export default function Reports() {
     return m;
   }, [visits]);
 
-  const sortedDayKeys = useMemo(
-    () =>
-      Array.from(visitsByDay.keys())
-        .filter((k) => (dayFilter ? k.includes(dayFilter) : true))
-        .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)),
-    [visitsByDay, dayFilter]
+  const sortedDayKeys = useMemo(() => {
+  // Union visit-backed days + manual empty days
+  const keys = new Set([...visitsByDay.keys(), ...manualDays]);
+  const filtered = Array.from(keys).filter((k) =>
+    dayFilter ? k.includes(dayFilter) : true
   );
+  // newest first (desc)
+  return filtered.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}, [visitsByDay, manualDays, dayFilter]);
+
 
   /* --------------------------------
-     Keep day selection valid & scroll-into-view
-     -------------------------------- */
-  useEffect(() => {
-    if (!sortedDayKeys.length) return;
-    const fallback = sortedDayKeys[0];
-    if (!selectedDate || !visitsByDay.has(selectedDate)) setSelectedDate(fallback);
+   Keep day selection valid & scroll-into-view
+   -------------------------------- */
+const hasDay = useCallback(
+  (dk) => visitsByDay.has(dk) || manualDays.has(dk),
+  [visitsByDay, manualDays]
+);
 
-    const id = `day-${selectedDate || fallback}`;
-    requestAnimationFrame(() => {
-      const list = dayListRef.current;
-      if (!list) return;
-      const el = list.querySelector(`#${CSS.escape(id)}`);
-      if (!el) return;
-      const padding = 8;
-      const elTop = el.offsetTop - list.offsetTop;
-      list.scrollTo({ top: Math.max(0, elTop - padding), behavior: "auto" });
-    });
-  }, [sortedDayKeys, selectedDate, visitsByDay]);
+useEffect(() => {
+  if (!sortedDayKeys.length) return;
+
+  const fallback = sortedDayKeys[0];
+  const resolved = selectedDate && hasDay(selectedDate) ? selectedDate : fallback;
+
+  if (resolved !== selectedDate) setSelectedDate(resolved);
+
+  const id = `day-${resolved}`;
+  requestAnimationFrame(() => {
+    const list = dayListRef.current;
+    if (!list) return;
+    const el = list.querySelector(`#${CSS.escape(id)}`);
+    if (!el) return;
+    const padding = 8;
+    const elTop = el.offsetTop - list.offsetTop;
+    list.scrollTo({ top: Math.max(0, elTop - padding), behavior: "auto" });
+  });
+}, [sortedDayKeys, selectedDate, hasDay]);
 
   /* --------------------------------
      Rows for selected day
@@ -1008,7 +1076,7 @@ export default function Reports() {
 
         visitHousehold: v.householdSize ?? "",
         usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
-        usdaCount: v.usdaCount ?? null,
+        usdaCount: v.usdaCount ?? "",
 
         monthKey: v.monthKey || "",
         visitAtISO: toISO(d),
@@ -1153,6 +1221,140 @@ export default function Reports() {
     },
     [canDeleteVisits, toast]
   );
+
+  const addManualDay = useCallback(() => {
+  const raw = (addDayInput || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    toast.show("Enter a date in YYYY-MM-DD.", "warn");
+    return;
+  }
+  if (!isDateKeyInMonth(raw, selectedMonthKey)) {
+    toast.show("Date is outside this month.", "warn");
+    return;
+  }
+
+  // If it already exists from visits or manual, just select it
+  if (visitsByDay.has(raw) || manualDays.has(raw)) {
+    setSelectedDate(raw);
+    return;
+  }
+
+  const next = new Set(manualDays);
+  next.add(raw);
+  setManualDays(next);
+
+  const key = mdStorageKey(org?.id, location?.id, selectedMonthKey);
+  saveManualDays(key, next);
+
+  setSelectedDate(raw);
+  setAddDayInput("");
+  toast.show("Day added to month.", "info");
+}, [
+  addDayInput,
+  selectedMonthKey,
+  visitsByDay,
+  manualDays,
+  org?.id,
+  location?.id,
+  toast,
+  setSelectedDate,
+]);
+
+
+// ⬇️ REPLACE the old removeManualDay with this
+const removeDay = useCallback(
+  async (dateKey) => {
+    if (!dateKey) return;
+
+    // Permission check
+    if (!canDeleteVisits) {
+      toast.show("You don’t have permission to delete.", "warn");
+      return;
+    }
+
+    // Build the same scope you use for month query (org + location or org-wide if allowed)
+    if (!org?.id) {
+      toast.show("Missing org context.", "warn");
+      return;
+    }
+    if (!canPickAllLocations && !location?.id) {
+      toast.show("Select a location first.", "warn");
+      return;
+    }
+
+    // Query all visits for that exact day (in current scope)
+    const filters = [where("orgId", "==", org.id), where("dateKey", "==", dateKey)];
+    if (location?.id) filters.push(where("locationId", "==", location.id));
+
+    const qDay = query(collection(db, "visits"), ...filters, orderBy("dateKey", "asc"));
+    const snap = await getDocs(qDay);
+    const count = snap.size;
+
+    const ok = confirm(
+    count > 0
+      ? `⚠️  Confirm Deletion\n\n` +
+        `You are about to permanently delete ${count} visit${count === 1 ? "" : "s"} on ${dateKey}.\n\n` +
+        `This will remove every visit record for that entire day${
+          location?.name ? ` at ${location.name}` : ""
+        } in ${org?.name || "this organization"}.\n\n` +
+        `This action cannot be undone. Press “Cancel” to keep your data.`
+      : `Remove ${dateKey} from this month?\n\nThis will only remove the blank day placeholder.`
+  );
+
+    if (!ok) return;
+
+    try {
+      // Delete all visits in Firestore
+      if (count > 0) {
+        const ids = snap.docs.map((d) => d.id);
+        // small concurrency batches to be safe
+        const BATCH = 20;
+        for (let i = 0; i < ids.length; i += BATCH) {
+          const chunkIds = ids.slice(i, i + BATCH);
+          await Promise.all(chunkIds.map((id) => deleteDoc(doc(db, "visits", id))));
+        }
+      }
+
+      // Remove from local manual-days if present
+      if (manualDays.has(dateKey)) {
+        const next = new Set(manualDays);
+        next.delete(dateKey);
+        setManualDays(next);
+        const key = mdStorageKey(org?.id, location?.id, selectedMonthKey);
+        saveManualDays(key, next);
+      }
+
+      // Prune from local state list so UI updates immediately
+      setVisits((prev) => prev.filter((v) => (v.dateKey || fmtDateKey(toJSDate(v.visitAt))) !== dateKey));
+
+      // If we deleted the currently selected day, select the next newest
+      if (selectedDate === dateKey) {
+        const nextKey =
+          sortedDayKeys.find((k) => k !== dateKey) || "";
+        setSelectedDate(nextKey);
+      }
+
+      toast.show(count > 0 ? "Day and visits deleted." : "Day removed.", "info");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete this day. Please try again.");
+    }
+  },
+  [
+    db,
+    org?.id,
+    location?.id,
+    canPickAllLocations,
+    canDeleteVisits,
+    manualDays,
+    selectedMonthKey,
+    selectedDate,
+    sortedDayKeys,
+    toast,
+  ]
+);
+
+
 
   const exportOneDayCsv = useCallback(
     (dayKey) => {
@@ -1425,7 +1627,7 @@ export default function Reports() {
                 grid grid-flow-col
                 auto-cols-[85%] xs:auto-cols-[60%] sm:auto-cols-[minmax(0,1fr)]
                 md:grid-flow-row md:grid-cols-4
-                gap-3 sm:gap-4 md:gap-5
+                gap-3 sm:gap-4 md:gap-6
                 snap-x md:snap-none
                 pr-2
               "
@@ -1456,10 +1658,10 @@ export default function Reports() {
       <div className="mt-8 lg:mt-10" />
 
       {/* ===== Charts (titles tightened) ===== */}
-      <div className="grid gap-4 sm:gap-5 lg:gap-6 md:grid-cols-3 mb-6 sm:mb-8">
+<div className="grid gap-6 sm:gap-7 lg:gap-8 md:grid-cols-3 mb-6 sm:mb-8">
         {/* Visits per Day */}
         <Card title="Visits per Day">
-          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
+<div className="h-[280px] md:h-[300px] flex items-center justify-center px-3 sm:px-4">
             <ResponsiveContainer width="98%" height="95%">
               <LineChart
                 data={monthAgg.charts.visitsPerDay}
@@ -1513,128 +1715,224 @@ export default function Reports() {
           </div>
         </Card>
 
-        {/* USDA Yes vs No (mobile-safe: center label, no clipping) */}
-        <Card title="USDA Yes vs No">
-          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4 overflow-visible">
-            <ResponsiveContainer width="96%" height="96%">
-              <PieChart margin={{ top: 12, right: 16, bottom: 12, left: 16 }}>
-                <Pie
-                  data={monthAgg.charts.usdaPie}
-                  dataKey="value"
-                  nameKey="name"
-                  // Slightly smaller on small screens to prevent edge clipping
-                  innerRadius={window.innerWidth < 640 ? "58%" : "55%"}
-                  outerRadius={window.innerWidth < 640 ? "74%" : "78%"}
-                  paddingAngle={2}
-                  // On mobile we don't draw outside labels (they clip); desktop keeps them
-                  label={
-                    window.innerWidth >= 640
-                      ? ({ name, percent }) =>
-                          `${name} ${(percent * 100).toFixed(0)}%`
-                      : false
-                  }
-                  labelLine={window.innerWidth >= 640}
-                  isAnimationActive={false}
-                >
-                  {monthAgg.charts.usdaPie.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={i === 0 ? "#991b1b" : "#fecaca"}
-                      stroke="#fff"
-                      strokeWidth={1.5}
-                    />
-                  ))}
+        {/* USDA Yes vs No — clipping-proof donut (no outside labels, center metric, legend below) */}
+<Card title="USDA Yes vs No">
+<div className="h-[280px] md:h-[300px] px-3 sm:px-4 grid place-items-center">
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart margin={{ top: 6, right: 6, bottom: 6, left: 6 }}>
+        <Pie
+          data={monthAgg.charts.usdaPie}
+          dataKey="value"
+          nameKey="name"
+          innerRadius="62%"
+          outerRadius="80%"
+          paddingAngle={2}
+          label={false}
+          labelLine={false}
+          isAnimationActive={false}
+        >
+          {monthAgg.charts.usdaPie.map((d, i) => (
+            <Cell
+              key={i}
+              fill={/yes/i.test(d?.name) ? "#991b1b" : "#fecaca"}
+              stroke="#fff"
+              strokeWidth={1.25}
+            />
+          ))}
 
-                  {/* Mobile center label so numbers never clip */}
-                  {window.innerWidth < 640 ? (
-                    <text
-                      x="50%"
-                      y="50%"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      style={{ fontWeight: 700, fontSize: 14, fill: "#991b1b" }}
-                    >
-                      {(() => {
-                        const yes = monthAgg.charts.usdaPie?.[0]?.value ?? 0;
-                        const total =
-                          (monthAgg.charts.usdaPie || []).reduce(
-                            (s, d) => s + (d.value || 0),
-                            0
-                          ) || 1;
-                        return `${Math.round((yes / total) * 100)}% USDA`;
-                      })()}
-                    </text>
-                  ) : null}
-                </Pie>
+          {/* Center metric — never clips */}
+          <text
+            x="50%"
+            y="50%"
+            textAnchor="middle"
+            dominantBaseline="central"
+            style={{ fontWeight: 800, fontSize: 18, fill: "#991b1b" }}
+          >
+            {(() => {
+              const yes = (monthAgg.charts.usdaPie || []).find(d => /yes/i.test(d?.name))?.value ?? 0;
+              const no  = (monthAgg.charts.usdaPie || []).find(d => /no/i.test(d?.name))?.value ?? 0;
+              const total = Math.max(yes + no, 1);
+              return `${Math.round((yes / total) * 100)}%`;
+            })()}
+          </text>
+          <text
+            x="50%"
+            y="50%"
+            dy="16"
+            textAnchor="middle"
+            dominantBaseline="central"
+            style={{ fontWeight: 600, fontSize: 11, fill: "#991b1b" }}
+          >
+            USDA Yes
+          </text>
+        </Pie>
 
-                {/* Tooltip works for both; legend only on md+ */}
-                <Tooltip contentStyle={tooltipBoxStyle} />
-                {window.innerWidth >= 640 ? (
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                ) : null}
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        <Tooltip contentStyle={tooltipBoxStyle} />
+      </PieChart>
+    </ResponsiveContainer>
+  </div>
 
-        {/* People Served per Day */}
-        <Card title="People Served per Day">
-          <div className="h-[260px] flex items-center justify-center px-3 sm:px-4">
-            <ResponsiveContainer width="98%" height="95%">
-              <BarChart
-                data={monthAgg.charts.visitsPerDay}
-                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                barCategoryGap={10}
-              >
-                <defs>
-                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#991b1b" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.7} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f1f5f9"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                  axisLine={{ stroke: "#e5e7eb" }}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                  axisLine={{ stroke: "#e5e7eb" }}
-                  tickLine={false}
-                  width={30}
-                />
-                <Tooltip cursor={false} contentStyle={tooltipBoxStyle} />
-                <Bar dataKey="people" fill="url(#barGradient)" radius={[10, 10, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+  {/* Clean legend below (no overlap/clipping) */}
+  <div className="mt-2 flex items-center justify-center gap-4 text-[12px]">
+    {(() => {
+      const yes = (monthAgg.charts.usdaPie || []).find(d => /yes/i.test(d?.name))?.value ?? 0;
+      const no  = (monthAgg.charts.usdaPie || []).find(d => /no/i.test(d?.name))?.value ?? 0;
+      return (
+        <>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm" style={{ background: "#991b1b" }} />
+            <span className="text-gray-700">USDA Yes</span>
+            <span className="text-gray-400">·</span>
+            <span className="font-semibold text-gray-900">{yes}</span>
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-3 rounded-sm" style={{ background: "#fecaca" }} />
+            <span className="text-gray-700">USDA No</span>
+            <span className="text-gray-400">·</span>
+            <span className="font-semibold text-gray-900">{no}</span>
+          </span>
+        </>
+      );
+    })()}
+  </div>
+</Card>
+
+
+        {/* People Served per Day (avg line, tidy axis, labels, wider gap) */}
+<Card title="People Served per Day">
+<div className="h-[280px] md:h-[300px] flex items-center justify-center px-3 sm:px-4">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart
+        data={monthAgg.charts.visitsPerDay}
+        margin={{ top: 12, right: 10, left: 0, bottom: 8 }}
+        barCategoryGap={14}
+      >
+        <defs>
+          <linearGradient id="peopleBars" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#991b1b" stopOpacity="1" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.78" />
+          </linearGradient>
+        </defs>
+
+        <CartesianGrid strokeDasharray="2 4" stroke="#eef2f7" vertical={false} />
+
+        <XAxis
+          dataKey="date"
+          tick={{ fontSize: 11, fill: "#6b7280" }}
+          tickMargin={6}
+          axisLine={{ stroke: "#e5e7eb" }}
+          tickLine={false}
+          interval="preserveStartEnd"
+          minTickGap={16}
+        />
+
+        {(() => {
+          const rows = monthAgg.charts.visitsPerDay || [];
+          const max = Math.max(0, ...rows.map(r => r.people || 0));
+          const nice = max ? Math.ceil(max / 50) * 50 : 0; // round to neat 50s
+          return (
+            <YAxis
+              allowDecimals={false}
+              domain={[0, nice || "auto"]}
+              tick={{ fontSize: 11, fill: "#6b7280" }}
+              axisLine={{ stroke: "#e5e7eb" }}
+              tickLine={false}
+              width={34}
+            />
+          );
+        })()}
+
+        <Tooltip
+          cursor={{ fill: "rgba(153,27,27,0.06)" }}
+          formatter={(v) => [v, "People"]}
+          labelFormatter={(l) => `Date: ${l}`}
+          contentStyle={tooltipBoxStyle}
+        />
+
+        {(() => {
+          const rows = monthAgg.charts.visitsPerDay || [];
+          const total = rows.reduce((s, r) => s + (r.people || 0), 0);
+          const avg = rows.length ? Math.round(total / rows.length) : 0;
+          return (
+            <ReferenceLine
+              y={avg}
+              stroke="#cbd5e1"
+              strokeDasharray="3 3"
+              ifOverflow="extendDomain"
+              label={{
+                value: `Avg ${avg}`,
+                position: "right",
+                fill: "#64748b",
+                fontSize: 11,
+                offset: 8,
+              }}
+            />
+          );
+        })()}
+
+        <Bar
+          dataKey="people"
+          fill="url(#peopleBars)"
+          radius={[9, 9, 0, 0]}
+          minPointSize={2}
+          isAnimationActive={false}
+        >
+          <LabelList
+            dataKey="people"
+            position="top"
+            style={{ fontSize: 11, fill: "#374151", fontWeight: 600, pointerEvents: "none" }}
+            formatter={(v) => (v == null ? "" : v)}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</Card>
+
       </div>
 
       {/* ===== Layout: days list + table ===== */}
       <div className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 print:block">
         {/* Days list */}
         <aside className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
-          <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div className="font-semibold">
-              Days in {monthLabel(selectedMonthKey)}
-            </div>
-            <input
-              className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
-              placeholder="Filter (YYYY-MM-DD)"
-              value={dayFilter}
-              onChange={(e) => setDayFilter(e.target.value)}
-              aria-label="Filter days"
-            />
-          </div>
+          <div className="mb-3 sm:mb-4 flex flex-col gap-2">
+  <div className="flex items-center justify-between">
+    <div className="font-semibold">
+      Days in {monthLabel(selectedMonthKey)}
+    </div>
+    <input
+      className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
+      placeholder="Filter (YYYY-MM-DD)"
+      value={dayFilter}
+      onChange={(e) => setDayFilter(e.target.value)}
+      aria-label="Filter days"
+    />
+  </div>
+
+  {/* Add Day row */}
+  <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+    <input
+      type="date"
+      value={addDayInput}
+      onChange={(e) => setAddDayInput(e.target.value)}
+      aria-label="Pick a day to add"
+      className="rounded-lg border px-2 py-2 text-sm"
+      min={monthRangeFor(selectedMonthKey).startKey}
+      max={monthRangeFor(selectedMonthKey).endKey}
+      placeholder="YYYY-MM-DD"
+    />
+    <button
+      onClick={addManualDay}
+      className="inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-semibold shadow bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
+      title="Add a blank day to this month"
+      aria-label="Add day"
+    >
+      Add Day
+    </button>
+    
+  </div>
+</div>
+
 
           <div
             ref={dayListRef}
@@ -1680,20 +1978,45 @@ export default function Reports() {
                     }`}
                   >
                     <div className="flex-1 px-2 py-1">
+                                          
                       {isToday && (
                         <span className="inline-block mb-1 text-[10px] leading-none tracking-wide font-semibold rounded px-1.5 py-0.5 bg-brand-700 text-white">
                           TODAY
                         </span>
                       )}
-                      <div className="font-medium">{k}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {k}
+                      {!visitsByDay.has(k) ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 bg-gray-100 text-gray-700 ring-1 ring-gray-200">
+                          Added
+                        </span>
+                      ) : null}
+                    </div>
                       <div className="text-xs text-gray-500">
                         {items.length} visit{items.length === 1 ? "" : "s"} • HH{" "}
                         {dayHH} • USDA {dayUsda}
                       </div>
                     </div>
 
-                    {/* Quick action: tiny Share only (no heavy Download here) */}
+                    {/* Quick action(s) */}
                     <div className="ml-1 flex items-center gap-2 shrink-0">
+                      {/* Delete Day — now always available if user can delete */}
+                      {canDeleteVisits ? (
+                        <button
+                          data-day-action
+                          className={BTN.smallIcon + " text-red-700 border-red-200 hover:bg-red-50"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeDay(k);
+                          }}
+                          aria-label={`Delete ${k}`}
+                          title="Delete day"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      ) : null}
+
+                      {/* Share EFAP PDF */}
                       <button
                         data-day-action
                         className={BTN.smallIcon}
@@ -1705,6 +2028,8 @@ export default function Reports() {
                         <ShareIcon className="h-4 w-4" />
                       </button>
                     </div>
+
+
                   </li>
                 );
               })}
@@ -1955,134 +2280,139 @@ export default function Reports() {
 
           {/* DESKTOP TABLE */}
           <div
-            className={`hidden md:block overflow-hidden rounded-xl border ${
-              loading ? "opacity-60" : ""
-            }`}
+            className={`hidden md:block overflow-hidden rounded-xl border ${loading ? "opacity-60" : ""}`}
           >
-            <table className="w-full table-auto text-sm">
-              <colgroup>
-                <col className="w-[22%]" />
-                <col className="w-[34%]" />
-                <col className="w-[9%]" />
-                <col className="w-[7%]" />
-                <col className="w-[13%]" />
-                <col className="w-[7%]" />
-                <col className="w-[8%]" />
-              </colgroup>
+            <div className="overflow-x-auto">
+              <div
+                className="overflow-y-auto desktop-scrollbar"
+                style={{ maxHeight: filteredSortedRows.length > 25 ? "825px" : "auto" }}
+              >
+                <table className="w-full table-auto text-sm">
+                  <colgroup>
+                    <col className="w-[22%]" />
+                    <col className="w-[34%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
 
-              <thead className="bg-gray-100">
-                <tr className="text-left">
-                  <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>
-                    Client
-                  </th>
-                  <th className="px-4 py-2">County</th>
-                  <th className="px-4 py-2">Zip</th>
-                  <th className="px-4 py-2">HH</th>
-                  <th className="px-4 py-2">USDA First-Time</th>
-                  <th className="px-4 py-2 text-right">Time</th>
-                  <th className="px-4 py-2">Actions</th>
-                </tr>
-              </thead>
+                  <thead className="bg-gray-100">
+                    <tr className="text-left">
+                      <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>
+                        Client
+                      </th>
+                      <th className="px-4 py-2">County</th>
+                      <th className="px-4 py-2">Zip</th>
+                      <th className="px-4 py-2">HH</th>
+                      <th className="px-4 py-2">USDA First-Time</th>
+                      <th className="px-4 py-2 text-right">Time</th>
+                      <th className="px-4 py-2">Actions</th>
+                    </tr>
+                  </thead>
 
-              <tbody className="divide-y divide-gray-200 align-top">
-                {filteredSortedRows.map((r) => (
-                  <tr
-                    key={r.visitId}
-                    className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
-                  >
-                    <td className="px-4 py-3 break-words">
-                      <div className="font-medium">{r.labelName}</div>
-                      {r.addedByReports && r.addedLocalTime ? (
-                        <div className="mt-0.5 text-xs text-gray-500">
-                          added {r.addedLocalTime}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 break-words">{r.county}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
-                    <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
-                    <td className="px-4 py-3">
-                      {r.usdaFirstTimeThisMonth === "" ? (
-                        ""
-                      ) : (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ring-1 ${
-                            r.usdaFirstTimeThisMonth
-                              ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                              : "bg-gray-50 text-gray-700 ring-gray-200"
-                          }`}
-                        >
-                          {r.usdaFirstTimeThisMonth ? "Yes" : "No"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700 text-right tabular-nums">
-                      {r.localTime}
-                    </td>
-                    <td className="px-4 py-3">
-                      {canDeleteVisits ? (
-                        <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
-                          onClick={() => removeVisit(r.visitId)}
-                          title="Delete visit"
-                          aria-label="Delete visit"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-gray-500">
-                          view-only
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {filteredSortedRows.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-8 text-center text-gray-500"
-                    >
-                      {loading ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Spinner className="h-4 w-4" /> Loading…
-                        </span>
-                      ) : (
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="text-2xl">🗓️</div>
-                          <div>No visits on this day.</div>
-                          {canLogVisits && selectedDate ? (
-                            <div className="mt-1">
-                              <AddVisitButton
-                                org={org}
-                                location={location}
-                                selectedDate={selectedDate}
-                                onAdded={(newVisit) =>
-                                  setVisits((prev) => [newVisit, ...prev])
-                                }
-                              />
+                  <tbody className="divide-y divide-gray-200 align-top">
+                    {filteredSortedRows.map((r) => (
+                      <tr
+                        key={r.visitId}
+                        className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
+                      >
+                        <td className="px-4 py-3 break-words">
+                          <div className="font-medium">{r.labelName}</div>
+                          {r.addedByReports && r.addedLocalTime ? (
+                            <div className="mt-0.5 text-xs text-gray-500">
+                              added {r.addedLocalTime}
                             </div>
                           ) : null}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
+                        </td>
+                        <td className="px-4 py-3 break-words">{r.county}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
+                        <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
+                        <td className="px-4 py-3">
+                          {r.usdaFirstTimeThisMonth === "" ? (
+                            ""
+                          ) : (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ring-1 ${
+                                r.usdaFirstTimeThisMonth
+                                  ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                                  : "bg-gray-50 text-gray-700 ring-gray-200"
+                              }`}
+                            >
+                              {r.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700 text-right tabular-nums">
+                          {r.localTime}
+                        </td>
+                        <td className="px-4 py-3">
+                          {canDeleteVisits ? (
+                            <button
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
+                              onClick={() => removeVisit(r.visitId)}
+                              title="Delete visit"
+                              aria-label="Delete visit"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-gray-500">
+                              view-only
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
 
-              <tfoot className="bg-gray-100 text-sm font-medium">
-                <tr>
-                  <td className="px-4 py-2">Totals</td>
-                  <td />
-                  <td />
-                  <td className="px-4 py-2">{dayTotals.hh}</td>
-                  <td className="px-4 py-2">{dayTotals.usdaYes} Yes</td>
-                  <td className="px-4 py-2" />
-                  <td className="px-4 py-2">{filteredSortedRows.length} rows</td>
-                </tr>
-              </tfoot>
-            </table>
+                    {filteredSortedRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="px-4 py-8 text-center text-gray-500"
+                        >
+                          {loading ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Spinner className="h-4 w-4" /> Loading…
+                            </span>
+                          ) : (
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="text-2xl">🗓️</div>
+                              <div>No visits on this day.</div>
+                              {canLogVisits && selectedDate ? (
+                                <div className="mt-1">
+                                  <AddVisitButton
+                                    org={org}
+                                    location={location}
+                                    selectedDate={selectedDate}
+                                    onAdded={(newVisit) =>
+                                      setVisits((prev) => [newVisit, ...prev])
+                                    }
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+
+                  <tfoot className="bg-gray-100 text-sm font-medium">
+                    <tr>
+                      <td className="px-4 py-2">Totals</td>
+                      <td />
+                      <td />
+                      <td className="px-4 py-2">{dayTotals.hh}</td>
+                      <td className="px-4 py-2">{dayTotals.usdaYes} Yes</td>
+                      <td className="px-4 py-2" />
+                      <td className="px-4 py-2">{filteredSortedRows.length} rows</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
           </div>
 
           {/* MOBILE LIST */}
@@ -2202,6 +2532,15 @@ export default function Reports() {
       `}</style>
 
       <style>{`
+        @keyframes fadeInOut { 
+          0% { opacity: .55; transform: scale(.98); } 
+          30% { opacity: 1; transform: scale(1); } 
+          100% { opacity: .9; transform: scale(1); } 
+        }
+      `}</style>
+
+
+      <style>{`
         @media print {
           nav, header, aside, .print\\:hidden { display: none !important; }
           main, section { border: none !important; box-shadow: none !important; }
@@ -2264,7 +2603,19 @@ function Card({ title, children }) {
 
 function KpiModern({ title, value, sub }) {
   return (
-    <div className="rounded-2xl border border-rose-200 ring-1 ring-rose-100 bg-white shadow-sm p-4 sm:p-5">
+    <div
+      className="
+        rounded-2xl border ring-1 bg-white shadow-soft p-4 sm:p-5
+        border-brand-200 ring-brand-100
+        hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)]
+        hover:ring-brand-200
+        hover:border-brand-300
+        transition will-change-transform
+        hover:scale-[1.01] active:scale-[.995]
+      "
+      role="status"
+      aria-live="polite"
+    >
       <div className="text-xs sm:text-sm text-gray-600 mb-2">{title}</div>
       <div className="flex items-end gap-2">
         <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">
@@ -2279,6 +2630,7 @@ function KpiModern({ title, value, sub }) {
     </div>
   );
 }
+
 
 /* ---------- icons ---------- */
 function ShareIcon({ className = "h-5 w-5" }) {
