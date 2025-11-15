@@ -1204,14 +1204,49 @@ useEffect(() => {
   /* --------------------------------
      Actions
      -------------------------------- */
-  const removeVisit = useCallback(
-    async (visitId) => {
-      if (!visitId) return;
-      if (!canDeleteVisits) return toast.show("You don’t have permission to delete.", "warn");
+    const removeVisit = useCallback(
+    async (row) => {
+      if (!row?.visitId) return;
+
+      if (!canDeleteVisits) {
+        toast.show("You don’t have permission to delete.", "warn");
+        return;
+      }
+
       const ok = confirm("Delete this visit from the database?");
       if (!ok) return;
+
+      const { visitId, clientId, monthKey, dateKey, usdaFirstTimeThisMonth } = row;
+
       try {
+        // 1) Delete the visit itself
         await deleteDoc(doc(db, "visits", visitId));
+
+        // 2) If this visit was marked USDA first-time for the month,
+        //    also clear the usda_first marker for that client+month.
+        if (usdaFirstTimeThisMonth && org?.id && clientId) {
+          const mk =
+            monthKey ||
+            (typeof dateKey === "string" && dateKey.length >= 7
+              ? dateKey.slice(0, 7)
+              : "");
+
+          if (mk) {
+            const usdaSnap = await getDocs(
+              query(
+                collection(db, "usda_first"),
+                where("orgId", "==", org.id),
+                where("clientId", "==", clientId),
+                where("monthKey", "==", mk)
+              )
+            );
+
+            // there should normally be at most one, but just in case…
+            await Promise.all(usdaSnap.docs.map((d) => deleteDoc(d.ref)));
+          }
+        }
+
+        // 3) Update local state
         setVisits((prev) => prev.filter((v) => v.id !== visitId));
         toast.show("Visit deleted.", "info");
       } catch (e) {
@@ -1219,8 +1254,9 @@ useEffect(() => {
         alert("Failed to delete visit. Please try again.");
       }
     },
-    [canDeleteVisits, toast]
+    [canDeleteVisits, toast, org?.id]
   );
+
 
   const addManualDay = useCallback(() => {
   const raw = (addDayInput || "").trim();
@@ -2350,13 +2386,14 @@ const removeDay = useCallback(
                         <td className="px-4 py-3">
                           {canDeleteVisits ? (
                             <button
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
-                              onClick={() => removeVisit(r.visitId)}
-                              title="Delete visit"
-                              aria-label="Delete visit"
-                            >
-                              <TrashIcon className="h-5 w-5" />
-                            </button>
+  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
+  onClick={() => removeVisit(r)}
+  title="Delete visit"
+  aria-label="Delete visit"
+>
+  <TrashIcon className="h-5 w-5" />
+</button>
+
                           ) : (
                             <span className="text-[11px] text-gray-500">
                               view-only
@@ -2464,12 +2501,13 @@ const removeDay = useCallback(
                     {canDeleteVisits ? (
                       <button
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-700 hover:bg-red-50"
-                        onClick={() => removeVisit(r.visitId)}
+                        onClick={() => removeVisit(r)}
                         aria-label="Delete visit"
                         title="Delete visit"
                       >
                         <TrashIcon className="h-5 w-5" />
                       </button>
+
                     ) : null}
                   </div>
                 </div>

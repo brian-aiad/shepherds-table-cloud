@@ -6,6 +6,7 @@
 // - Homeless-friendly search: typing “homeless” matches clients with blank/“homeless” addresses
 // - Capability guard (admin or 'logVisits'), requires specific location, active clients only
 // - Stable Firestore txn (visit + counters + USDA monthly marker). onAdded gets real id
+// - USDA-first parity with LogVisitForm: monthly marker pre-check + in-tx recheck
 // - Confirmation banner: “Added <Name> for <YYYY-MM-DD>”.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDoc, // ⬅️ monthly marker pre-check
   increment,
   limit as qLimit,
   orderBy,
@@ -110,6 +112,10 @@ export default function AddVisitButton({
   const [rowHH, setRowHH] = useState(1);
   const [rowUsdaYes, setRowUsdaYes] = useState(true);
 
+  // USDA monthly eligibility per client for the selected month
+  // Map<clientId, { allowed: boolean, checking: boolean }>
+  const [usdaElig, setUsdaElig] = useState({});
+
   // add confirmation (legacy two-step removed; immediate add)
   const [confirmForId, setConfirmForId] = useState(null);
   const confirmTimerRef = useRef(null);
@@ -132,10 +138,10 @@ export default function AddVisitButton({
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
 
-  const monthKey = useMemo(
-    () => (selectedDate ? selectedDate.slice(0, 7) : ""),
-    [selectedDate]
-  );
+  const monthKey = useMemo(() => {
+    if (!selectedDate) return "";
+    return selectedDate.slice(0, 7); // YYYY-MM
+  }, [selectedDate]);
 
   /* ---------- Load active candidates for org + (optional) location ---------- */
   const loadCandidates = useCallback(async () => {
@@ -171,6 +177,30 @@ export default function AddVisitButton({
     }
   }, [org?.id, location?.id]);
 
+  /* ---------- USDA marker pre-check for one client (selected month) ---------- */
+  const checkUsdaEligibility = useCallback(
+    async (clientId) => {
+      if (!open || !org?.id || !monthKey || !clientId) return;
+
+      setUsdaElig((m) => ({ ...m, [clientId]: { ...(m[clientId] || {}), checking: true } }));
+      try {
+        const markerId = `${org.id}_${clientId}_${monthKey}`;
+        const snap = await getDoc(doc(db, "usda_first", markerId));
+        const allowed = !snap.exists();
+        setUsdaElig((m) => ({ ...m, [clientId]: { allowed, checking: false } }));
+        if (!allowed && expandedId === clientId) {
+          // Force UI to "No" if already counted this month
+          setRowUsdaYes(false);
+        }
+      } catch {
+        // If we can't check, default to allowed so we don't block;
+        // Firestore rules will still protect on create
+        setUsdaElig((m) => ({ ...m, [clientId]: { allowed: true, checking: false } }));
+      }
+    },
+    [open, org?.id, monthKey, expandedId]
+  );
+
   /* ---------- Open modal ---------- */
   const openSheet = useCallback(() => {
     if (!selectedDate) return;
@@ -187,6 +217,7 @@ export default function AddVisitButton({
     setExpandedId(null);
     setRowHH(1);
     setRowUsdaYes(true);
+    setUsdaElig({}); // clear month-scoped cache when re-opening
     setConfirmForId(null);
     clearTimeout(confirmTimerRef.current);
     setOpen(true);
@@ -212,6 +243,15 @@ export default function AddVisitButton({
   useEffect(() => {
     return () => clearTimeout(confirmTimerRef.current);
   }, []);
+
+  // Reset USDA cache when the selected month changes
+  useEffect(() => {
+    setUsdaElig({});
+    if (expandedId) {
+      // Re-check the expanded one for the new month
+      checkUsdaEligibility(expandedId);
+    }
+  }, [monthKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- Search filter + count ---------- */
   const filtered = useMemo(() => {
@@ -253,19 +293,24 @@ export default function AddVisitButton({
         );
         setRowHH(baseHH);
         setRowUsdaYes(true);
+        // Pre-check USDA eligibility for this client+month
+        checkUsdaEligibility(client.id);
       }
     },
-    [expandedId]
+    [expandedId, checkUsdaEligibility]
   );
 
   /* ---------- Add Visit (row-scoped) ---------- */
   const addVisit = useCallback(
     async (client, hhOverride, usdaOverride) => {
-      const usdaYes = !!usdaOverride;
       const hhVal = Math.max(
         MIN_HH,
         Math.min(MAX_HH, Number(hhOverride || MIN_HH))
       );
+
+      const elig = usdaElig[client?.id];
+      const usdaAllowed = elig ? !!elig.allowed : true;
+      const wantsUsda = !!usdaOverride && usdaAllowed;
 
       if (!allowLogVisits) {
         alert("You don’t have permission to log visits.");
@@ -341,12 +386,14 @@ export default function AddVisitButton({
           if (snapZip) setLS(DEFAULT_ZIP_KEY, snapZip);
           if (snapCounty) setLS(DEFAULT_COUNTY_KEY, snapCounty);
 
-          if (usdaYes && mk) {
+          // USDA monthly marker (create-once; re-check inside the txn)
+          if (wantsUsda && mk) {
             const markerId = `${org.id}_${client.id}_${mk}`;
             const markerRef = doc(db, "usda_first", markerId);
-            const markerLocId = locId || cur.locationId || null;
-            try {
-              tx.create(markerRef, {
+            const markerSnap = await tx.get(markerRef);
+            if (!markerSnap.exists()) {
+              const markerLocId = locId || cur.locationId || null;
+              tx.set(markerRef, {
                 orgId: org.id,
                 clientId: client.id,
                 locationId: markerLocId,
@@ -354,8 +401,6 @@ export default function AddVisitButton({
                 createdAt: serverTimestamp(),
                 createdByUserId: currentUser || null,
               });
-            } catch {
-              // exists → ignore
             }
           }
 
@@ -375,7 +420,8 @@ export default function AddVisitButton({
             weekKey: wKey,
             weekday,
             householdSize: Number(hhVal),
-            usdaFirstTimeThisMonth: !!usdaYes,
+            // only true if user chose Yes AND it's allowed this month
+            usdaFirstTimeThisMonth: !!(wantsUsda && mk),
             createdByUserId: currentUser || null,
             editedAt: null,
             editedByUserId: null,
@@ -390,7 +436,6 @@ export default function AddVisitButton({
             visitCountLifetime: increment(1),
             [`visitCountByMonth.${mk}`]: increment(1),
             householdSize: Number(hhVal),
-            // NOTE: we do NOT overwrite client.zip/county here; only snapshot to the visit
           });
         });
 
@@ -410,7 +455,7 @@ export default function AddVisitButton({
           weekKey: wKey,
           weekday,
           householdSize: Number(hhVal),
-          usdaFirstTimeThisMonth: !!usdaYes,
+          usdaFirstTimeThisMonth: !!(wantsUsda && mk),
           addedByReports: true,
           createdAt: new Date(),
         });
@@ -437,6 +482,7 @@ export default function AddVisitButton({
       monthKey,
       onAdded,
       autoClose,
+      usdaElig,
     ]
   );
 
@@ -628,6 +674,9 @@ export default function AddVisitButton({
                       .join(" • ");
                     const isOpen = expandedId === c.id;
 
+                    const elig = usdaElig[c.id] || { allowed: true, checking: false };
+                    const usdaYesDisabled = elig.checking || !elig.allowed;
+
                     return (
                       <li key={c.id} className="p-0">
                         {/* Row (click to expand) */}
@@ -762,7 +811,7 @@ export default function AddVisitButton({
                                     </div>
                                   </div>
 
-                                  {/* USDA toggle */}
+                                  {/* USDA toggle (with monthly eligibility) */}
                                   <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 justify-start lg:justify-center">
                                     <label className="text-xs font-medium text-gray-700 select-none leading-none">
                                       USDA
@@ -776,22 +825,30 @@ export default function AddVisitButton({
                                       "
                                       role="group"
                                       aria-label="USDA first visit this month"
+                                      title={
+                                        usdaElig[c.id]?.checking
+                                          ? "Checking eligibility…"
+                                          : usdaElig[c.id]?.allowed === false
+                                          ? `Already counted for ${monthKey}`
+                                          : "Mark this as first USDA visit this month"
+                                      }
                                     >
                                       <button
                                         type="button"
                                         className={cx(
                                           "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
-                                          "hover:bg-brand-50",
-                                          rowUsdaYes
+                                          usdaYesDisabled
+                                            ? "opacity-60 cursor-not-allowed"
+                                            : "hover:bg-brand-50",
+                                          rowUsdaYes && !usdaYesDisabled
                                             ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
                                             : "text-brand-900"
                                         )}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setRowUsdaYes(true);
+                                          if (!usdaYesDisabled) setRowUsdaYes(true);
                                         }}
-                                        aria-pressed={rowUsdaYes}
-                                        title="USDA first visit this month"
+                                        aria-pressed={rowUsdaYes && !usdaYesDisabled}
                                       >
                                         <Soup size={16} className="inline mr-1" />
                                         Yes
@@ -807,7 +864,7 @@ export default function AddVisitButton({
                                         className={cx(
                                           "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
                                           "hover:bg-brand-50",
-                                          !rowUsdaYes
+                                          !rowUsdaYes || usdaYesDisabled
                                             ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
                                             : "text-brand-900"
                                         )}
@@ -815,8 +872,7 @@ export default function AddVisitButton({
                                           e.stopPropagation();
                                           setRowUsdaYes(false);
                                         }}
-                                        aria-pressed={!rowUsdaYes}
-                                        title="Not USDA"
+                                        aria-pressed={!rowUsdaYes || usdaYesDisabled}
                                       >
                                         No
                                       </button>
@@ -935,7 +991,6 @@ export default function AddVisitButton({
             `}</style>
           </div>
         </div>
-      )}
-    </>
+      )}    </>
   );
 }
