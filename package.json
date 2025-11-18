@@ -1,1 +1,41 @@
-{"name":"shepherds-table-cloud","private":true,"version":"0.0.1","type":"module","scripts":{"dev":"vite","build":"tsc -b && vite build","preview":"vite preview","deploy:dev":"firebase deploy --project dev","deploy:prod":"firebase deploy --project prod"},"dependencies":{"clsx":"^2.1.1","file-saver":"^2.0.5","firebase":"^10.14.1","firebase-admin":"^13.5.0","lucide-react":"^0.548.0","pdf-lib":"^1.17.1","react":"^18.3.1","react-dom":"^18.3.1","react-router-dom":"^6.30.1","recharts":"^3.4.1"},"devDependencies":{"@types/node":"^22.7.5","@types/react":"^19.2.2","@types/react-dom":"^19.2.2","@vitejs/plugin-react":"^4.3.1","autoprefixer":"^10.4.20","postcss":"^8.4.47","tailwindcss":"^3.4.13","typescript":"^5.6.2","vite":"^5.4.8"}}
+{
+	"name": "shepherds-table-cloud",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc -b && vite build",
+		"preview": "vite preview",
+		"deploy:dev": "firebase deploy --project dev",
+		"deploy:prod": "firebase deploy --project prod",
+		"migrate:orgUsers": "node ./scripts/migrate_orgUsers_ids.js",
+		"emulator:test:scaffold": "node ./scripts/run-emulator-tests.js"
+	},
+	"dependencies": {
+		"clsx": "^2.1.1",
+		"file-saver": "^2.0.5",
+		"firebase": "^10.14.1",
+		"firebase-admin": "^13.5.0",
+		"lucide-react": "^0.548.0",
+		"pdf-lib": "^1.17.1",
+		"react": "^18.3.1",
+		"react-dom": "^18.3.1",
+		"react-is": "^19.2.0",
+		"react-router-dom": "^6.30.1",
+		"recharts": "^3.4.1"
+	},
+	"devDependencies": {
+		"@firebase/rules-unit-testing": "^5.0.0",
+		"@types/node": "^22.7.5",
+		"@types/react": "^19.2.2",
+		"@types/react-dom": "^19.2.2",
+		"@vitejs/plugin-react": "^4.3.1",
+		"autoprefixer": "^10.4.20",
+		"firebase-tools": "^14.25.0",
+		"postcss": "^8.4.47",
+		"tailwindcss": "^3.4.13",
+		"typescript": "^5.6.2",
+		"vite": "^5.4.8"
+	}
+}

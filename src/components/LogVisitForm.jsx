@@ -1,5 +1,5 @@
 // src/components/LogVisitForm.jsx
-// Shepherds Table Cloud — Log Visit (Oct 2025 UI parity + capability guard)
+// Shepherds Table Cloud — Log Visit (Oct/Nov 2025 UI parity + capability guard)
 // - Bottom sheet on mobile / centered card on desktop
 // - Sticky gradient header/footer, initials avatar, icons on labels, pretty-scroll
 // - Single Firestore transaction: visit + client counters (+ optional USDA marker)
@@ -13,14 +13,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
-  getDoc,            // ⬅️ pre-check for monthly USDA marker
+  getDoc, // ⬅️ pre-check for monthly USDA marker
   runTransaction,
   serverTimestamp,
   increment,
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
-import { Users, Soup, X } from "lucide-react";
+import { Users, Soup } from "lucide-react";
 
 /* ---------- date helpers ---------- */
 const monthKeyFor = (d = new Date()) =>
@@ -86,7 +86,7 @@ export default function LogVisitForm({
   // Manual USDA toggle — default No; setting Yes will upsert a monthly marker (never deletes)
   const [usdaFirstThisMonth, setUsdaFirstThisMonth] = useState(false);
 
-  // ⬇️ NEW: USDA monthly eligibility state
+  // USDA monthly eligibility state
   const [usdaAllowed, setUsdaAllowed] = useState(true);
   const [usdaChecking, setUsdaChecking] = useState(false);
 
@@ -133,7 +133,26 @@ export default function LogVisitForm({
     return () => clearTimeout(t);
   }, [open, client?.id]);
 
-  // ⬇️ NEW: Pre-check USDA marker existence for this month; disable toggle if already counted
+  // Ensure focused inputs are scrolled into view on mobile when the virtual keyboard opens.
+  useEffect(() => {
+    if (!open) return;
+    const formEl = document.getElementById("log-visit-form");
+    if (!formEl) return;
+    function onFocusIn(e) {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (window.innerWidth > 768) return;
+      setTimeout(() => {
+        try {
+          target.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch (err) {}
+      }, 320);
+    }
+    formEl.addEventListener("focusin", onFocusIn);
+    return () => formEl.removeEventListener("focusin", onFocusIn);
+  }, [open]);
+
+  // Pre-check USDA marker existence for this month; disable toggle if already counted
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -214,30 +233,24 @@ export default function LogVisitForm({
           throw new Error("Client belongs to a different organization.");
         }
 
-// 2) If toggled Yes *and allowed*, create USDA marker exactly once
-const wantsUsda = usdaFirstThisMonth && usdaAllowed;
-let usdaMarkerCreated = false;
-if (wantsUsda) {
-  const markerId = `${orgId}_${client.id}_${mKey}`;
-  const markerRef = doc(db, "usda_first", markerId);
+        // 2) If toggled Yes *and allowed*, create USDA marker exactly once
+        const wantsUsda = usdaFirstThisMonth && usdaAllowed;
+        if (wantsUsda) {
+          const markerId = `${orgId}_${client.id}_${mKey}`;
+          const markerRef = doc(db, "usda_first", markerId);
 
-  // Check within the same transaction so we don't rely on a stale pre-check
-  const markerSnap = await tx.get(markerRef);
-  if (!markerSnap.exists()) {
-    // Using set() here still hits the "create" rule when it doesn't exist
-    tx.set(markerRef, {
-      orgId,
-      clientId: client.id,
-      locationId,
-      monthKey: mKey,
-      createdAt: serverTimestamp(),
-      createdByUserId: currentUserId,
-    });
-    usdaMarkerCreated = true;
-  }
-}
-
-
+          const markerSnap = await tx.get(markerRef);
+          if (!markerSnap.exists()) {
+            tx.set(markerRef, {
+              orgId,
+              clientId: client.id,
+              locationId,
+              monthKey: mKey,
+              createdAt: serverTimestamp(),
+              createdByUserId: currentUserId,
+            });
+          }
+        }
 
         // Snapshot address fields from the client for historical reporting
         const snapAddress = cur.address || client.address || "";
@@ -306,7 +319,6 @@ if (wantsUsda) {
 
   function onKey(e) {
     if (e.key === "Escape") onClose?.();
-    if (e.key === "Enter") submit();
   }
 
   // If the user lacks permission, show a simple, branded notice in the same shell
@@ -326,35 +338,57 @@ if (wantsUsda) {
           aria-labelledby="no-cap-title"
           className="
             absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(560px,94vw)]
-            bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+            bottom-0 sm:bottom-auto sm:top-[55%] sm:-translate-y-1/2
             bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
             overflow-hidden flex flex-col
+            sm:max-h-[90vh]
           "
+          style={{
+            maxHeight: "calc(100vh - 120px)",
+            marginTop: `calc(env(safe-area-inset-top, 44px) + 56px)`,
+          }}
         >
-          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
-              <h2 id="no-cap-title" className="text-base sm:text-xl font-semibold">
-                Log Visit
-              </h2>
-              <button
-                onClick={onClose}
-                className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
-                aria-label="Close"
-                title="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
+          <div
+            className="sticky top-0 z-10"
+            style={{
+              paddingTop: "env(safe-area-inset-top, 12px)",
+              top: "env(safe-area-inset-top, 12px)",
+            }}
+          >
+            <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+              <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between">
+                <h2
+                  id="no-cap-title"
+                  className="text-base sm:text-xl font-semibold"
+                >
+                  Log Visit
+                </h2>
+                <button
+                  onClick={onClose}
+                  className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  aria-label="Close"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
+
           <div className="p-4 sm:p-6">
             <div
               role="alert"
               className="rounded-2xl border border-amber-200 bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[13px] text-amber-900"
             >
-              You don’t have permission to log visits. Ask an admin to update your role.
+              You don’t have permission to log visits. Ask an admin to update
+              your role.
             </div>
           </div>
-          <div className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4">
+
+          <div
+            className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
+          >
             <div className="flex items-center justify-end">
               <button
                 className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)]"
@@ -379,75 +413,80 @@ if (wantsUsda) {
         onClick={onClose}
       />
 
-      {/* Modal shell — bottom sheet on mobile; centered card on desktop */}
+      {/* Modal shell — matches NewClientForm spacing/shape */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="log-visit-title"
         className="
-          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(620px,94vw)]
-          bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+          absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(560px,94vw)]
+          bottom-0 sm:bottom-auto sm:top-[55%] sm:-translate-y-1/2
           bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
           overflow-hidden flex flex-col
+          sm:max-h-[90vh]
         "
-        onKeyDown={onKey}
         style={{
-          maxHeight: "calc(100vh - 28px)",
-          marginTop: "env(safe-area-inset-top, 8px)",
+          maxHeight: "calc(100vh - 120px)",
+          marginTop: `calc(env(safe-area-inset-top, 44px) + 56px)`,
         }}
+        onKeyDown={onKey}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Header — matches NewClientForm/EditForm */}
-        <div className="sticky top-0 z-10">
+        {/* Header — aligned with NewClientForm header */}
+        <div
+          className="sticky top-0 z-10"
+          style={{
+            paddingTop: "env(safe-area-inset-top, 12px)",
+            top: "env(safe-area-inset-top, 12px)",
+          }}
+        >
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
-            <div className="px-4 sm:px-6 py-3 sm:py-4">
+            <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
-                {/* Title + avatar */}
+                {/* Avatar + title + org/loc */}
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
-                    {initials}
+                    {initials === "👤" ? (
+                      <Users
+                        className="h-5 w-5 text-white/95"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="text-sm font-semibold">{initials}</span>
+                    )}
                   </div>
+
                   <div className="min-w-0">
                     <h2
                       id="log-visit-title"
                       className="text-base sm:text-xl font-semibold truncate"
                     >
-                      Log Visit
+                      {`Log Visit${name ? ` – ${name}` : ""}`}
                     </h2>
-                    <p className="text-[11px] sm:text-xs opacity-90 truncate">
-                      {name || "Client"}
-                    </p>
+
+                    <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight">
+                      <div className="truncate">
+                        Org: <b className="font-medium">{orgId ?? "—"}</b>
+                      </div>
+                      <div className="truncate">
+                        Loc:{" "}
+                        <b className="font-medium">{locationId ?? "—"}</b>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Scope (desktop) */}
-                <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
-                  <span>
-                    Org: <b>{orgId ?? "—"}</b>
-                  </span>
-                  <span>
-                    Loc: <b>{locationId ?? "—"}</b>
-                  </span>
-                </div>
-
                 {/* Close */}
-                <button
-                  onClick={onClose}
-                  className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
-                  aria-label="Close"
-                  title="Close"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Scope (mobile) */}
-              <div className="mt-2 sm:hidden text-[11px] text-white/90 flex flex-wrap gap-x-4 gap-y-1">
-                <span>
-                  Org: <b>{orgId ?? "—"}</b>
-                </span>
-                <span>
-                  Loc: <b>{locationId ?? "—"}</b>
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={onClose}
+                    className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -471,145 +510,149 @@ if (wantsUsda) {
             submit();
           }}
           onKeyDown={handleFormKeyDown}
-          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 grid gap-4 text-[17px] pretty-scroll"
+          id="log-visit-form"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-4 md:py-6 space-y-4 text-[17px] pretty-scroll"
           style={{
             maxHeight: "calc(100vh - 220px)",
             paddingBottom: "env(safe-area-inset-bottom)",
           }}
           noValidate
         >
-          {/* USDA toggle — now auto-disables if already counted this month */}
-          <fieldset className="rounded-2xl border border-brand-200 p-3 sm:p-4">
-            <legend className="text-xs font-medium text-gray-700 px-1">
-              {ICONS.usda}USDA first time this month?
-            </legend>
-
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label
-                className={[
-                  "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-                  usdaFirstThisMonth
-                    ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
-                    : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
-                  (usdaChecking || !usdaAllowed) && "!opacity-60 !cursor-not-allowed",
-                ].join(" ")}
-                aria-disabled={usdaChecking || !usdaAllowed}
-                title={
-                  usdaChecking
-                    ? "Checking eligibility…"
-                    : !usdaAllowed
-                    ? "Already counted this month"
-                    : "Mark this as the first USDA visit for the month"
-                }
-              >
-                <input
-                  type="radio"
-                  name="usda"
-                  className="sr-only"
-                  checked={usdaFirstThisMonth === true}
-                  onChange={() => setUsdaFirstThisMonth(true)}
-                  disabled={usdaChecking || !usdaAllowed}
-                />
-                Yes
-              </label>
-
-              <label
-                className={[
-                  "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-                  !usdaFirstThisMonth
-                    ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
-                    : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
-                ].join(" ")}
-              >
-                <input
-                  type="radio"
-                  name="usda"
-                  className="sr-only"
-                  checked={usdaFirstThisMonth === false}
-                  onChange={() => setUsdaFirstThisMonth(false)}
-                />
-                No
-              </label>
-            </div>
-
-            <p className="mt-2 text-xs text-gray-600">
-              {usdaChecking
-                ? "Checking eligibility…"
-                : usdaAllowed
-                ? `If “Yes”, we’ll record this as the first USDA visit for ${monthKeyFor()} and create a monthly marker.`
-                : "Already counted this month — this option will re-enable next month."}
-            </p>
-          </fieldset>
-
-          {/* Household size — steppers + numeric input (with icon label) */}
-          <div className="rounded-2xl border border-brand-200 p-3 sm:p-4">
-            <label htmlFor="hh-input" className="text-xs font-medium text-gray-700">
-              {ICONS.hh}Household size
-            </label>
-
-            <div className="mt-2 flex items-stretch gap-2">
-              {/* Decrease */}
-              <button
-                type="button"
-                aria-label="Decrease household size"
-                onClick={() =>
-                  setHH((n) => Math.max(MIN_HH, (Number(n) || MIN_HH) - 1))
-                }
-                className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
-              >
-                −
-              </button>
-
-              {/* Number input */}
-              <input
-                id="hh-input"
-                ref={inputRef}
-                type="number"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                min={MIN_HH}
-                max={MAX_HH}
-                step={1}
-                value={hh}
-                onChange={(e) => {
-                  const raw = Number(e.target.value);
-                  if (e.target.value === "") return setHH("");
-                  setHH(Number.isFinite(raw) ? raw : MIN_HH);
-                }}
-                onBlur={(e) => {
-                  const raw = Number(e.target.value);
-                  const clamped = Math.max(
-                    MIN_HH,
-                    Math.min(MAX_HH, Number.isFinite(raw) ? raw : MIN_HH)
-                  );
-                  setHH(clamped);
-                }}
-                className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
-                aria-describedby="hh-help"
+          {/* ==== Section: Household + USDA, matching New Intake layout ==== */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* USDA toggle — boxed card with SectionHeader */}
+            <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-2">
+              <SectionHeader
+                icon={ICONS.usda}
+                label="USDA first time this month?"
               />
 
-              {/* Increase */}
-              <button
-                type="button"
-                aria-label="Increase household size"
-                onClick={() =>
-                  setHH((n) =>
-                    Math.max(
-                      MIN_HH,
-                      Math.min(MAX_HH, (Number(n) || MIN_HH) + 1)
-                    )
-                  )
-                }
-                className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
-              >
-                +
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label
+                  className={[
+                    "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                    usdaFirstThisMonth
+                      ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                      : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
+                    (usdaChecking || !usdaAllowed) &&
+                      "!opacity-60 !cursor-not-allowed",
+                  ].join(" ")}
+                  aria-disabled={usdaChecking || !usdaAllowed}
+                  title={
+                    usdaChecking
+                      ? "Checking eligibility…"
+                      : !usdaAllowed
+                      ? "Already counted this month"
+                      : "Mark this as the first USDA visit for the month"
+                  }
+                >
+                  <input
+                    type="radio"
+                    name="usda"
+                    className="sr-only"
+                    checked={usdaFirstThisMonth === true}
+                    onChange={() => setUsdaFirstThisMonth(true)}
+                    disabled={usdaChecking || !usdaAllowed}
+                  />
+                  Yes
+                </label>
+
+                <label
+                  className={[
+                    "h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                    !usdaFirstThisMonth
+                      ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/40 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
+                      : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400",
+                  ].join(" ")}
+                >
+                  <input
+                    type="radio"
+                    name="usda"
+                    className="sr-only"
+                    checked={usdaFirstThisMonth === false}
+                    onChange={() => setUsdaFirstThisMonth(false)}
+                  />
+                  No
+                </label>
+              </div>
+
+              <p className="mt-1.5 text-[11px] text-gray-600">
+                {usdaChecking
+                  ? "Checking eligibility…"
+                  : usdaAllowed
+                  ? `If “Yes”, we’ll record this as the first USDA visit for ${monthKeyFor()} and create a monthly marker.`
+                  : "Already counted this month — this option will re-enable next month."}
+              </p>
             </div>
 
-            <p id="hh-help" className="mt-1 text-xs text-gray-500">
-              Pick a number from {MIN_HH} to {MAX_HH}.
-            </p>
-          </div>
+            {/* Household size — steppers + numeric input (boxed card) */}
+            <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-2">
+              <SectionHeader icon={ICONS.hh} label="Household size" />
+
+              <div className="mt-3 flex items-stretch gap-2">
+                {/* Decrease */}
+                <button
+                  type="button"
+                  aria-label="Decrease household size"
+                  onClick={() =>
+                    setHH((n) => Math.max(MIN_HH, (Number(n) || MIN_HH) - 1))
+                  }
+                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
+                >
+                  −
+                </button>
+
+                {/* Number input */}
+                <input
+                  id="hh-input"
+                  ref={inputRef}
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  min={MIN_HH}
+                  max={MAX_HH}
+                  step={1}
+                  value={hh}
+                  onChange={(e) => {
+                    const raw = Number(e.target.value);
+                    if (e.target.value === "") return setHH("");
+                    setHH(Number.isFinite(raw) ? raw : MIN_HH);
+                  }}
+                  onBlur={(e) => {
+                    const raw = Number(e.target.value);
+                    const clamped = Math.max(
+                      MIN_HH,
+                      Math.min(MAX_HH, Number.isFinite(raw) ? raw : MIN_HH)
+                    );
+                    setHH(clamped);
+                  }}
+                  className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
+                  aria-describedby="hh-help"
+                />
+
+                {/* Increase */}
+                <button
+                  type="button"
+                  aria-label="Increase household size"
+                  onClick={() =>
+                    setHH((n) =>
+                      Math.max(
+                        MIN_HH,
+                        Math.min(MAX_HH, (Number(n) || MIN_HH) + 1)
+                      )
+                    )
+                  }
+                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
+                >
+                  +
+                </button>
+              </div>
+
+              <p id="hh-help" className="mt-1 text-[11px] text-gray-500">
+                Pick a number from {MIN_HH} to {MAX_HH}.
+              </p>
+            </div>
+          </section>
 
           {/* Error (live region) */}
           <div aria-live="polite" className="min-h-[1rem]">
@@ -621,41 +664,38 @@ if (wantsUsda) {
           </div>
         </form>
 
-        {/* Consent note (matches placement) */}
-        <div className="mt-1 text-[10px] leading-tight text-gray-400 text-center px-2">
+        {/* Consent note — mirrors NewClientForm placement */}
+        <div className="mt-1 text-[9px] leading-snug text-gray-400 text-center px-2 max-w-md mx-auto">
           Visits are recorded for reporting and eligibility. Data stays within
           your organization unless required by law.
         </div>
 
-        {/* Footer — brand buttons */}
+        {/* Footer (sticky, matches NewClientForm proportions) */}
         <div
-          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+          className="sticky bottom-0 z-10 bg-white/95 backdrop-blur px-3 sm:px-6 pt-2 pb-4 flex flex-col items-center"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
         >
-          <div className="flex items-center justify-end gap-2">
-            <button
-              className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-              onClick={onClose}
-              type="button"
-              disabled={busy}
-            >
-              Cancel
-            </button>
-            <button
-              className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] transition disabled:opacity-50 inline-flex items-center gap-2"
-              onClick={submit}
-              type="button"
-              disabled={busy}
-            >
-              {busy ? (
-                <>
-                  <Spinner />
-                  Saving…
-                </>
-              ) : (
-                "Log visit"
-              )}
-            </button>
+          <div className="w-full h-px bg-gray-200 mb-2" />
+          <div className="flex items-center justify-between gap-2 w-full max-w-md mx-auto">
+            <div />
+            <div className="flex items-center gap-2">
+              <button
+                className="h-9 sm:h-10 px-4 sm:px-5 rounded-xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 text-xs sm:text-sm font-semibold"
+                onClick={onClose}
+                type="button"
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-[color:var(--brand-700)] text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50 transition-all duration-150"
+                onClick={submit}
+                type="button"
+                disabled={busy}
+              >
+                {busy ? "Saving…" : "Log visit"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -664,6 +704,18 @@ if (wantsUsda) {
 }
 
 /* ---------- tiny presentational helpers ---------- */
+function SectionHeader({ icon, label }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {icon}
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    </div>
+  );
+}
+
 function Spinner() {
   return (
     <svg

@@ -1,5 +1,5 @@
 // src/components/EditForm.jsx
-// Shepherds Table Cloud — Edit Client (Oct 2025 UI, capability-ready)
+// Shepherds Table Cloud — Edit Client (Oct/Nov 2025 UI, capability-ready)
 // - Mobile: slide-up bottom sheet (mirrors NewClientForm). Desktop: centered card.
 // - Sticky header/footer; pretty-scroll body; avatar initials chip.
 // - Emoji-safe, lucide icons on labels; Mapbox autocomplete matches NewClientForm.
@@ -112,6 +112,19 @@ const ICONS = {
   county: <Landmark size={16} className="text-brand-600 inline mr-1" />,
   hh: <Users size={16} className="text-brand-600 inline mr-1" />,
 };
+
+/* ---------- tiny presentational helper (parity with NewClient/LogVisit) ---------- */
+function SectionHeader({ icon, label }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {icon}
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    </div>
+  );
+}
 
 /* =========================
    Component
@@ -451,10 +464,12 @@ export default function EditForm({ open, client, onClose, onSaved }) {
   if (!open) return null;
 
   const readOnlyBlock = !canEditClients;
-  const headerName = `${tcase(client?.firstName || "")} ${tcase(client?.lastName || "")}`.trim();
+  const headerName = `${tcase(client?.firstName || "")} ${tcase(
+    client?.lastName || ""
+  )}`.trim();
 
   const fieldInputCls =
-    "w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400";
+    "w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400";
 
   /* ---------- render ---------- */
   return (
@@ -473,18 +488,24 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         aria-labelledby="edit-client-title"
         className="
           absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(820px,94vw)]
-          bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
+          bottom-0 sm:bottom-auto sm:top-[55%] sm:-translate-y-1/2
           bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl ring-1 ring-brand-200/70
           overflow-hidden flex flex-col
         "
         style={{
-          maxHeight: "calc(100vh - 28px)",
-          marginTop: "env(safe-area-inset-top, 8px)",
+          maxHeight: "calc(100vh - 120px)",
+          marginTop: "calc(env(safe-area-inset-top, 44px) + 56px)",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Header (sticky) */}
-        <div className="sticky top-0 z-10">
+        {/* Header (sticky, matches NewClient/LogVisit style) */}
+        <div
+          className="sticky top-0 z-10"
+          style={{
+            paddingTop: "env(safe-area-inset-top, 12px)",
+            top: "env(safe-area-inset-top, 12px)",
+          }}
+        >
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
             <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
@@ -499,8 +520,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                   </div>
 
                   <div className="min-w-0">
-                    <h2 id="edit-client-title" className="text-base sm:text-xl font-semibold truncate">
-                      Edit Client
+                    <h2
+                      id="edit-client-title"
+                      className="text-base sm:text-xl font-semibold truncate"
+                    >
+                      {`Edit Client${headerName ? ` – ${headerName}` : ""}`}
                     </h2>
                     <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight">
                       <div className="truncate">
@@ -522,7 +546,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 {/* Close */}
                 <button
                   onClick={onClose}
-                  className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                  className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
                   aria-label="Close"
                   title="Close"
                 >
@@ -549,201 +573,246 @@ export default function EditForm({ open, client, onClose, onSaved }) {
             </div>
           ) : (
             <>
-              {/* Name Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-700">
-                    {ICONS.firstName}First name
-                  </span>
-                  <input
-                    ref={firstRef}
-                    className={fieldInputCls}
-                    name="firstName"
-                    value={form.firstName}
-                    onChange={onChange}
-                    onBlur={() => setForm((f) => ({ ...f, firstName: tcase(f.firstName) }))}
-                    autoComplete="given-name"
-                    required
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-700">
-                    {ICONS.lastName}Last name
-                  </span>
-                  <input
-                    className={fieldInputCls}
-                    name="lastName"
-                    value={form.lastName}
-                    onChange={onChange}
-                    onBlur={() => setForm((f) => ({ ...f, lastName: tcase(f.lastName) }))}
-                    autoComplete="family-name"
-                    required
-                  />
-                </label>
-              </div>
-
-              {/* Address + Autocomplete */}
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-gray-700">
-                  {ICONS.address}Address
-                </span>
-
-                <input
-                  ref={addrBoxRef}
-                  disabled={!addrEnabled}
-                  className={`${fieldInputCls} disabled:bg-gray-50 disabled:text-gray-500`}
-                  placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : "Address search disabled — missing Mapbox token"}
-                  value={form.address}
-                  onChange={onAddressInputChange}
-                  enterKeyHint="next"
-                  autoComplete="street-address"
-                  onFocus={() => addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)}
-                  aria-autocomplete="list"
-                  aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
-                  aria-controls="addr-edit-panel"
+              {/* ===== Section: Client details ===== */}
+              <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
+                <SectionHeader
+                  icon={ICONS.firstName}
+                  label="Client details"
                 />
 
-                {addrEnabled && showDropdown && (
-                  <div
-                    id="addr-edit-panel"
-                    ref={dropdownRef}
-                    className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
-                    role="listbox"
-                    aria-label="Nearby results"
-                  >
-                    <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
-                      {addrLoading ? "Searching addresses…" : "Nearby results"}
-                    </div>
-                    <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
-                      {!addrLoading && suggestions.length === 0 && (
-                        <li className="px-3 py-2 text-sm text-gray-600">No nearby matches</li>
-                      )}
-                      {suggestions.map((sug) => (
-                        <li key={sug.id}>
-                          <button
-                            type="button"
-                            role="option"
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
-                            onClick={() => onPickSuggestion(sug)}
-                            title={sug.place_name}
-                          >
-                            <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
-                            <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
-                      <button
-                        type="button"
-                        className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
-                        onClick={() => setShowDropdown(false)}
-                      >
-                        Hide
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* ZIP + County */}
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <label className="flex-1">
-                    <span className="sr-only">ZIP code</span>
+                {/* Name Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-gray-700">
+                      {ICONS.firstName}
+                      First name
+                    </span>
                     <input
+                      ref={firstRef}
                       className={fieldInputCls}
-                      name="zip"
-                      placeholder="ZIP code"
-                      value={form.zip}
-                      onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
-                      inputMode="numeric"
-                      pattern="\d{5}"
-                      autoComplete="postal-code"
-                      enterKeyHint="next"
+                      name="firstName"
+                      value={form.firstName}
+                      onChange={onChange}
+                      onBlur={() => setForm((f) => ({ ...f, firstName: tcase(f.firstName) }))}
+                      autoComplete="given-name"
+                      required
                     />
                   </label>
-                  <label className="flex-1">
-                    <span className="sr-only">County</span>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-gray-700">
+                      {ICONS.lastName}
+                      Last name
+                    </span>
                     <input
                       className={fieldInputCls}
-                      name="county"
-                      placeholder="County"
-                      value={form.county}
-                      onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
-                      enterKeyHint="next"
+                      name="lastName"
+                      value={form.lastName}
+                      onChange={onChange}
+                      onBlur={() => setForm((f) => ({ ...f, lastName: tcase(f.lastName) }))}
+                      autoComplete="family-name"
+                      required
                     />
                   </label>
                 </div>
-              </div>
 
-              {/* Phone */}
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-gray-700">
-                  {ICONS.phone}Phone
-                </span>
-                <input
-                  className={fieldInputCls}
-                  name="phone"
-                  placeholder="(310) 254-1234"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  enterKeyHint="next"
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
-                />
-              </label>
-
-              {/* DOB + Household size */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Phone */}
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-700">
-                    {ICONS.dob}Date of birth
+                  <span className="text-[11px] font-medium text-gray-700">
+                    {ICONS.phone}
+                    Phone
                   </span>
                   <input
                     className={fieldInputCls}
-                    type="date"
-                    name="dob"
-                    value={form.dob}
-                    onChange={onChange}
-                    max={new Date().toISOString().slice(0, 10)}
+                    name="phone"
+                    placeholder="(310) 254-1234"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    enterKeyHint="next"
+                    value={form.phone}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
                   />
-                  {form.dob && !isYmd(form.dob) && (
-                    <div className="mt-1 text-[12px] text-red-600">Use format YYYY-MM-DD.</div>
-                  )}
                 </label>
 
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-700">
-                    {ICONS.hh}Household size
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      aria-label="Decrease household size"
-                      className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                      onClick={() =>
-                        setForm((f) => ({ ...f, householdSize: String(Math.max(1, Number(onlyDigits(f.householdSize || "1")) - 1)) }))
-                      }
-                    >
-                      –
-                    </button>
-                    <div className="h-12 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
-                      <span className="text-lg font-semibold tabular-nums">
-                        {form.householdSize || 1}
-                      </span>
+                {/* DOB + Household size */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-gray-700">
+                      {ICONS.dob}
+                      Date of birth
+                    </span>
+                    <input
+                      className={fieldInputCls}
+                      type="date"
+                      name="dob"
+                      value={form.dob}
+                      onChange={onChange}
+                      max={new Date().toISOString().slice(0, 10)}
+                    />
+                    {form.dob && !isYmd(form.dob) && (
+                      <div className="mt-1 text-[12px] text-red-600">Use format YYYY-MM-DD.</div>
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-medium text-gray-700">
+                      {ICONS.hh}
+                      Household size
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        aria-label="Decrease household size"
+                        className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            householdSize: String(
+                              Math.max(1, Number(onlyDigits(f.householdSize || "1")) - 1)
+                            ),
+                          }))
+                        }
+                      >
+                        –
+                      </button>
+                      <div className="h-11 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
+                        <span className="text-lg font-semibold tabular-nums">
+                          {form.householdSize || 1}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Increase household size"
+                        className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            householdSize: String(
+                              Math.min(20, Number(onlyDigits(f.householdSize || "1")) + 1)
+                            ),
+                          }))
+                        }
+                      >
+                        +
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      aria-label="Increase household size"
-                      className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                      onClick={() =>
-                        setForm((f) => ({ ...f, householdSize: String(Math.min(20, Number(onlyDigits(f.householdSize || "1")) + 1)) }))
-                      }
+                  </label>
+                </div>
+              </section>
+
+              {/* ===== Section: Address & area ===== */}
+              <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
+                <SectionHeader icon={ICONS.address} label="Address & area" />
+
+                {/* Address + Autocomplete */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-gray-700">
+                    {ICONS.address}
+                    Address
+                  </span>
+
+                  <input
+                    ref={addrBoxRef}
+                    disabled={!addrEnabled}
+                    className={`${fieldInputCls} disabled:bg-gray-50 disabled:text-gray-500`}
+                    placeholder={
+                      addrEnabled
+                        ? "e.g., 185 Harvard Dr, Seal Beach"
+                        : "Address search disabled — missing Mapbox token"
+                    }
+                    value={form.address}
+                    onChange={onAddressInputChange}
+                    enterKeyHint="next"
+                    autoComplete="street-address"
+                    onFocus={() =>
+                      addrEnabled && !addrLocked && suggestions.length && setShowDropdown(true)
+                    }
+                    aria-autocomplete="list"
+                    aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
+                    aria-controls="addr-edit-panel"
+                  />
+
+                  {addrEnabled && showDropdown && (
+                    <div
+                      id="addr-edit-panel"
+                      ref={dropdownRef}
+                      className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
+                      role="listbox"
+                      aria-label="Nearby results"
                     >
-                      +
-                    </button>
+                      <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
+                        {addrLoading ? "Searching addresses…" : "Nearby results"}
+                      </div>
+                      <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
+                        {!addrLoading && suggestions.length === 0 && (
+                          <li className="px-3 py-2 text-sm text-gray-600">No nearby matches</li>
+                        )}
+                        {suggestions.map((sug) => (
+                          <li key={sug.id}>
+                            <button
+                              type="button"
+                              role="option"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                              onClick={() => onPickSuggestion(sug)}
+                              title={sug.place_name}
+                            >
+                              <div className="text-[14px] text-gray-900">
+                                {sug.text || sug.place_name}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {sug.place_name}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
+                        <button
+                          type="button"
+                          className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          Hide
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ZIP + County */}
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <label className="flex-1 flex flex-col gap-1">
+                      <span className="text-[11px] font-medium text-gray-700">
+                        {ICONS.zip}
+                        ZIP code
+                      </span>
+                      <input
+                        className={fieldInputCls}
+                        name="zip"
+                        placeholder="ZIP code"
+                        value={form.zip}
+                        onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
+                        inputMode="numeric"
+                        pattern="\d{5}"
+                        autoComplete="postal-code"
+                        enterKeyHint="next"
+                      />
+                    </label>
+                    <label className="flex-1 flex flex-col gap-1">
+                      <span className="text-[11px] font-medium text-gray-700">
+                        {ICONS.county}
+                        County
+                      </span>
+                      <input
+                        className={fieldInputCls}
+                        name="county"
+                        placeholder="County"
+                        value={form.county}
+                        onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
+                        enterKeyHint="next"
+                      />
+                    </label>
                   </div>
-                </label>
-              </div>
+                </div>
+              </section>
 
               {/* Inactive toggle — visible & writable only with delete capability */}
               {canDeleteClients && (
@@ -755,7 +824,9 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                     onChange={onChange}
                     className="h-4 w-4 rounded border-gray-300"
                   />
-                  <span className="text-gray-700">Mark client as inactive (hidden from search/intake)</span>
+                  <span className="text-gray-700">
+                    Mark client as inactive (hidden from search/intake)
+                  </span>
                 </label>
               )}
 
@@ -775,66 +846,81 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         </div>
 
         {/* Footer (sticky) */}
-        <div
-          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
-          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            {/* Danger / Reactivation — gated by 'deleteClients' */}
-            {canDeleteClients && (
-              <div className="flex items-center gap-2">
-                {!client?.inactive ? (
-                  <button
-                    type="button"
-                    onClick={deactivateClient}
-                    disabled={deactivating}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-                  >
-                    {deactivating ? "Working…" : <> <ShieldAlert className="h-4 w-4" /> Deactivate client</>}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={reactivateClient}
-                    disabled={reactivating}
-                    className="inline-flex items-center gap-2 h-10 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
-                  >
-                    {reactivating ? "Working…" : <> <RotateCcw className="h-4 w-4" /> Reactivate client</>}
-                  </button>
-                )}
-              </div>
-            )}
+<div
+  className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
+  style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+>
+  <div className="w-full h-px bg-gray-200 mb-2" />
 
-            {/* Save/Cancel */}
-            <div className="flex items-center gap-2 sm:ml-auto">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="edit-client-form"
-                disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-                aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-                title={
-                  readOnlyBlock
-                    ? "Not allowed"
-                    : !formValid
-                    ? "Fix the highlighted fields"
-                    : !hasChanges
-                    ? "No changes to save"
-                    : "Save changes"
-                }
-                className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </button>
-            </div>
-          </div>
-        </div>
+  <div className="w-full max-w-xl mx-auto flex flex-col gap-3">
+    {/* Danger / Reactivation — gated by 'deleteClients' */}
+    {canDeleteClients && (
+      <div className="w-full">
+        {!client?.inactive ? (
+          <button
+            type="button"
+            onClick={deactivateClient}
+            disabled={deactivating}
+            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
+          >
+            {deactivating ? (
+              "Working…"
+            ) : (
+              <>
+                <ShieldAlert className="h-4 w-4" /> Deactivate client
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={reactivateClient}
+            disabled={reactivating}
+            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
+          >
+            {reactivating ? (
+              "Working…"
+            ) : (
+              <>
+                <RotateCcw className="h-4 w-4" /> Reactivate client
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    )}
+
+    {/* Save / Cancel row */}
+    <div className="flex items-center justify-end gap-2 w-full">
+      <button
+        type="button"
+        onClick={onClose}
+        className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="edit-client-form"
+        disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+        aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+        title={
+          readOnlyBlock
+            ? "Not allowed"
+            : !formValid
+            ? "Fix the highlighted fields"
+            : !hasChanges
+            ? "No changes to save"
+            : "Save changes"
+        }
+        className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
+      >
+        {saving ? "Saving…" : "Save changes"}
+      </button>
+    </div>
+  </div>
+</div>
+
       </div>
     </div>
   );

@@ -3,14 +3,33 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
-  collection, doc, serverTimestamp, runTransaction, getDocs, setDoc,
-  query, where, limit as qLimit, increment
+  collection,
+  doc,
+  serverTimestamp,
+  runTransaction,
+  getDocs,
+  setDoc,
+  query,
+  where,
+  limit as qLimit,
+  increment,
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import { useAuth } from "../auth/useAuth";
 import {
-  User, IdCard, Calendar, Phone, MapPin, Tag, Landmark, Users, Soup,
-  Languages, ChevronDown, ShieldCheck, GitMerge,
+  User,
+  IdCard,
+  Calendar,
+  Phone,
+  MapPin,
+  Tag,
+  Landmark,
+  Users,
+  Soup,
+  Languages,
+  ChevronDown,
+  ShieldCheck,
+  GitMerge,
 } from "lucide-react";
 
 /* =========================
@@ -87,10 +106,12 @@ const I18N = {
     savedEdit: "Saved ✅",
     errRequiredName: "First and last name are required.",
     errZip: "ZIP code must be 5 digits.",
-    errOrgLoc: "Organization and Location are required (use the switcher in the navbar).",
+    errOrgLoc:
+      "Organization and Location are required (use the switcher in the navbar).",
     errSave: "Error saving, please try again.",
     dupFoundTitle: "Existing client found",
-    dupFoundMsg: "There’s already a client matching these details in this organization.",
+    dupFoundMsg:
+      "There’s already a client matching these details in this organization.",
     dupLogVisit: "Log Visit for Existing",
     dupUseAnyways: "Create new anyway",
     searching: "Searching addresses…",
@@ -132,7 +153,8 @@ const I18N = {
     savedEdit: "Guardado ✅",
     errRequiredName: "El nombre y los apellidos son obligatorios.",
     errZip: "El código postal debe tener 5 dígitos.",
-    errOrgLoc: "Se requieren Organización y Ubicación (use el selector en la barra).",
+    errOrgLoc:
+      "Se requieren Organización y Ubicación (use el selector en la barra).",
     errSave: "Error al guardar. Intente de nuevo.",
     dupFoundTitle: "Cliente existente encontrado",
     dupFoundMsg: "Ya existe un cliente con estos datos en esta organización.",
@@ -172,6 +194,19 @@ const ICONS = {
   usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
 };
 
+// Reusable header with icon + title + horizontal line
+function SectionHeader({ icon, label }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
+      <span className="flex items-center gap-1 whitespace-nowrap">
+        {icon}
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    </div>
+  );
+}
+
 const onlyDigits = (s = "") => s.replace(/\D/g, "");
 const normalizePhone = onlyDigits;
 const tcase = (s = "") =>
@@ -181,7 +216,9 @@ const tcase = (s = "") =>
     .replace(/([- ][\p{L}])/gu, (m) => m[0] + m[1].toUpperCase());
 
 const localDateKey = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
 const monthKey = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 function isoWeekKey(d = new Date()) {
@@ -196,7 +233,10 @@ function formatPhone(value) {
   const len = digits.length;
   if (len <= 3) return digits;
   if (len <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(
+    6,
+    10
+  )}`;
 }
 function handleFormKeyDown(e) {
   if (e.key !== "Enter") return;
@@ -204,12 +244,17 @@ function handleFormKeyDown(e) {
   const tag = el.tagName.toLowerCase();
   const type = (el.getAttribute("type") || "").toLowerCase();
   const safe =
-    tag === "textarea" || tag === "select" || tag === "button" || type === "submit" || type === "button";
+    tag === "textarea" ||
+    tag === "select" ||
+    tag === "button" ||
+    type === "submit" ||
+    type === "button";
   if (safe) return;
   e.preventDefault();
   const form = e.currentTarget;
-  const focusables = Array.from(form.querySelectorAll("input, select, textarea"))
-    .filter((n) => !n.disabled && n.type !== "hidden" && n.tabIndex !== -1);
+  const focusables = Array.from(
+    form.querySelectorAll("input, select, textarea")
+  ).filter((n) => !n.disabled && n.type !== "hidden" && n.tabIndex !== -1);
   const idx = focusables.indexOf(el);
   if (idx > -1 && idx < focusables.length - 1) focusables[idx + 1].focus();
   else el.blur();
@@ -218,20 +263,32 @@ function parseFeatureAddressParts(feature) {
   const street = feature.place_type?.includes("address")
     ? `${feature.address ?? ""} ${feature.text ?? ""}`.trim()
     : feature.text || "";
-  let city = ""; let county = ""; let zip = ""; let region = "";
+  let city = "";
+  let county = "";
+  let zip = "";
+  let region = "";
   if (Array.isArray(feature.context)) {
     for (const c of feature.context) {
       const id = c.id || "";
-      if (!city && (id.startsWith("locality") || id.startsWith("place"))) city = c.text || city;
+      if (!city && (id.startsWith("locality") || id.startsWith("place")))
+        city = c.text || city;
       if (!county && id.startsWith("district")) county = c.text || county;
-      if (!zip && id.startsWith("postcode")) zip = (c.text || "").replace(/\D/g, "");
+      if (!zip && id.startsWith("postcode"))
+        zip = (c.text || "").replace(/\D/g, "");
       if (!region && id.startsWith("region")) region = c.text || region;
     }
   }
-  if (!city && (feature.place_type?.includes("place") || feature.place_type?.includes("locality"))) {
+  if (
+    !city &&
+    (feature.place_type?.includes("place") ||
+      feature.place_type?.includes("locality"))
+  ) {
     city = feature.text || city;
   }
-  const displayAddress = street && city ? `${street}, ${city}` : feature.place_name?.split(",")[0] || "";
+  const displayAddress =
+    street && city
+      ? `${street}, ${city}`
+      : feature.place_name?.split(",")[0] || "";
   return { displayAddress, zip, county, region };
 }
 function hashDJB2(str = "") {
@@ -277,7 +334,11 @@ export default function NewClientForm({
   } = authCtx || {};
 
   const lsScope = (() => {
-    try { return JSON.parse(localStorage.getItem("stc_scope") || "{}"); } catch { return {}; }
+    try {
+      return JSON.parse(localStorage.getItem("stc_scope") || "{}");
+    } catch {
+      return {};
+    }
   })();
 
   const orgId =
@@ -301,16 +362,17 @@ export default function NewClientForm({
   const sticky = useMemo(() => loadPrefs(), [open]);
 
   const DRAFT_KEY = useMemo(
-    () => (orgId ? `newClientForm.draft.${orgId}.${locationId ?? "none"}` : null),
+    () =>
+      orgId ? `newClientForm.draft.${orgId}.${locationId ?? "none"}` : null,
     [orgId, locationId]
   );
 
   const [form, setForm] = useState(() => ({
-  ...initialForm,
-  zip: FALLBACK_DEFAULTS.zipDefault,
-  county: FALLBACK_DEFAULTS.countyDefault,
-  autoClose: sticky.autoClose, // keep user's autoClose preference only
-}));
+    ...initialForm,
+    zip: FALLBACK_DEFAULTS.zipDefault,
+    county: FALLBACK_DEFAULTS.countyDefault,
+    autoClose: sticky.autoClose, // keep user's autoClose preference only
+  }));
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -323,7 +385,9 @@ export default function NewClientForm({
     if (saved === "en" || saved === "es") return saved;
     return navigator.language?.toLowerCase().startsWith("es") ? "es" : "en";
   });
-  useEffect(() => { localStorage.setItem("newClientForm.lang", lang); }, [lang]);
+  useEffect(() => {
+    localStorage.setItem("newClientForm.lang", lang);
+  }, [lang]);
 
   // Focus + backdrop scroll lock
   const firstRef = useRef(null);
@@ -332,7 +396,10 @@ export default function NewClientForm({
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const t = setTimeout(() => firstRef.current?.focus(), 120);
-    return () => { document.body.style.overflow = prev; clearTimeout(t); };
+    return () => {
+      document.body.style.overflow = prev;
+      clearTimeout(t);
+    };
   }, [open]);
 
   // Load form on open
@@ -351,7 +418,9 @@ export default function NewClientForm({
         county: client?.county || prefs.countyDefault,
         householdSize: Number(client?.householdSize ?? 1),
         firstTimeThisMonth:
-          typeof client?.firstTimeThisMonth === "boolean" ? client.firstTimeThisMonth : null,
+          typeof client?.firstTimeThisMonth === "boolean"
+            ? client.firstTimeThisMonth
+            : null,
         autoClose: prefs.autoClose,
       });
       setDraftLoaded(false);
@@ -365,16 +434,17 @@ export default function NewClientForm({
       }
       if (restored && typeof restored === "object") {
         setForm({
-        ...initialForm,
-        ...restored,
-        // keep whatever was in the draft; if missing, fall back to the hard defaults
-        zip: restored.zip || FALLBACK_DEFAULTS.zipDefault,
-        county: restored.county || FALLBACK_DEFAULTS.countyDefault,
-        autoClose: prefs.autoClose,
-        householdSize: Number(restored.householdSize ?? 1),
-        firstTimeThisMonth:
-          typeof restored.firstTimeThisMonth === "boolean" ? restored.firstTimeThisMonth : null,
-      });
+          ...initialForm,
+          ...restored,
+          zip: restored.zip || FALLBACK_DEFAULTS.zipDefault,
+          county: restored.county || FALLBACK_DEFAULTS.countyDefault,
+          autoClose: prefs.autoClose,
+          householdSize: Number(restored.householdSize ?? 1),
+          firstTimeThisMonth:
+            typeof restored.firstTimeThisMonth === "boolean"
+              ? restored.firstTimeThisMonth
+              : null,
+        });
 
         setDraftLoaded(true);
       } else {
@@ -411,7 +481,10 @@ export default function NewClientForm({
             address: form.address ?? "",
             householdSize: Number(form.householdSize || 1),
             firstTimeThisMonth:
-              typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,          })
+              typeof form.firstTimeThisMonth === "boolean"
+                ? form.firstTimeThisMonth
+                : null,
+          })
         );
       } catch {}
     }, 350);
@@ -420,7 +493,9 @@ export default function NewClientForm({
 
   const clearDraft = useCallback(() => {
     if (!DRAFT_KEY) return;
-    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
     setDraftLoaded(false);
   }, [DRAFT_KEY]);
 
@@ -455,28 +530,27 @@ export default function NewClientForm({
 
   useEffect(() => {
     if (!open) return;
-    if (!addrEnabled) { setSuggestions([]); setShowDropdown(false); return; }
+    if (!addrEnabled) {
+      setSuggestions([]);
+      setShowDropdown(false);
+      return;
+    }
 
-    const qRaw = (addrQ || "");
+    const qRaw = addrQ || "";
     const q = qRaw.trim();
 
-    // Show "Quick options" ONLY if the input is empty.
     const showQuick = q.length === 0;
 
-    // If input is empty and not locked, open the panel for quick picks; else we'll open on fetch.
     if (showQuick && !addrLocked) {
       setSuggestions([]);
       setShowDropdown(true);
     }
 
-   if (q.length < 3 || addrLocked) {
+    if (q.length < 3 || addrLocked) {
       setSuggestions([]);
-      // Show quick options only when the field is empty and not locked; otherwise hide.
       setShowDropdown(showQuick && !addrLocked);
       return;
     }
-
-
 
     let alive = true;
     const id = setTimeout(async () => {
@@ -487,7 +561,6 @@ export default function NewClientForm({
         url.searchParams.set("autocomplete", "true");
         url.searchParams.set("proximity", LB_PROX);
         url.searchParams.set("country", "US");
-        // Keep search strictly inside California
         url.searchParams.set("bbox", CA_BBOX);
         url.searchParams.set("limit", "7");
         url.searchParams.set("types", "address,locality,place,poi");
@@ -496,7 +569,6 @@ export default function NewClientForm({
         const data = await res.json();
         const feats = Array.isArray(data.features) ? data.features : [];
 
-        // Keep only results inside California, preferring LA & nearby counties
         const cleaned = feats
           .map((f) => ({
             id: f.id,
@@ -511,14 +583,16 @@ export default function NewClientForm({
             const { region, county } = parseFeatureAddressParts(f._raw);
             const inCA = (region || "").toLowerCase().includes("california");
             if (!inCA) return false;
-            // If county present, prefer the nearby ring
-            if (county) return true; // keep all CA, we’ll sort below
+            if (county) return true;
             return true;
           })
-          // Sort: nearby counties first, then others
           .sort((a, b) => {
-            const pa = NEARBY_COUNTIES.has(parseFeatureAddressParts(a._raw).county || "");
-            const pb = NEARBY_COUNTIES.has(parseFeatureAddressParts(b._raw).county || "");
+            const pa = NEARBY_COUNTIES.has(
+              parseFeatureAddressParts(a._raw).county || ""
+            );
+            const pb = NEARBY_COUNTIES.has(
+              parseFeatureAddressParts(b._raw).county || ""
+            );
             return Number(pb) - Number(pa);
           });
 
@@ -527,16 +601,27 @@ export default function NewClientForm({
           setShowDropdown(cleaned.length > 0 || showQuick);
         }
       } catch {
-        if (alive) { setSuggestions([]); setShowDropdown(showQuick); }
-      } finally { if (alive) setAddrLoading(false); }
+        if (alive) {
+          setSuggestions([]);
+          setShowDropdown(showQuick);
+        }
+      } finally {
+        if (alive) setAddrLoading(false);
+      }
     }, 220);
-    return () => { clearTimeout(id); alive = false; };
+    return () => {
+      clearTimeout(id);
+      alive = false;
+    };
   }, [addrQ, addrLocked, open, addrEnabled]);
 
   useEffect(() => {
     if (!showDropdown) return;
     const onDocClick = (e) => {
-      if (!addrBoxRef.current?.contains(e.target) && !dropdownRef.current?.contains(e.target)) {
+      if (
+        !addrBoxRef.current?.contains(e.target) &&
+        !dropdownRef.current?.contains(e.target)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -545,12 +630,14 @@ export default function NewClientForm({
   }, [showDropdown]);
 
   function onPickSuggestion(feat) {
-    const { displayAddress, zip, county } = parseFeatureAddressParts(feat._raw || feat);
+    const { displayAddress, zip, county } = parseFeatureAddressParts(
+      feat._raw || feat
+    );
     setForm((f) => ({
       ...f,
       address: displayAddress,
       zip: zip || f.zip,
-      county: county || f.county
+      county: county || f.county,
     }));
     setSuggestions([]);
     setShowDropdown(false);
@@ -561,11 +648,8 @@ export default function NewClientForm({
     const v = e.target.value;
     setForm((f) => ({ ...f, address: v }));
     if (addrLocked && v !== lastPicked) setAddrLocked(false);
-    // As soon as the user types, keep the panel open (Quick options will disappear automatically)
     const len = v.trim().length;
-      setShowDropdown(len === 0 ? !addrLocked : len >= 3);
-
-
+    setShowDropdown(len === 0 ? !addrLocked : len >= 3);
   }
 
   /* =========================
@@ -577,8 +661,10 @@ export default function NewClientForm({
         return t(lang, "permNoEdit");
       }
     } else {
-      const canCreate = canCreateClients || (hasCapability && hasCapability("createClients"));
-      const canLog = canLogVisits || (hasCapability && hasCapability("logVisits"));
+      const canCreate =
+        canCreateClients || (hasCapability && hasCapability("createClients"));
+      const canLog =
+        canLogVisits || (hasCapability && hasCapability("logVisits"));
       if (!canCreate) return t(lang, "permNoCreate");
       if (!canLog) return t(lang, "permNoLog");
     }
@@ -596,11 +682,17 @@ export default function NewClientForm({
 
   async function preflightDedupe({ phoneDigits, nameDobHash }) {
     const baseFilters = [where("orgId", "==", orgId)];
-    if (!canPickAllLocations && locationId) baseFilters.push(where("locationId", "==", locationId));
+    if (!canPickAllLocations && locationId)
+      baseFilters.push(where("locationId", "==", locationId));
 
     if (phoneDigits) {
       const qs = await getDocs(
-        query(collection(db, "clients"), ...baseFilters, where("phoneDigits", "==", phoneDigits), qLimit(1))
+        query(
+          collection(db, "clients"),
+          ...baseFilters,
+          where("phoneDigits", "==", phoneDigits),
+          qLimit(1)
+        )
       );
       if (!qs.empty) {
         const d = qs.docs[0];
@@ -609,7 +701,12 @@ export default function NewClientForm({
     }
     if (nameDobHash) {
       const qs2 = await getDocs(
-        query(collection(db, "clients"), ...baseFilters, where("nameDobHash", "==", nameDobHash), qLimit(1))
+        query(
+          collection(db, "clients"),
+          ...baseFilters,
+          where("nameDobHash", "==", nameDobHash),
+          qLimit(1)
+        )
       );
       if (!qs2.empty) {
         const d = qs2.docs[0];
@@ -624,9 +721,9 @@ export default function NewClientForm({
   ========================== */
   const buildBasePayload = useCallback(() => {
     const firstName = tcase(form.firstName.trim());
-    const lastName  = tcase(form.lastName.trim());
+    const lastName = tcase(form.lastName.trim());
     const fullNameLower = `${firstName} ${lastName}`.trim().toLowerCase();
-    const nameDobHash   = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
+    const nameDobHash = hashDJB2(`${fullNameLower}|${form.dob || ""}`);
     const phoneDigits = normalizePhone(form.phone);
     return {
       firstName,
@@ -638,7 +735,10 @@ export default function NewClientForm({
       zip: (form.zip || "").trim(),
       county: (form.county || "").trim(),
       householdSize: Number(form.householdSize || 1),
-      firstTimeThisMonth: typeof form.firstTimeThisMonth === "boolean" ? form.firstTimeThisMonth : null,
+      firstTimeThisMonth:
+        typeof form.firstTimeThisMonth === "boolean"
+          ? form.firstTimeThisMonth
+          : null,
       fullNameLower,
       nameDobHash,
     };
@@ -647,7 +747,10 @@ export default function NewClientForm({
   async function saveClient({ force = false } = {}) {
     if (busy) return;
     const v = validate();
-    if (v) { setMsg(v); return; }
+    if (v) {
+      setMsg(v);
+      return;
+    }
 
     setBusy(true);
     setMsg("");
@@ -688,7 +791,11 @@ export default function NewClientForm({
 
         if (form.firstTimeThisMonth === true) {
           const mk = monthKey(new Date());
-          const markerRef = doc(db, "usda_first", `${orgId}_${clientRef.id}_${mk}`);
+          const markerRef = doc(
+            db,
+            "usda_first",
+            `${orgId}_${clientRef.id}_${mk}`
+          );
           try {
             await setDoc(markerRef, {
               clientId: clientRef.id,
@@ -762,7 +869,11 @@ export default function NewClientForm({
         });
       }
 
-      const saved = { id: createdId, ...(editing ? { ...client } : { orgId, locationId }), ...base };
+      const saved = {
+        id: createdId,
+        ...(editing ? { ...client } : { orgId, locationId }),
+        ...base,
+      };
       onSaved?.(saved);
       setMsg(editing ? t(lang, "savedEdit") : t(lang, "savedMsg"));
       setDup(null);
@@ -771,14 +882,18 @@ export default function NewClientForm({
 
       const prefsNow = loadPrefs();
       const changedZip = form.zip && form.zip !== prefsNow.zipDefault;
-      const changedCounty = form.county && form.county.trim() && form.county !== prefsNow.countyDefault;
+      const changedCounty =
+        form.county &&
+        form.county.trim() &&
+        form.county !== prefsNow.countyDefault;
       if (changedZip || changedCounty) {
         savePrefs({
           zipDefault: changedZip ? form.zip : prefsNow.zipDefault,
-          countyDefault: changedCounty ? form.county : prefsNow.countyDefault,
+          countyDefault: changedCounty
+            ? form.county
+            : prefsNow.countyDefault,
         });
       }
-
 
       if (!editing) {
         if (form.autoClose) {
@@ -789,7 +904,7 @@ export default function NewClientForm({
             ...initialForm,
             zip: FALLBACK_DEFAULTS.zipDefault,
             county: FALLBACK_DEFAULTS.countyDefault,
-            autoClose: prefs.autoClose, // still respect autoClose
+            autoClose: prefs.autoClose,
             firstTimeThisMonth: null,
           });
 
@@ -810,12 +925,18 @@ export default function NewClientForm({
     e.preventDefault();
     await saveClient({ force: false });
   }
-  async function createAnyway() { await saveClient({ force: true }); }
+  async function createAnyway() {
+    await saveClient({ force: true });
+  }
 
   async function logVisitForDuplicate() {
     if (!dup?.id || busy) return;
-    const canLog = canLogVisits || (hasCapability && hasCapability("logVisits"));
-    if (!canLog) { setMsg(t(lang, "permNoLog")); return; }
+    const canLog =
+      canLogVisits || (hasCapability && hasCapability("logVisits"));
+    if (!canLog) {
+      setMsg(t(lang, "permNoLog"));
+      return;
+    }
     setBusy(true);
     setMsg("");
     try {
@@ -832,8 +953,12 @@ export default function NewClientForm({
           const markerSnap = await tx.get(markerRef);
           if (!markerSnap.exists()) {
             tx.set(markerRef, {
-              clientId: dup.id, orgId, locationId, monthKey: mk,
-              createdAt: serverTimestamp(), createdByUserId: auth.currentUser?.uid || null,
+              clientId: dup.id,
+              orgId,
+              locationId,
+              monthKey: mk,
+              createdAt: serverTimestamp(),
+              createdByUserId: auth.currentUser?.uid || null,
             });
           }
         }
@@ -843,14 +968,19 @@ export default function NewClientForm({
           clientId: dup.id,
           clientFirstName: dup.firstName || "",
           clientLastName: dup.lastName || "",
-          orgId, locationId,
+          orgId,
+          locationId,
           householdSize: Number(form.householdSize || 1),
           visitAt: serverTimestamp(),
           createdAt: serverTimestamp(),
-          monthKey: mk, dateKey: dk, weekKey: wk, weekday,
+          monthKey: mk,
+          dateKey: dk,
+          weekKey: wk,
+          weekday,
           usdaFirstTimeThisMonth: wantsUsdaFirst,
           createdByUserId: auth.currentUser?.uid || null,
-          editedAt: null, editedByUserId: null,
+          editedAt: null,
+          editedByUserId: null,
           addedByReports: false,
         });
 
@@ -874,7 +1004,13 @@ export default function NewClientForm({
       setDup(null);
 
       const prefs = loadPrefs();
-      setForm({ ...initialForm, zip: prefs.zipDefault, county: prefs.countyDefault, autoClose: prefs.autoClose, firstTimeThisMonth: null });
+      setForm({
+        ...initialForm,
+        zip: prefs.zipDefault,
+        county: prefs.countyDefault,
+        autoClose: prefs.autoClose,
+        firstTimeThisMonth: null,
+      });
       setAddrLocked(false);
       setLastPicked("");
       clearDraft();
@@ -904,7 +1040,11 @@ export default function NewClientForm({
         const cur = snap.data() || {};
         const patch = {
           phone: cur.phone || base.phone || cur.phone || "",
-          phoneDigits: cur.phoneDigits || normalizePhone(base.phone) || cur.phoneDigits || "",
+          phoneDigits:
+            cur.phoneDigits ||
+            normalizePhone(base.phone) ||
+            cur.phoneDigits ||
+            "",
           address: cur.address || base.address || cur.address || "",
           zip: cur.zip || base.zip || cur.zip || "",
           county: cur.county || base.county || cur.county || "",
@@ -919,7 +1059,13 @@ export default function NewClientForm({
       setDup(null);
 
       const prefs = loadPrefs();
-      setForm({ ...initialForm, zip: prefs.zipDefault, county: prefs.countyDefault, autoClose: prefs.autoClose, firstTimeThisMonth: null });
+      setForm({
+        ...initialForm,
+        zip: prefs.zipDefault,
+        county: prefs.countyDefault,
+        autoClose: prefs.autoClose,
+        firstTimeThisMonth: null,
+      });
       setAddrLocked(false);
       setLastPicked("");
       clearDraft();
@@ -949,13 +1095,17 @@ export default function NewClientForm({
   const dual = (primary, hint) => (
     <span className="flex flex-col">
       <span>{primary}</span>
-      {showAssist && <span className="text-[11px] text-gray-500">{hint}</span>}
+      {showAssist && (
+        <span className="text-[11px] text-gray-500">{hint}</span>
+      )}
     </span>
   );
 
-  const canSubmitNew = (canCreateClients || (hasCapability && hasCapability("createClients")))
-    && (canLogVisits || (hasCapability && hasCapability("logVisits")));
-  const canSubmitEdit = canEditClients || (hasCapability && hasCapability("editClients"));
+  const canSubmitNew =
+    (canCreateClients || (hasCapability && hasCapability("createClients"))) &&
+    (canLogVisits || (hasCapability && hasCapability("logVisits")));
+  const canSubmitEdit =
+    canEditClients || (hasCapability && hasCapability("editClients"));
 
   const quickMode = !form.address || !form.address.trim();
 
@@ -965,7 +1115,10 @@ export default function NewClientForm({
       <button
         aria-label="Close"
         className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
-        onClick={() => { onClose?.(); clearDraft(); }}
+        onClick={() => {
+          onClose?.();
+          clearDraft();
+        }}
       />
 
       {/* Modal shell — bottom sheet on mobile; centered card on desktop */}
@@ -981,15 +1134,16 @@ export default function NewClientForm({
           sm:max-h-[90vh]
         "
         style={{
-          // Lower the sheet more on mobile so header never clips behind the app navbar / status bar
-          maxHeight: "calc(100vh - 28px)",
-          marginTop: `calc(env(safe-area-inset-top, 56px) + 24px)`,
+          // Lower the dialog on mobile so the header sits further from the
+          // browser chrome / notch. Increase the top margin while still
+          // respecting the safe-area inset.
+          maxHeight: "calc(100vh - 120px)",
+          marginTop: `calc(env(safe-area-inset-top, 44px) + 56px)`,
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-
         {/* Header (sticky) */}
-        <div className="sticky top-0 z-10">
+        <div className="sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 12px)", top: "env(safe-area-inset-top, 12px)" }}>
           <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
             <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
@@ -997,14 +1151,20 @@ export default function NewClientForm({
                 <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                   <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
                     {initials === "👤" ? (
-                      <User className="h-5 w-5 text-white/95" aria-hidden="true" />
+                      <User
+                        className="h-5 w-5 text-white/95"
+                        aria-hidden="true"
+                      />
                     ) : (
                       <span>{initials}</span>
                     )}
                   </div>
 
                   <div className="min-w-0">
-                    <h2 id="new-client-title" className="text-base sm:text-xl font-semibold truncate">
+                    <h2
+                      id="new-client-title"
+                      className="text-base sm:text-xl font-semibold truncate"
+                    >
                       {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
                     </h2>
                     <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight">
@@ -1020,7 +1180,9 @@ export default function NewClientForm({
 
                 {/* Language + Close */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <label className="sr-only" htmlFor="lang-select">{t(lang, "language")}</label>
+                  <label className="sr-only" htmlFor="lang-select">
+                    {t(lang, "language")}
+                  </label>
                   <div className="relative shrink-0">
                     <Languages
                       className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[color:var(--brand-700)] z-20 pointer-events-none"
@@ -1046,8 +1208,11 @@ export default function NewClientForm({
                   </div>
 
                   <button
-                    onClick={() => { onClose?.(); clearDraft(); }}
-                    className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                    onClick={() => {
+                      onClose?.();
+                      clearDraft();
+                    }}
+                    className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
                     aria-label="Close"
                     title="Close"
                   >
@@ -1056,19 +1221,7 @@ export default function NewClientForm({
                 </div>
               </div>
 
-              {draftLoaded && !editing && (
-                <div className="mt-2 inline-flex items-center gap-2 text-[11px] font-medium bg-white/15 text-white px-2.5 py-1 rounded-full ring-1 ring-white/25">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {t(lang, "draftLoaded")}
-                  <button
-                    type="button"
-                    onClick={clearDraft}
-                    className="underline underline-offset-2 hover:no-underline ml-1"
-                  >
-                    {t(lang, "clear")}
-                  </button>
-                </div>
-              )}
+              {/* draftLoaded indicator removed — drafts still saved/cleared in code */}
             </div>
           </div>
         </div>
@@ -1085,250 +1238,362 @@ export default function NewClientForm({
             paddingBottom: "env(safe-area-inset-bottom)",
           }}
         >
-
-          {/* Names */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-gray-700">
-                {dual(<>{ICONS.firstName}{t(lang, "firstName")}</>, "First name")}
-              </span>
-              <input
-                ref={firstRef}
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                name="firstName"
-                placeholder="e.g., Brian"
-                autoCapitalize="words"
-                autoComplete="given-name"
-                enterKeyHint="next"
-                value={form.firstName}
-                onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-gray-700">
-                {dual(<>{ICONS.lastName}{t(lang, "lastName")}</>, "Last name")}
-              </span>
-              <input
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                name="lastName"
-                placeholder="e.g., Aiad"
-                autoCapitalize="words"
-                autoComplete="family-name"
-                enterKeyHint="next"
-                value={form.lastName}
-                onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
-                required
-              />
-            </label>
-          </div>
-
-          {/* DOB + Phone */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-gray-700">
-                {dual(<>{ICONS.dob}{t(lang, "dob")}</>, "Date of birth")}
-              </span>
-              <input
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                type="date"
-                name="dob"
-                autoComplete="bday"
-                value={form.dob}
-                onChange={(e) => setForm((f) => ({ ...f, dob: e.target.value }))}
-                max={new Date().toISOString().slice(0, 10)}
-                enterKeyHint="next"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-gray-700">
-                {dual(<>{ICONS.phone}{t(lang, "phone")}</>, "Phone")}
-              </span>
-              <input
-                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                name="phone"
-                placeholder="(310) 254-1234"
-                inputMode="tel"
-                autoComplete="tel"
-                enterKeyHint="next"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
-              />
-            </label>
-          </div>
-
-          {/* Address + ZIP + County */}
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-700">
-              {dual(<>{ICONS.address}{t(lang, "address")}</>, "Address")}
-            </span>
-
-            <input
-              ref={addrBoxRef}
-              disabled={!addrEnabled}
-              className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400 disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder={addrEnabled ? "e.g., 185 Harvard Dr, Seal Beach" : t(lang, "addrDisabled")}
-              value={form.address}
-              onChange={onAddressInputChange}
-              enterKeyHint="next"
-              autoComplete="street-address"
-              onFocus={() => {
-                if (!addrEnabled) return;
-                const empty = !form.address || !form.address.trim();
-                // Only open the dropdown on focus if the field is empty.
-                setShowDropdown(empty && !addrLocked);
-              }}
-              aria-autocomplete="list"
-              aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
-              aria-controls="addr-nearby-panel"
+          {/* ==== Section: Basic info (names + DOB + phone) ==== */}
+          <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
+            <SectionHeader
+              icon={ICONS.firstName}
+              label={dual(
+                <>Client details</>,
+                "Name and basic information"
+              )}
             />
 
-            {addrEnabled && showDropdown && (
-              <div
-                id="addr-nearby-panel"
-                ref={dropdownRef}
-                className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
-                role="listbox"
-                aria-label="Nearby results"
-              >
-                {/* Quick options — only when input is empty */}
-                {quickMode && (
-                  <>
-                    <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
-                      {t(lang, "quickOptions")}
-                    </div>
-                    <ul className="divide-y">
-                      <li>
-                        <button
-                          type="button"
-                          role="option"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
-                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); chooseHomeless(); }}
-                          title={t(lang, "homelessQuick")}
-                        >
-                          {t(lang, "homelessQuick")}
-                        </button>
-                      </li>
-                    </ul>
-                  </>
-                )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-medium text-gray-600">
+                  {dual(
+                    <>
+                      {ICONS.firstName}
+                      {t(lang, "firstName")}
+                    </>,
+                    "First name"
+                  )}
+                </span>
+                <input
+                  ref={firstRef}
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  name="firstName"
+                  placeholder="e.g., Brian"
+                  autoCapitalize="words"
+                  autoComplete="given-name"
+                  enterKeyHint="next"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, firstName: e.target.value }))
+                  }
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-medium text-gray-600">
+                  {dual(
+                    <>
+                      {ICONS.lastName}
+                      {t(lang, "lastName")}
+                    </>,
+                    "Last name"
+                  )}
+                </span>
+                <input
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  name="lastName"
+                  placeholder="e.g., Aiad"
+                  autoCapitalize="words"
+                  autoComplete="family-name"
+                  enterKeyHint="next"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, lastName: e.target.value }))
+                  }
+                  required
+                />
+              </label>
+            </div>
 
-                {/* Nearby results — only when user has started typing */}
-                {!quickMode && (
-                  <>
-                    <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-y">
-                      {addrLoading ? t(lang, "searching") : "Nearby results"}
-                    </div>
-                    <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
-                      {!addrLoading && suggestions.length === 0 && (
-                        <li className="px-3 py-2 text-sm text-gray-600">{t(lang, "noMatches")}</li>
-                      )}
-                      {suggestions.map((sug) => (
-                        <li key={sug.id}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-medium text-gray-600">
+                  {dual(
+                    <>
+                      {ICONS.dob}
+                      {t(lang, "dob")}
+                    </>,
+                    "Date of birth"
+                  )}
+                </span>
+                <input
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  type="date"
+                  name="dob"
+                  autoComplete="bday"
+                  value={form.dob}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, dob: e.target.value }))
+                  }
+                  max={new Date().toISOString().slice(0, 10)}
+                  enterKeyHint="next"
+                />
+              </label>
+              <label className="flex flex-col gap-1 min-w-0">
+                <span className="text-[11px] font-medium text-gray-600">
+                  {dual(
+                    <>
+                      {ICONS.phone}
+                      {t(lang, "phone")}
+                    </>,
+                    "Phone"
+                  )}
+                </span>
+                <input
+                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                  name="phone"
+                  placeholder="(310) 254-1234"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  enterKeyHint="next"
+                  value={form.phone}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      phone: formatPhone(e.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          {/* ==== Section: Address + zip/county ==== */}
+          <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
+            <SectionHeader
+              icon={ICONS.address}
+              label={dual(
+                <>Address & area</>,
+                "Where the client stays most nights"
+              )}
+            />
+
+            <div className="flex flex-col gap-1">
+              <input
+                ref={addrBoxRef}
+                disabled={!addrEnabled}
+                className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400 disabled:bg-gray-50 disabled:text-gray-500"
+                placeholder={
+                  addrEnabled
+                    ? "e.g., 185 Harvard Dr, Seal Beach"
+                    : t(lang, "addrDisabled")
+                }
+                value={form.address}
+                onChange={onAddressInputChange}
+                enterKeyHint="next"
+                autoComplete="street-address"
+                onFocus={() => {
+                  if (!addrEnabled) return;
+                  const empty = !form.address || !form.address.trim();
+                  setShowDropdown(empty && !addrLocked);
+                }}
+                aria-autocomplete="list"
+                aria-expanded={addrEnabled && showDropdown ? "true" : "false"}
+                aria-controls="addr-nearby-panel"
+              />
+
+              {addrEnabled && showDropdown && (
+                <div
+                  id="addr-nearby-panel"
+                  ref={dropdownRef}
+                  className="mt-2 rounded-2xl border border-brand-200 bg-white shadow-soft overflow-hidden"
+                  role="listbox"
+                  aria-label="Nearby results"
+                >
+                  {/* Quick options — only when input is empty */}
+                  {quickMode && (
+                    <>
+                      <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-b">
+                        {t(lang, "quickOptions")}
+                      </div>
+                      <ul className="divide-y">
+                        <li>
                           <button
                             type="button"
                             role="option"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => onPickSuggestion(sug)}
-                            title={sug.place_name}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              chooseHomeless();
+                            }}
+                            title={t(lang, "homelessQuick")}
                           >
-                            <div className="text-[14px] text-gray-900">{sug.text || sug.place_name}</div>
-                            <div className="text-xs text-gray-600 truncate">{sug.place_name}</div>
+                            {t(lang, "homelessQuick")}
                           </button>
                         </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+                      </ul>
+                    </>
+                  )}
 
-                <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
-                  <button
-                    type="button"
-                    className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
-                    onClick={() => setShowDropdown(false)}
-                  >
-                    Hide
-                  </button>
+                  {/* Nearby results — only when user has typed */}
+                  {!quickMode && (
+                    <>
+                      <div className="px-3 py-2 text-[11px] font-medium text-gray-600 bg-gray-50 border-y">
+                        {addrLoading ? t(lang, "searching") : "Nearby results"}
+                      </div>
+                      <ul className="max-h-48 sm:max-h-64 overflow-y-auto divide-y pretty-scroll pr-1">
+                        {!addrLoading && suggestions.length === 0 && (
+                          <li className="px-3 py-2 text-sm text-gray-600">
+                            {t(lang, "noMatches")}
+                          </li>
+                        )}
+                        {suggestions.map((sug) => (
+                          <li key={sug.id}>
+                            <button
+                              type="button"
+                              role="option"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 focus:bg-brand-50 focus:outline-none"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => onPickSuggestion(sug)}
+                              title={sug.place_name}
+                            >
+                              <div className="text-[14px] text-gray-900">
+                                {sug.text || sug.place_name}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {sug.place_name}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2 px-3 py-2 bg-gray-50">
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded-md border border-brand-200 text-gray-700 hover:bg-gray-100"
+                      onClick={() => setShowDropdown(false)}
+                    >
+                      Hide
+                    </button>
+                  </div>
                 </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-gray-600">
+                    {dual(
+                      <>
+                        {ICONS.zip}
+                        {t(lang, "zip")}
+                      </>,
+                      "ZIP code"
+                    )}
+                  </span>
+                  <input
+                    className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                    name="zip"
+                    placeholder={lang === "es" ? "Código postal" : "ZIP code"}
+                    value={form.zip}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, zip: e.target.value }))
+                    }
+                    onBlur={() => {
+                      const v = (form.zip || "").trim();
+                      if (/^\d{5}$/.test(v)) savePrefs({ zipDefault: v });
+                    }}
+                    inputMode="numeric"
+                    pattern="\d{5}"
+                    autoComplete="postal-code"
+                    enterKeyHint="next"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-gray-600">
+                    {dual(
+                      <>
+                        {ICONS.county}
+                        {t(lang, "county")}
+                      </>,
+                      "County"
+                    )}
+                  </span>
+                  <input
+                    className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-11 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
+                    name="county"
+                    placeholder={lang === "es" ? "Condado" : "County"}
+                    value={form.county}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, county: e.target.value }))
+                    }
+                    onBlur={() => {
+                      const v = (form.county || "").trim();
+                      if (v) savePrefs({ countyDefault: v });
+                    }}
+                    enterKeyHint="next"
+                  />
+                </label>
               </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <label className="flex-1">
-                <span className="sr-only">{t(lang, "zip")}</span>
-                <input
-                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                  name="zip"
-                  placeholder={` ${lang === "es" ? "Código postal" : "ZIP code"}`}
-                  value={form.zip}
-                  onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
-                  onBlur={() => {
-                    const v = (form.zip || "").trim();
-                    if (/^\d{5}$/.test(v)) savePrefs({ zipDefault: v });
-                  }}
-                  inputMode="numeric"
-                  pattern="\d{5}"
-                  autoComplete="postal-code"
-                  enterKeyHint="next"
-                />
-              </label>
-              <label className="flex-1">
-                <span className="sr-only">{t(lang, "county")}</span>
-                <input
-                  className="w-full bg-white border border-brand-200 rounded-2xl p-3 h-12 shadow-inner/5 focus:outline-none focus:ring-4 focus:ring-brand-200 focus:border-brand-400"
-                  name="county"
-                  placeholder={` ${lang === "es" ? "Condado" : "County"}`}
-                  value={form.county}
-                  onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))}
-                  onBlur={() => {
-                    const v = (form.county || "").trim();
-                    if (v) savePrefs({ countyDefault: v });
-                  }}
-                  enterKeyHint="next"
-                />
-              </label>
             </div>
-          </div>
+          </section>
 
-
-          {/* Household + USDA */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-medium text-gray-700">
-                {dual(<>{ICONS.hh}{t(lang, "hhSize")}</>, "Household size")}
-              </span>
-              <div className="flex items-center gap-3">
+          {/* ==== Section: Household + USDA, matching LogVisit style ==== */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Household size boxed section */}
+            <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4">
+              <SectionHeader
+                icon={ICONS.hh}
+                label={dual(
+                  t(lang, "hhSize"),
+                  "Number of people in household"
+                )}
+              />
+              <div className="mt-3 flex items-center gap-3">
                 <button
                   type="button"
                   aria-label="Decrease household size"
-                  className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                  onClick={() => setForm((f) => ({ ...f, householdSize: Math.max(1, Number(f.householdSize) - 1) }))}
+                  className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      householdSize: Math.max(
+                        1,
+                        Number(f.householdSize) - 1
+                      ),
+                    }))
+                  }
                 >
                   –
                 </button>
-                <div className="h-12 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
-                  <span className="text-lg font-semibold tabular-nums">{form.householdSize}</span>
+                <div className="h-11 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
+                  <span className="text-lg font-semibold tabular-nums">
+                    {form.householdSize}
+                  </span>
                 </div>
                 <button
                   type="button"
                   aria-label="Increase household size"
-                  className="h-12 w-12 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                  onClick={() => setForm((f) => ({ ...f, householdSize: Math.min(20, Number(f.householdSize) + 1) }))}
+                  className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      householdSize: Math.min(
+                        20,
+                        Number(f.householdSize) + 1
+                      ),
+                    }))
+                  }
                 >
                   +
                 </button>
               </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Pick a number from 1 to 20.
+              </p>
             </div>
 
+            {/* USDA boxed section */}
             {!editing && (
-              <fieldset className="flex flex-col gap-2">
-                <legend className="text-xs font-medium text-gray-700">
-                  {dual(<>{ICONS.usda}{t(lang, "usdaThisMonth")}</>, "First time receiving USDA this month")}
-                </legend>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4">
+                <SectionHeader
+                  icon={ICONS.usda}
+                  label={dual(
+                    t(lang, "usdaThisMonth"),
+                    "USDA status for this month only"
+                  )}
+                />
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
+                    className={`h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
                       form.firstTimeThisMonth === true
                         ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                         : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
@@ -1339,12 +1604,17 @@ export default function NewClientForm({
                       name="usdaFirstThisMonth"
                       className="sr-only"
                       checked={form.firstTimeThisMonth === true}
-                      onChange={() => setForm((f) => ({ ...f, firstTimeThisMonth: true }))}
+                      onChange={() =>
+                        setForm((f) => ({
+                          ...f,
+                          firstTimeThisMonth: true,
+                        }))
+                      }
                     />
                     {t(lang, "yes")}
                   </label>
                   <label
-                    className={`h-12 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
+                    className={`h-11 rounded-2xl border grid place-items-center text-sm font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 ${
                       form.firstTimeThisMonth === false
                         ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white border-[color:var(--brand-700)] ring-1 ring-brand-700/50 shadow-[0_6px_14px_-6px_rgba(199,58,49,0.35)]"
                         : "bg-white text-brand-900 border-brand-300 hover:bg-brand-50 hover:border-brand-400"
@@ -1355,37 +1625,64 @@ export default function NewClientForm({
                       name="usdaFirstThisMonth"
                       className="sr-only"
                       checked={form.firstTimeThisMonth === false}
-                      onChange={() => setForm((f) => ({ ...f, firstTimeThisMonth: false }))}
+                      onChange={() =>
+                        setForm((f) => ({
+                          ...f,
+                          firstTimeThisMonth: false,
+                        }))
+                      }
                     />
                     {t(lang, "no")}
                   </label>
                 </div>
-                <p className="text-xs text-gray-500">{t(lang, "tipUsda")}</p>
-              </fieldset>
+                <p className="mt-2 text-[11px] text-gray-500">
+                  {t(lang, "tipUsda")}
+                </p>
+              </div>
             )}
-          </div>
+          </section>
 
           {/* Duplicate card */}
           {dup && (
             <div className="rounded-2xl border bg-amber-50 ring-1 ring-amber-200 p-4 space-y-2">
-              <div className="font-semibold text-amber-900">{t(lang, "dupFoundTitle")}</div>
-              <div className="text-sm text-amber-900/90">{t(lang, "dupFoundMsg")}</div>
+              <div className="font-semibold text-amber-900">
+                {t(lang, "dupFoundTitle")}
+              </div>
               <div className="text-sm text-amber-900/90">
-                <span className="font-medium">{dup.firstName} {dup.lastName}</span>
+                {t(lang, "dupFoundMsg")}
+              </div>
+              <div className="text-sm text-amber-900/90">
+                <span className="font-medium">
+                  {dup.firstName} {dup.lastName}
+                </span>
                 {!!dup.address && ` • ${dup.address}`} {!!dup.zip && ` ${dup.zip}`}
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"
                   onClick={logVisitForDuplicate}
-                  disabled={busy || mergeBusy || !(canLogVisits || (hasCapability && hasCapability("logVisits")))}
+                  disabled={
+                    busy ||
+                    mergeBusy ||
+                    !(
+                      canLogVisits ||
+                      (hasCapability && hasCapability("logVisits"))
+                    )
+                  }
                   className="h-10 px-3 rounded-xl bg-[color:var(--brand-700)] text-white text-sm font-medium hover:bg-[color:var(--brand-600)] disabled:opacity-50"
                 >
                   {t(lang, "dupLogVisit")}
                 </button>
                 <button
                   type="button"
-                  disabled={busy || mergeBusy || !(canCreateClients || (hasCapability && hasCapability("createClients")))}
+                  disabled={
+                    busy ||
+                    mergeBusy ||
+                    !(
+                      canCreateClients ||
+                      (hasCapability && hasCapability("createClients"))
+                    )
+                  }
                   onClick={createAnyway}
                   className="h-10 px-3 rounded-xl border text-sm hover:bg-gray-50 disabled:opacity-50"
                   title="Create a brand-new client even if a match exists"
@@ -1411,7 +1708,8 @@ export default function NewClientForm({
 
         {/* Consent notice */}
         <div className="mt-1 text-[9px] leading-snug text-gray-400 text-center px-2 max-w-md mx-auto">
-          Client consents to data collection for food program eligibility. Data stays within organization unless required by law.
+          Client consents to data collection for food program eligibility. Data
+          stays within organization unless required by law.
         </div>
 
         {/* Footer (sticky) */}
@@ -1426,14 +1724,21 @@ export default function NewClientForm({
                 type="checkbox"
                 className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                 checked={form.autoClose}
-                onChange={(e) => setForm(f => ({ ...f, autoClose: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, autoClose: e.target.checked }))
+                }
               />
-              <span className="text-xs sm:text-sm text-gray-700 font-medium">Auto-Close After Save</span>
+              <span className="text-xs sm:text-sm text-gray-700 font-medium">
+                Auto-Close After Save
+              </span>
             </label>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { onClose?.(); clearDraft(); }}
+                onClick={() => {
+                  onClose?.();
+                  clearDraft();
+                }}
                 className="h-9 sm:h-10 px-4 sm:px-5 rounded-xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 text-xs sm:text-sm font-semibold"
               >
                 {t(lang, "cancel")}
@@ -1441,21 +1746,37 @@ export default function NewClientForm({
               <button
                 type="submit"
                 form="new-client-form"
-                disabled={busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)}
+                disabled={
+                  busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)
+                }
                 className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-[color:var(--brand-700)] text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50 transition-all duration-150"
                 title={
                   editing
-                    ? (!canSubmitEdit ? t(lang, "permNoEdit") : "")
-                    : (!canSubmitNew ? `${!canCreateClients ? t(lang,"permNoCreate") : ""} ${!canLogVisits ? t(lang,"permNoLog") : ""}`.trim() : "")
+                    ? !canSubmitEdit
+                      ? t(lang, "permNoEdit")
+                      : ""
+                    : !canSubmitNew
+                    ? `${!canCreateClients ? t(lang, "permNoCreate") : ""} ${
+                        !canLogVisits ? t(lang, "permNoLog") : ""
+                      }`.trim()
+                    : ""
                 }
               >
-                {busy ? "Saving…" : editing ? t(lang, "save") : t(lang, "saveLog")}
+                {busy
+                  ? "Saving…"
+                  : editing
+                  ? t(lang, "save")
+                  : t(lang, "saveLog")}
               </button>
             </div>
           </div>
 
           {msg && (
-            <div className="mt-2 text-sm text-gray-700" role="status" aria-live="polite">
+            <div
+              className="mt-2 text-sm text-gray-700"
+              role="status"
+              aria-live="polite"
+            >
               {msg}
             </div>
           )}

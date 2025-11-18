@@ -87,33 +87,66 @@
   background: var(--scroll-thumb-hover);
 }
 
-/* Mobile: keep things native/subtle */
+/* Mobile: brand-colored scrollbar */
 @media (max-width: 640px) {
   .pretty-scroll {
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) var(--scroll-track);
   }
   .pretty-scroll::-webkit-scrollbar {
-    width: 0;
-    height: 0; /* hides the bulky bar on iOS/Android WebKit */
+    width: 6px;
+    height: 6px;
+  }
+  .pretty-scroll::-webkit-scrollbar-track {
+    background: var(--scroll-track);
+    border-radius: 9999px;
+  }
+  .pretty-scroll::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: 9999px;
+    border: 1px solid var(--scroll-track);
   }
 }
 
-/* Custom desktop-only scrollbar for client list and visit history: invisible unless hovered/touched */
+/* Custom scrollbar for client list and visit history */
+.desktop-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+  -webkit-overflow-scrolling: touch;
+}
+
+.desktop-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  border-radius: 8px;
+}
+
+.desktop-scrollbar::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border-radius: 9999px;
+}
+
+.desktop-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 9999px;
+  border: 1px solid var(--scroll-track);
+}
+
+/* Desktop: invisible unless hovered/touched */
 @media (min-width: 768px) {
   .desktop-scrollbar {
-    scrollbar-width: thin;
     scrollbar-color: transparent transparent;
     transition: scrollbar-color 0.3s;
   }
   .desktop-scrollbar::-webkit-scrollbar {
     width: 8px;
     background: transparent;
-    border-radius: 8px;
     transition: background 0.3s;
   }
   .desktop-scrollbar::-webkit-scrollbar-thumb {
     background: transparent;
-    border-radius: 8px;
     opacity: 0;
     transition: opacity 0.3s, background 0.3s;
   }

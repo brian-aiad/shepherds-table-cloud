@@ -6,6 +6,8 @@ import { useAuth } from "../auth/useAuth";
 import NewClientForm from "../components/NewClientForm";
 import EditForm from "../components/EditForm";
 import LogVisitForm from "../components/LogVisitForm";
+import { MapPin } from "lucide-react";
+
 
 /* ===========================
    Helpers
@@ -375,72 +377,101 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+{/* scope pill (above Today on mobile + desktop) */}
+<div className="mb-2 md:mb-3 text-xs text-brand-900">
+  <div
+    className="flex w-full items-center gap-3 rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm px-3.5 py-2.5"
+    aria-label="Current scope"
+  >
+    {/* Icon chip */}
+    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-200 shrink-0">
+      <MapPin className="h-4 w-4" aria-hidden="true" />
+    </div>
 
-        
-        {/* scope pill (below Today on mobile) */}
-        <div className="mb-2 text-xs text-brand-900">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-white/90 ring-1 ring-brand-100 shadow px-4 py-2 text-[13px] font-semibold"
-            aria-label="Current scope"
-          >
-            <span className="text-gray-600">Scope</span>
-            <span className="text-gray-400">•</span>
-            <span className="font-semibold">{org?.name || "—"}</span>
-            {isAll ? (
-              <>
-                <span className="text-gray-400">/</span>
-                <span className="text-gray-700">All locations</span>
-              </>
-            ) : location?.name ? (
-              <>
-                <span className="text-gray-400">/</span>
-                <span className="text-gray-700">{location.name}</span>
-              </>
-            ) : canPickAllLocations ? (
-              <span className="text-gray-600">(all locations)</span>
-            ) : (
-              <span className="text-gray-600">(select location)</span>
-            )}
-          </span>
-        </div>
+    {/* Text */}
+    <div className="flex flex-col gap-0.5 leading-tight min-w-0">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+        Scope
+      </span>
 
-{/* Visits Today + CTA (mobile-only, extra-tight) */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] font-semibold text-gray-800">
+        <span className="truncate max-w-[7.5rem] sm:max-w-[11rem]">
+          {org?.name || "—"}
+        </span>
+
+        {isAll ? (
+          <>
+            <span className="text-gray-300">/</span>
+            <span className="text-gray-700 whitespace-nowrap">
+              All locations
+            </span>
+          </>
+        ) : location?.name ? (
+          <>
+            <span className="text-gray-300">/</span>
+            <span className="text-gray-700 whitespace-nowrap">
+              {location.name}
+            </span>
+          </>
+        ) : canPickAllLocations ? (
+          <span className="text-gray-500">(all locations)</span>
+        ) : (
+          <span className="text-gray-500">(select location)</span>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
+{/* Visits Today + CTA (mobile-only, clean KPI) */}
 <div className="block md:hidden mb-3">
   <section
-    className="rounded-2xl bg-white/95 ring-1 ring-brand-100 shadow-sm p-2.5"
+    className="rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm px-3 py-2.5"
     aria-labelledby="kpi-today"
   >
     <div className="flex items-center gap-3">
-      {/* Icon chip */}
-      <div className="h-8 w-8 grid place-items-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-brand-200 shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 15c2.5 0 4.847.655 6.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-      </div>
-
-      {/* Label + count */}
+      {/* Label + count (KPI) */}
       <div className="min-w-0 mr-auto">
-        <div id="kpi-today" className="text-[11px] text-gray-600 leading-tight">Visits Today</div>
-        <div className="text-[26px] leading-none font-extrabold tracking-tight tabular-nums text-brand-800" aria-live="polite">
+        <p
+          id="kpi-today"
+          className="text-[11px] font-medium text-gray-600 leading-tight"
+        >
+          Visits today
+        </p>
+        <p
+          className="text-[26px] leading-none font-extrabold tracking-tight tabular-nums text-brand-800"
+          aria-live="polite"
+        >
           {todayCount}
-        </div>
+        </p>
       </div>
 
-      {/* CTA (never wraps on tiny phones) */}
+      {/* CTA (compact, on-brand) */}
       {allowNewClient && (
         <button
           onClick={() => setShowNew(true)}
-          className="inline-flex items-center h-10 px-3 rounded-xl font-semibold text-white ring-1 ring-brand-800/20 
+          className="inline-flex items-center justify-center h-11 px-4 rounded-full font-semibold text-white
                      bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
                      hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)]
                      active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)]
                      focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200
-                     max-w-[58%] sm:max-w-none"
+                     shadow-[0_10px_20px_rgba(199,58,49,0.35)]
+                     text-[13px] max-w-[65%] sm:max-w-none"
           aria-label="Add new client"
         >
           <span className="mr-2 grid place-items-center h-6 w-6 rounded-full bg-white/20 shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-              <path fillRule="evenodd" d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" clipRule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+                clipRule="evenodd"
+              />
             </svg>
           </span>
           <span className="truncate">Add New Client</span>
@@ -450,105 +481,111 @@ export default function Dashboard() {
   </section>
 </div>
 
+{/* top bar (desktop + large screens) */}
+<div className="relative flex flex-wrap md:flex-nowrap items-center gap-2.5 md:gap-4 mb-2 md:mb-3">
+  {/* Search */}
+  <div className="relative w-full min-w-0 flex-1 rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm">
+    <input
+      className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-2.5 md:py-3 text-[15px] md:text-[16px] placeholder:text-gray-400 focus:outline-none"
+      placeholder={`Search ${
+        location?.name ? `${location.name} ` : ""
+      }clients…`}
+      value={term}
+      onChange={(e) => setTerm(e.target.value)}
+      type="search"
+      enterKeyHint="search"
+      autoCapitalize="none"
+      inputMode="search"
+      aria-label="Search clients by name or phone"
+    />
 
+    {/* lens */}
+    <div
+      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+      aria-hidden="true"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-5 w-5"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth="2"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
+        />
+      </svg>
+    </div>
 
+    {term && (
+      <button
+        type="button"
+        aria-label="Clear search"
+        onClick={() => setTerm("")}
+        className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
+                   w-7 h-7 text-[18px] font-semibold text-gray-500 
+                   hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+      >
+        ×
+      </button>
+    )}
+  </div>
 
-        {/* top bar (desktop only) */}
-        <div className="relative flex flex-wrap md:flex-nowrap items-center gap-3 mb-1.5">
-          {/* search */}
-          <div className="relative w-full min-w-0 rounded-2xl border border-brand-200 bg-white shadow-sm">
-            <input
-              className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-3 text-[17px] focus:outline-none"
-              placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              type="search"
-              enterKeyHint="search"
-              autoCapitalize="none"
-              inputMode="search"
-              aria-label="Search clients by name or phone"
+  {/* Right-side actions (desktop only) */}
+  <div className="hidden md:flex items-center gap-2.5 lg:gap-3 shrink-0">
+    {/* Visits today pill */}
+    <div
+      role="status"
+      aria-label={`Visits today ${todayCount}`}
+      className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-white/98 ring-1 ring-brand-100/80 shadow-sm text-brand-900 leading-none"
+    >
+      <span className="text-[11px] font-medium text-gray-600">
+        Visits today
+      </span>
+      <span className="h-5 w-px bg-brand-100" aria-hidden="true" />
+      <span className="text-lg font-extrabold tabular-nums tracking-tight text-brand-800">
+        {todayCount}
+      </span>
+    </div>
+
+    {/* Add New Client CTA */}
+    {allowNewClient && (
+      <button
+        onClick={() => setShowNew(true)}
+        className="inline-flex items-center gap-2 h-10 px-5 rounded-full text-[13px] font-semibold text-white 
+                   bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
+                   hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)]
+                   active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)]
+                   shadow-[0_10px_20px_rgba(199,58,49,0.35)]
+                   border border-brand-800/10 transition-all duration-150"
+        aria-label="Add new client"
+      >
+        <span className="grid place-items-center h-6 w-6 rounded-full bg-white/20">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+              clipRule="evenodd"
             />
-            {/* lens */}
-            <div
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              aria-hidden="true"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-            {term && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setTerm("")}
-                className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
-                          w-7 h-7 text-[18px] font-semibold text-gray-500 
-                          hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-              >
-                ×
-              </button>
-            )}
-          </div>
+          </svg>
+        </span>
+        <span>Add New Client</span>
+      </button>
+    )}
+  </div>
+</div>
 
-          {/* actions (desktop only) */}
-          <div className="hidden md:flex items-center gap-3 md:gap-4 md:ml-auto shrink-0">
-            {/* Today (desktop only) */}
-            <span
-              role="status"
-              aria-label={`Visits today ${todayCount}`}
-              className="inline-flex items-center justify-center gap-2 h-11 px-3 rounded-2xl border border-brand-200 text-brand-900 bg-white shadow-sm leading-none shrink-0 min-w-[108px] md:min-w-0"
-            >
-              <span className="text-sm font-semibold whitespace-nowrap">
-                <span className="hidden md:inline">Visits </span>Today
-              </span>
-              <span className="h-4 w-px bg-brand-200 md:h-5" aria-hidden="true" />
-              <span className="text-lg md:text-2xl font-bold tabular-nums tracking-tight">
-                {todayCount}
-              </span>
-            </span>
 
-            {/* Desktop Add New Client button, right-aligned */}
-            {allowNewClient && (
-              <button
-                onClick={() => setShowNew(true)}
-                className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-brand-700 text-white font-bold text-lg shadow-lg hover:bg-brand-800 active:bg-brand-900 transition-all duration-150 border border-brand-800/20 ml-4"
-                aria-label="Add new client"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className="h-5 w-5"
-                  aria-hidden="true"
-                >
-                  <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
-                </svg>
-                Add New Client
-              </button>
-            )}
-          </div>
-        </div>
-
-      {err && (
-        <div
-          role="alert"
-          className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-sm"
-        >
-          {err}
-        </div>
-      )}
+      
 
       {/* main content */}
   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4" style={{ alignItems: 'stretch', minHeight: 0 }}>
@@ -566,7 +603,7 @@ export default function Dashboard() {
 
             {/* Letter chips (when not searching) */}
             {letterChips.length > 0 && searchTokens.length === 0 && (
-              <div className="flex gap-2 pb-2 pt-2 pl-2 overflow-x-auto desktop-scrollbar">
+              <div className="flex gap-2 pb-2 pt-2 pl-2 pr-2 overflow-x-auto desktop-scrollbar">
                 {letterChips.map((L) => (
                   <button
                     key={L}
