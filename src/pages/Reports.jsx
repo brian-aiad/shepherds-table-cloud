@@ -791,9 +791,23 @@ export default function Reports() {
     setManualDays(loadManualDays(key));
     setAddDayInput("");
   }, [org?.id, location?.id, selectedMonthKey]);
-
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
+  const [clientsHydrated, setClientsHydrated] = useState(false);
+
+  // 🔁 Per-org client cache so changing days/months is instant & future-proof
+  const clientCacheRef = useRef(new Map());
+  const lastOrgIdRef = useRef(null);
+
+  // Reset client cache when org changes (multi-org ready)
+  useEffect(() => {
+    if (!org?.id || lastOrgIdRef.current !== org.id) {
+      clientCacheRef.current = new Map();
+      lastOrgIdRef.current = org?.id || null;
+      setClientsById(new Map());
+      setClientsHydrated(false);
+    }
+  }, [org?.id]);
 
   // live-ish status
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
@@ -909,17 +923,15 @@ export default function Reports() {
       return; // safety: never fall through to org-wide when not permitted
     }
 
-// Add the month range as range filters on the same field you order by
-filters.push(where("dateKey", ">=", startKey));
-filters.push(where("dateKey", "<=", endKey));
+    // Add the month range as range filters on the same field you order by
+    filters.push(where("dateKey", ">=", startKey));
+    filters.push(where("dateKey", "<=", endKey));
 
-const qv = query(
-  collection(db, "visits"),
-  ...filters,
-  orderBy("dateKey", "asc")
-);
-
-
+    const qv = query(
+      collection(db, "visits"),
+      ...filters,
+      orderBy("dateKey", "asc")
+    );
 
     (async () => {
       try {
@@ -968,238 +980,276 @@ const qv = query(
   ]);
 
   /* --------------------------------
-     Hydrate client docs in small batches (by id)
+     Hydrate client docs in small batches (with cache, non-blocking UI)
      -------------------------------- */
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
-        const ids = Array.from(
+        setClientsHydrated(false);
+
+        const allIds = Array.from(
           new Set(visits.map((v) => v.clientId).filter(Boolean))
         );
-        if (!ids.length) {
-          setClientsById(new Map());
+
+        if (!allIds.length) {
+          if (!cancelled) {
+            setClientsById(new Map());
+            setClientsHydrated(true);
+          }
           return;
         }
-        const m = new Map();
-        for (const part of chunk(ids, 10)) {
+
+        const cache = clientCacheRef.current;
+        const missing = allIds.filter((id) => !cache.has(id));
+
+        // nothing new to fetch, just reuse cache
+        if (!missing.length) {
+          if (!cancelled) {
+            setClientsById(new Map(cache));
+            setClientsHydrated(true);
+          }
+          return;
+        }
+
+        const merged = new Map(cache);
+        for (const part of chunk(missing, 10)) {
           const qs = await getDocs(
             query(collection(db, "clients"), where("__name__", "in", part))
           );
-          for (const d of qs.docs) m.set(d.id, { id: d.id, ...d.data() });
+          for (const d of qs.docs) merged.set(d.id, { id: d.id, ...d.data() });
         }
-        setClientsById(m);
+
+        if (!cancelled) {
+          clientCacheRef.current = merged;
+          setClientsById(new Map(merged));
+          setClientsHydrated(true);
+        }
       } catch (e) {
         console.warn("Client lookup error", e);
+        if (!cancelled) {
+          // still let UI render immediately
+          setClientsById(new Map(clientCacheRef.current));
+          setClientsHydrated(true);
+        }
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [visits]);
 
-  /* --------------------------------
-     Group visits by day (within month)
-     -------------------------------- */
+  // ⚡ Only the Firestore visit query controls "busy" now
+  const isBusy = loading;
+
+  // Group visits by day (Map<dateKey, Visit[]>)
   const visitsByDay = useMemo(() => {
     const m = new Map();
-    for (const v of visits) {
-      const k = v.dateKey || fmtDateKey(toJSDate(v.visitAt));
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(v);
+    for (const v of visits || []) {
+      const dk =
+        typeof v.dateKey === "string" && v.dateKey.length >= 10
+          ? v.dateKey.slice(0, 10)
+          : fmtDateKey(toJSDate(v.visitAt));
+      if (!m.has(dk)) m.set(dk, []);
+      m.get(dk).push(v);
     }
-    for (const arr of m.values())
-      arr.sort((a, b) => toJSDate(b.visitAt) - toJSDate(a.visitAt));
     return m;
   }, [visits]);
 
+  // All day keys (from visits + manual days), filtered by month + dayFilter, sorted desc
   const sortedDayKeys = useMemo(() => {
-  // Union visit-backed days + manual empty days
-  const keys = new Set([...visitsByDay.keys(), ...manualDays]);
-  const filtered = Array.from(keys).filter((k) =>
-    dayFilter ? k.includes(dayFilter) : true
-  );
-  // newest first (desc)
-  return filtered.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
-}, [visitsByDay, manualDays, dayFilter]);
+    const allKeys = new Set([
+      ...Array.from(visitsByDay.keys()),
+      ...Array.from(manualDays || []),
+    ]);
 
+    const keys = Array.from(allKeys).filter((k) => {
+      if (!isDateKeyInMonth(k, selectedMonthKey)) return false;
+      if (!dayFilter) return true;
+      return k.includes(dayFilter.trim());
+    });
 
-  /* --------------------------------
-   Keep day selection valid & scroll-into-view
-   -------------------------------- */
-const hasDay = useCallback(
-  (dk) => visitsByDay.has(dk) || manualDays.has(dk),
-  [visitsByDay, manualDays]
-);
+    // newest first (YYYY-MM-DD string sort works)
+    keys.sort((a, b) => b.localeCompare(a));
+    return keys;
+  }, [visitsByDay, manualDays, selectedMonthKey, dayFilter]);
 
-useEffect(() => {
-  if (!sortedDayKeys.length) return;
+  // Month level aggregation for KPIs + charts
+  const monthAgg = useMemo(() => {
+    const byDay = new Map();
+    let totalHH = 0;
+    let totalUsdaYes = 0;
+    let totalUsdaNo = 0;
 
-  const fallback = sortedDayKeys[0];
-  const resolved = selectedDate && hasDay(selectedDate) ? selectedDate : fallback;
+    for (const v of visits || []) {
+      const dk =
+        typeof v.dateKey === "string" && v.dateKey.length >= 10
+          ? v.dateKey.slice(0, 10)
+          : fmtDateKey(toJSDate(v.visitAt));
 
-  if (resolved !== selectedDate) setSelectedDate(resolved);
+      const persons = Number(v.householdSize || 0) || 0;
+      const isYes = v.usdaFirstTimeThisMonth === true;
 
-  const id = `day-${resolved}`;
-  requestAnimationFrame(() => {
-    const list = dayListRef.current;
-    if (!list) return;
-    const el = list.querySelector(`#${CSS.escape(id)}`);
-    if (!el) return;
-    const padding = 8;
-    const elTop = el.offsetTop - list.offsetTop;
-    list.scrollTo({ top: Math.max(0, elTop - padding), behavior: "auto" });
-  });
-}, [sortedDayKeys, selectedDate, hasDay]);
+      if (!byDay.has(dk)) {
+        byDay.set(dk, { visits: 0, people: 0, usdaYes: 0 });
+      }
+      const entry = byDay.get(dk);
+      entry.visits += 1;
+      entry.people += persons;
+      if (isYes) entry.usdaYes += 1;
 
-  /* --------------------------------
-     Rows for selected day
-     -------------------------------- */
-  const rowsForSelectedDay = useMemo(() => {
-    const src = visitsByDay.get(selectedDate) || [];
-    return src.map((v) => {
-      const d = toJSDate(v.visitAt);
-      const person = clientsById.get(v.clientId) || {};
-      const labelName =
-        `${person.firstName || v.clientFirstName || ""} ${
-          person.lastName || v.clientLastName || ""
-        }`.trim() || v.clientId;
+      totalHH += persons;
+      if (isYes) totalUsdaYes += 1;
+      else totalUsdaNo += 1;
+    }
 
-      // Prefer visit snapshot so we never depend on client read permissions
-      const county = v.clientCounty || person.county || "";
-
-      const zip = v.clientZip || v.zip || person.zip || "";
-
+    const dayKeys = Array.from(byDay.keys()).sort();
+    const visitsPerDay = dayKeys.map((dk) => {
+      const entry = byDay.get(dk) || { visits: 0, people: 0 };
       return {
-        visitId: v.id,
-        clientId: v.clientId || "",
-        firstName: person.firstName || "",
-        lastName: person.lastName || "",
-        county,
-        zip,
-
-        visitHousehold: v.householdSize ?? "",
-        usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
-        usdaCount: v.usdaCount ?? "",
-
-        monthKey: v.monthKey || "",
-        visitAtISO: toISO(d),
-        dateKey: v.dateKey || fmtDateKey(d),
-        labelName,
-
-        localTime: d.toLocaleString(),
-
-        addedAtISO: v.addedAt ? toISO(toJSDate(v.addedAt)) : "",
-        addedLocalTime: v.addedAt ? toJSDate(v.addedAt).toLocaleString() : "",
-        addedByReports: v.addedByReports === true,
+        date: dk.slice(5), // show MM-DD or DD depending on your preference
+        visits: entry.visits,
+        people: entry.people,
       };
     });
-  }, [visitsByDay, selectedDate, clientsById]);
-
-  /* --------------------------------
-     Filters & sort
-     -------------------------------- */
-  const filteredSortedRows = useMemo(() => {
-    let rows = rowsForSelectedDay;
-
-    if (usdaFilter !== "all") {
-      rows = rows.filter((r) =>
-        usdaFilter === "yes"
-          ? r.usdaFirstTimeThisMonth === true
-          : r.usdaFirstTimeThisMonth === false
-      );
-    }
-
-    if (term.trim()) {
-      const q = term.trim().toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.labelName || "").toLowerCase().includes(q) ||
-          (r.county || "").toLowerCase().includes(q) ||
-          (r.zip || "").toLowerCase().includes(q)
-      );
-    }
-
-    const cmp = (a, b) => {
-      let d = 0;
-      if (sortKey === "time") d = a.visitAtISO.localeCompare(b.visitAtISO);
-      else if (sortKey === "name")
-        d = (a.labelName || "").localeCompare(b.labelName || "");
-      else if (sortKey === "hh")
-        d =
-          Number(a.visitHousehold || 0) - Number(b.visitHousehold || 0);
-      return sortDir === "asc" ? d : -d;
-    };
-    return [...rows].sort(cmp);
-  }, [rowsForSelectedDay, term, usdaFilter, sortKey, sortDir]);
-
-  /* --------------------------------
-     Day totals
-     -------------------------------- */
-  const dayTotals = useMemo(() => {
-    const count = filteredSortedRows.length;
-    const hh = filteredSortedRows.reduce(
-      (s, r) => s + Number(r.visitHousehold || 0),
-      0
-    );
-    const usdaYes = filteredSortedRows.reduce(
-      (s, r) => s + (r.usdaFirstTimeThisMonth === true ? 1 : 0),
-      0
-    );
-    return { count, hh, usdaYes };
-  }, [filteredSortedRows]);
-
-  /* --------------------------------
-     Month aggregates (KPI + charts)
-     -------------------------------- */
-  const monthAgg = useMemo(() => {
-    const totalHH = visits.reduce(
-      (s, v) => s + Number(v.householdSize || 0),
-      0
-    );
-    const usdaUnits = visits.reduce((s, v) => s + usdaUnitsOf(v), 0);
-
-    const byDay = new Map();
-    for (const v of visits) {
-      const k = v.dateKey || fmtDateKey(toJSDate(v.visitAt));
-      if (!byDay.has(k)) byDay.set(k, []);
-      byDay.get(k).push(v);
-    }
-
-    const daysWithVisits = byDay.size || 1;
-    const avgPerDay = Math.round((usdaUnits / daysWithVisits) * 10) / 10;
-    const households = totalHH;
-
-    const visitsPerDay = Array.from(byDay.entries())
-      .map(([dateKey, arr]) => ({
-        date: dateKey.slice(5), // "MM-DD"
-        visits: arr.length,
-        people: arr.reduce(
-          (s, v) => s + Number(v.householdSize || 0),
-          0
-        ),
-        usdaYes: arr.reduce(
-          (s, v) => s + (v.usdaFirstTimeThisMonth === true ? 1 : 0),
-          0
-        ),
-      }))
-      .sort((a, b) => (a.date < b.date ? -1 : 1));
-
-    const usdaYesTotal = visits.filter(
-      (v) => v.usdaFirstTimeThisMonth === true
-    ).length;
-    const usdaNoTotal = visits.length - usdaYesTotal;
 
     return {
-      usdaUnits,
-      households,
-      avgPerDay,
+      households: totalHH,
       byDay,
       charts: {
         visitsPerDay,
         usdaPie: [
-          { name: "USDA Yes", value: usdaYesTotal },
-          { name: "USDA No", value: usdaNoTotal },
+          { name: "USDA Yes", value: totalUsdaYes },
+          { name: "USDA No", value: totalUsdaNo },
         ],
       },
     };
   }, [visits]);
+
+  // Day totals (unfiltered) for summary stripe
+  const dayTotals = useMemo(() => {
+    const dayVisits = visitsByDay.get(selectedDate) || [];
+    let count = dayVisits.length;
+    let hh = 0;
+    let usdaYes = 0;
+
+    for (const v of dayVisits) {
+      hh += Number(v.householdSize || 0) || 0;
+      if (v.usdaFirstTimeThisMonth === true) usdaYes += 1;
+    }
+
+    return { count, hh, usdaYes };
+  }, [visitsByDay, selectedDate]);
+
+  // Base row model for the table (one day, before filters/sort)
+  const baseRows = useMemo(() => {
+    const dayVisits = visitsByDay.get(selectedDate) || [];
+
+    return dayVisits.map((v) => {
+      const p = clientsById.get(v.clientId) || {};
+
+      const visitDate = v.visitAt ? toJSDate(v.visitAt) : null;
+      const visitTs = visitDate ? visitDate.getTime() : 0;
+      const localTime = visitDate
+        ? visitDate.toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : "";
+
+      const first =
+        p.firstName ??
+        v.clientFirstName ??
+        (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
+        "";
+      const last =
+        p.lastName ??
+        v.clientLastName ??
+        (typeof p.name === "string"
+          ? p.name.split(" ").slice(1).join(" ")
+          : "") ??
+        "";
+
+      const labelName =
+        `${first} ${last}`.trim() ||
+        (typeof v.clientName === "string" ? v.clientName : "Unnamed client");
+
+      const county = v.clientCounty || p.county || "";
+      const zip = p.zip || v.clientZip || v.zip || "";
+
+      const visitHousehold = Number(v.householdSize || 0) || 0;
+
+      let addedLocalTime = "";
+      if (v.addedAt) {
+        const ad = toJSDate(v.addedAt);
+        addedLocalTime = ad.toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+
+      return {
+        visitId: v.id,
+        clientId: v.clientId || "",
+        visitHousehold,
+        usdaFirstTimeThisMonth:
+          v.usdaFirstTimeThisMonth === true
+            ? true
+            : v.usdaFirstTimeThisMonth === false
+            ? false
+            : "",
+        county,
+        zip,
+        localTime,
+        visitTs,
+        labelName,
+        labelNameLower: labelName.toLowerCase(),
+        addedByReports: !!v.addedByReports,
+        addedLocalTime,
+      };
+    });
+  }, [visitsByDay, selectedDate, clientsById]);
+
+  // Apply USDA filter, search term, and sorting
+  const filteredSortedRows = useMemo(() => {
+    let rows = [...baseRows];
+
+    // USDA yes/no filter
+    if (usdaFilter === "yes") {
+      rows = rows.filter((r) => r.usdaFirstTimeThisMonth === true);
+    } else if (usdaFilter === "no") {
+      rows = rows.filter((r) => r.usdaFirstTimeThisMonth === false);
+    }
+
+    // Search
+    const q = term.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) => {
+        const inName = r.labelNameLower.includes(q);
+        const inCounty = (r.county || "").toLowerCase().includes(q);
+        const inZip = String(r.zip || "").includes(q);
+        return inName || inCounty || inZip;
+      });
+    }
+
+    // Sort
+    rows.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "name") {
+        cmp = a.labelNameLower.localeCompare(b.labelNameLower);
+      } else if (sortKey === "hh") {
+        cmp = (a.visitHousehold || 0) - (b.visitHousehold || 0);
+      } else {
+        // time
+        cmp = (a.visitTs || 0) - (b.visitTs || 0);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return rows;
+  }, [baseRows, usdaFilter, term, sortKey, sortDir]);
 
   /* --------------------------------
      Actions
@@ -2315,9 +2365,10 @@ const removeDay = useCallback(
           </div>
 
           {/* DESKTOP TABLE */}
-          <div
-            className={`hidden md:block overflow-hidden rounded-xl border ${loading ? "opacity-60" : ""}`}
+                    <div
+            className={`hidden md:block overflow-hidden rounded-xl border ${isBusy ? "opacity-60" : ""}`}
           >
+
             <div className="overflow-x-auto">
               <div
                 className="overflow-y-auto desktop-scrollbar"
@@ -2409,11 +2460,12 @@ const removeDay = useCallback(
                           colSpan={7}
                           className="px-4 py-8 text-center text-gray-500"
                         >
-                          {loading ? (
+                          {isBusy ? (
                             <span className="inline-flex items-center gap-2">
                               <Spinner className="h-4 w-4" /> Loading…
                             </span>
                           ) : (
+
                             <div className="flex flex-col items-center gap-2">
                               <div className="text-2xl">🗓️</div>
                               <div>No visits on this day.</div>
@@ -2455,9 +2507,10 @@ const removeDay = useCallback(
           {/* MOBILE LIST */}
           <ul
             className={`md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden ${
-              loading ? "opacity-60" : ""
+              isBusy ? "opacity-60" : ""
             }`}
           >
+
             {filteredSortedRows.map((r, i) => (
               <li
                 key={r.visitId}
@@ -2516,11 +2569,12 @@ const removeDay = useCallback(
 
             {filteredSortedRows.length === 0 && (
               <li className="p-6 text-center text-gray-500">
-                {loading ? (
+                                {isBusy ? (
                   <span className="inline-flex items-center gap-2">
                     <Spinner className="h-4 w-4" /> Loading…
                   </span>
                 ) : (
+
                   <div className="flex flex-col items-center gap-2">
                     <div className="text-2xl">🗓️</div>
                     <div>No visits on this day.</div>
