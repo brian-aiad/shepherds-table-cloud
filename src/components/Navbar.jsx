@@ -1,17 +1,25 @@
 // src/components/Navbar.jsx
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { NavLink, useNavigate, useLocation as useRouteLoc } from "react-router-dom";
-import { useAuth } from "../auth/useAuth";
+// Shepherd’s Table Cloud — Navbar (multi-section, capability-aware, Nov 2025)
+// - Desktop (xl+): Dashboard, Inventory, Donations, Reports, USDA + Context + user chip + Sign out
+// - lg-only (small desktops): brand + nav + compact avatar menu (dropdown with Context + account + Sign out)
+// - <lg (phones, tablets): brand + hamburger + compact Sign out + slide-down panel
+// - Context panel for org/location scope (desktop only)
+// - Capability-aware visibility with safe fallbacks
+// - Org-aware branding, user chip, responsive polish
 
-/**
- * Shepherd’s Table Cloud — Navbar (SEAMLESS VERSION, capability-aware)
- * - Solid brand background (no white in the gradient).
- * - Context panel renders above everything.
- * - ADMIN LOCATION SCOPE: “All locations” shows only when canPickAllLocations === true.
- * - Tenant org logo (organizations/{orgId}.logoUrl) with graceful fallback.
- * - Mobile “Current location” badge for at-a-glance scope awareness.
- * - Capability-based links: Reports/USDA visible iff hasCapability('viewReports').
- */
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import {
+  NavLink,
+  useNavigate,
+  useLocation as useRouteLoc,
+} from "react-router-dom";
+import { useAuth } from "../auth/useAuth";
 
 export default function Navbar() {
   const nav = useNavigate();
@@ -19,38 +27,61 @@ export default function Navbar() {
 
   const {
     email,
-    role, // 'admin' | 'volunteer' | 'manager' | 'viewer' (or undefined while loading)
+    role, // 'admin' | 'volunteer' | 'manager' | 'viewer'
     org,
     orgs = [],
     location,
     locations = [],
-    isAdmin, // kept for admin-only org-wide scope affordances
-    // Only admins with org-wide access can pick “All locations”
+    isAdmin,
     canPickAllLocations = false,
     loading,
     setActiveOrg,
     setActiveLocation,
     signOutNow,
     saveDeviceDefaultScope,
-    // NEW (from capability system; safe-optional)
     hasCapability,
-    canViewReports, // convenience boolean if your AuthProvider exposes it
+    canViewReports, // optional convenience flag from AuthProvider
   } = useAuth() || {};
 
-  // Resolve capability checks with graceful fallback (works before you wire AuthProvider)
+  /* ─────────────────────────────────────────────────────────────
+   * Capability resolution with safe fallbacks
+   * ──────────────────────────────────────────────────────────── */
+
   const canViewReportsResolved =
     typeof canViewReports === "boolean"
       ? canViewReports
       : typeof hasCapability === "function"
-        ? !!hasCapability("viewReports")
-        : !!isAdmin; // fallback to prior behavior if capability API not yet present
+      ? !!hasCapability("viewReports")
+      : !!isAdmin;
 
-  // UI state
+  const canAccessInventory =
+    typeof hasCapability === "function"
+      ? !!hasCapability("inventory")
+      : !!isAdmin;
+
+  const canAccessDonations =
+    typeof hasCapability === "function"
+      ? !!hasCapability("donations")
+      : !!isAdmin;
+
+  const canAccessVolunteers =
+    typeof hasCapability === "function"
+      ? !!hasCapability("volunteers")
+      : !!isAdmin;
+
+  /* ─────────────────────────────────────────────────────────────
+   * UI state
+   * ──────────────────────────────────────────────────────────── */
+
   const [mobileOpen, setMobileOpen] = useState(false);
-  useEffect(() => setMobileOpen(false), [route.pathname]);
-
   const [contextOpen, setContextOpen] = useState(false);
-  useEffect(() => setContextOpen(false), [route.pathname]);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setContextOpen(false);
+    setAccountMenuOpen(false);
+  }, [route.pathname]);
 
   const [orgOpen, setOrgOpen] = useState(false);
   const [locOpen, setLocOpen] = useState(false);
@@ -59,11 +90,16 @@ export default function Navbar() {
   const orgMenuRef = useRef(null);
   const locBtnRef = useRef(null);
   const locMenuRef = useRef(null);
+  const accountBtnRef = useRef(null);
+  const accountMenuRef = useRef(null);
 
   const orgId = org?.id || "";
-  const locId = location?.id ?? null; // "" is valid (All), null = none
+  const locId = location?.id ?? null;
 
-  // Identity / badges
+  /* ─────────────────────────────────────────────────────────────
+   * Identity / badges
+   * ──────────────────────────────────────────────────────────── */
+
   const initials = useMemo(() => {
     if (!email) return "ST";
     const left = email.split("@")[0];
@@ -85,7 +121,9 @@ export default function Navbar() {
       manager: "Manager",
       viewer: "Viewer",
     };
-    const label = labels[role] || String(role).charAt(0).toUpperCase() + String(role).slice(1);
+    const label =
+      labels[role] ||
+      String(role).charAt(0).toUpperCase() + String(role).slice(1);
     return (
       <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/15 text-white select-none">
         {label}
@@ -93,7 +131,10 @@ export default function Navbar() {
     );
   }, [role]);
 
-  // Handlers
+  /* ─────────────────────────────────────────────────────────────
+   * Handlers
+   * ──────────────────────────────────────────────────────────── */
+
   const handleOrgChange = useCallback(
     async (nextOrgId) => {
       await setActiveOrg(nextOrgId || null);
@@ -115,7 +156,7 @@ export default function Navbar() {
       // Non-admins cannot clear or pick ""
       if ((nextLocId == null || nextLocId === "") && !isAdmin) return;
 
-      await setActiveLocation(nextLocId); // IMPORTANT: pass through "" (don’t coerce to null)
+      await setActiveLocation(nextLocId); // allow "" for "All locations"
       setLocOpen(false);
       setMobileOpen(false);
       nav(route.pathname + route.search, {
@@ -144,20 +185,42 @@ export default function Navbar() {
     nav("/login", { replace: true });
   };
 
-  // Dismiss popovers
+  /* ─────────────────────────────────────────────────────────────
+   * Dismiss popovers on click/esc
+   * ──────────────────────────────────────────────────────────── */
+
   useEffect(() => {
     const onDocClick = (e) => {
       if (orgOpen) {
-        if (!orgBtnRef.current?.contains(e.target) && !orgMenuRef.current?.contains(e.target)) setOrgOpen(false);
+        if (
+          !orgBtnRef.current?.contains(e.target) &&
+          !orgMenuRef.current?.contains(e.target)
+        ) {
+          setOrgOpen(false);
+        }
       }
       if (locOpen) {
-        if (!locBtnRef.current?.contains(e.target) && !locMenuRef.current?.contains(e.target)) setLocOpen(false);
+        if (
+          !locBtnRef.current?.contains(e.target) &&
+          !locMenuRef.current?.contains(e.target)
+        ) {
+          setLocOpen(false);
+        }
+      }
+      if (accountMenuOpen) {
+        if (
+          !accountBtnRef.current?.contains(e.target) &&
+          !accountMenuRef.current?.contains(e.target)
+        ) {
+          setAccountMenuOpen(false);
+        }
       }
     };
     const onEsc = (e) => {
       if (e.key === "Escape") {
         setOrgOpen(false);
         setLocOpen(false);
+        setAccountMenuOpen(false);
       }
     };
     document.addEventListener("click", onDocClick);
@@ -166,9 +229,9 @@ export default function Navbar() {
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [orgOpen, locOpen]);
+  }, [orgOpen, locOpen, accountMenuOpen]);
 
-  // Auto pick first location after org change (respects restricted list supplied by context)
+  // Auto-pick first location after org change
   useEffect(() => {
     if (!loading && orgId && locations.length > 0 && location == null) {
       const first = locations[0];
@@ -176,7 +239,10 @@ export default function Navbar() {
     }
   }, [loading, orgId, location, locations, setActiveLocation]);
 
-  // Build option sets — inject “All locations” ONLY when allowed
+  /* ─────────────────────────────────────────────────────────────
+   * Option sets & labels
+   * ──────────────────────────────────────────────────────────── */
+
   const desktopLocations = useMemo(() => {
     if (!orgId) return [];
     const scoped = (locations || []).filter((l) => l.orgId === orgId);
@@ -193,27 +259,36 @@ export default function Navbar() {
       : scoped;
   }, [locations, orgId, isAdmin, canPickAllLocations]);
 
-  // Derived UI labels
-  const activeOrgName = orgs.find((o) => o.id === orgId)?.name || org?.name || "Select an org";
+  const activeOrgName =
+    orgs.find((o) => o.id === orgId)?.name || org?.name || "Select an org";
   const activeLocName = !orgId
     ? "—"
-    : (isAdmin && canPickAllLocations && locId === "")
-      ? "All locations"
-      : (mobileScopedLocations.find((l) => l.id === locId)?.name || "Select a location");
+    : isAdmin && canPickAllLocations && locId === ""
+    ? "All locations"
+    : mobileScopedLocations.find((l) => l.id === locId)?.name ||
+      (isAdmin && canPickAllLocations ? "All locations" : "Select a location");
 
   // Tenant logo (prefer org.logoUrl, fallback to app logo)
   const appLogo = `${import.meta.env.BASE_URL}logo.png`;
-  const orgLogo = (org?.logoUrl && typeof org.logoUrl === "string" && org.logoUrl.trim()) ? org.logoUrl : null;
-  const brandLogoSrc = orgLogo || appLogo;
-  const brandAlt = orgLogo ? `${activeOrgName} logo` : "Shepherd’s Table Cloud logo";
+  const brandLogoSrc = org?.logoUrl || appLogo;
+  const brandAlt = org?.name
+    ? `${org.name} logo`
+    : "Shepherd’s Table Cloud logo";
 
-  // Tiny toast
+  /* ─────────────────────────────────────────────────────────────
+   * Tiny toast
+   * ──────────────────────────────────────────────────────────── */
+
   const [toast, setToast] = useState(null);
   function showToast(msg, ms = 1800) {
     setToast(msg);
     window.clearTimeout(showToast._t);
     showToast._t = window.setTimeout(() => setToast(null), ms);
   }
+
+  /* ─────────────────────────────────────────────────────────────
+   * Render
+   * ──────────────────────────────────────────────────────────── */
 
   return (
     <header className="sticky top-0 z-50 relative isolate">
@@ -234,127 +309,248 @@ export default function Navbar() {
 
       {/* ===== Top bar ===== */}
       <div
-        className="relative w-full"
+        className="relative w-full shadow-sm"
         style={{
-          background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
+          background:
+            "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
         }}
       >
-        <div className="relative z-10 mx-auto w-full max-w-7xl xl:max-w-[90rem] h-16 px-4 md:px-8 flex items-center gap-4">
-          {/* Mobile hamburger */}
+        <div className="relative z-10 mx-auto w-full max-w-[112rem] h-16 px-3 sm:px-4 md:px-6 lg:px-8 flex items-center gap-3 sm:gap-4">
+          {/* Hamburger (phones + tablets + small desktop) */}
           <button
             type="button"
-            className="sm:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/0 text-white ring-1 ring-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/0 text-white ring-1 ring-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
             aria-controls="nav-panel"
             onClick={() => setMobileOpen((v) => !v)}
           >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              {mobileOpen ? <path d="M6 6l12 12M6 18L18 6" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              {mobileOpen ? (
+                <path d="M6 6l12 12M6 18L18 6" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              )}
             </svg>
           </button>
 
-          {/* Brand (org-aware, compact + polished) */}
+          {/* Brand */}
           <NavLink
             to="/"
-            className="inline-flex items-center gap-3 rounded-xl px-2.5 py-1.5 -ml-1 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
+            className="inline-flex items-center gap-3 rounded-xl px-2 sm:px-2.5 py-1.5 -ml-1 lg:-ml-0 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
             aria-label="Go to Dashboard"
           >
-            {/* Logo with graceful org fallback */}
             <div className="relative shrink-0">
               <img
-                src={org?.logoUrl || brandLogoSrc}
-                alt={org?.name ? `${org.name} logo` : brandAlt}
-                className="h-10 w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
+                src={brandLogoSrc}
+                alt={brandAlt}
+                className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
                 referrerPolicy="no-referrer"
                 loading="eager"
               />
-              {/* subtle glow overlay */}
               <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
             </div>
 
-            {/* Brand text block */}
             <div className="flex flex-col leading-tight min-w-0">
-              <span className="font-semibold text-white text-[17px] sm:text-[19px] md:text-[21px] tracking-tight truncate">
+              <span className="font-semibold text-white text-[16px] sm:text-[18px] md:text-[20px] tracking-tight truncate">
                 Shepherd’s Table
               </span>
 
               {org?.name && (
-                <span className="text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[160px] sm:max-w-none">
+                <span className="text-[11px] sm:text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[140px] sm:max-w-[180px] md:max-w-none">
                   {org.name}
                 </span>
               )}
             </div>
           </NavLink>
 
-          {/* Mobile Sign out */}
+          {/* Compact Sign out when nav is collapsed (<lg) */}
           <button
             onClick={onSignOut}
-            className="sm:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+            className="lg:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
           >
             Sign out
           </button>
 
-          {/* Primary links (capability-aware) */}
-          <nav aria-label="Primary" className="hidden md:flex items-center justify-center flex-1 gap-6">
-            <TopLink to="/" end className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+          {/* Primary links (desktop / large only) */}
+          <nav
+            aria-label="Primary"
+            className="hidden lg:flex items-center flex-1 justify-center gap-4 xl:gap-5 px-2"
+          >
+            <TopLink
+              to="/"
+              end
+              className="text-[15px] xl:text-[17px] font-semibold"
+            >
               Dashboard
             </TopLink>
+
+            {canAccessInventory && (
+              <TopLink
+                to="/inventory"
+                className="text-[15px] xl:text-[17px] font-semibold"
+              >
+                Inventory
+              </TopLink>
+            )}
+
+            {canAccessDonations && (
+              <TopLink
+                to="/donations"
+                className="text-[15px] xl:text-[17px] font-semibold"
+              >
+                Donations
+              </TopLink>
+            )}
+
             {canViewReportsResolved && (
               <>
-                <TopLink to="/reports" className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+                <TopLink
+                  to="/reports"
+                  className="text-[15px] xl:text-[17px] font-semibold"
+                >
                   Reports
                 </TopLink>
-                <TopLink to="/usda-monthly" className="text-[17px] sm:text-[18px] md:text-[19px] font-semibold">
+                <TopLink
+                  to="/usda-monthly"
+                  className="text-[15px] xl:text-[17px] font-semibold"
+                >
                   USDA
                 </TopLink>
               </>
             )}
           </nav>
 
-          {/* Right group */}
-          <div className="hidden sm:flex items-center gap-2 md:gap-2.5">
-            <button
-              type="button"
-              onClick={() => setContextOpen((v) => !v)}
-              aria-expanded={contextOpen}
-              aria-controls="context-panel"
-              className="inline-flex items-center gap-2 h-11 px-4 rounded-full bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
-              title="Organization & Location"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <path d="M4 7h16M6 12h12M8 17h8" />
-              </svg>
-              <span className="text-sm font-medium">Context</span>
-              <svg className={`h-4 w-4 transition-transform ${contextOpen ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path d="M5.75 7.75L10 12l4.25-4.25" />
-              </svg>
-            </button>
+          {/* Right group (desktop) */}
+          <div className="hidden lg:flex items-center gap-2.5 xl:gap-3 relative">
+            {/* lg-only compact avatar menu (for small desktops) */}
+            <div className="flex xl:hidden items-center">
+              <button
+                ref={accountBtnRef}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAccountMenuOpen((v) => !v);
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
+              >
+                <span className="font-semibold">{initials}</span>
+              </button>
 
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 ring-1 ring-white/15">
-                <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[13px] font-bold text-white shadow-sm">
-                  {initials}
-                </span>
-                <span className="max-w-[180px] truncate text-xs text-white/95 font-medium">{email || "—"}</span>
-                {roleBadge && (
-                  <span className="ml-2 px-2 py-0.5 rounded-full bg-brand-500/80 text-white text-[11px] font-semibold shadow-sm border border-white/20">
-                    Admin
-                  </span>
-                )}
-              </div>
+              {accountMenuOpen && (
+                <div
+                  ref={accountMenuRef}
+                  className="absolute right-0 top-[3.25rem] z-[60] min-w-[220px] rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden"
+                >
+                  <div className="px-3 py-2 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[12px] font-bold text-white">
+                        {initials}
+                      </span>
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[12px] font-medium truncate">
+                          {email || "—"}
+                        </span>
+                        {roleBadge && (
+                          <span className="mt-0.5 inline-flex">
+                            {roleBadge}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContextOpen(true);
+                      setAccountMenuOpen(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-[13px] flex items-center gap-2 hover:bg-gray-50"
+                  >
+                    <span className="h-4 w-4 rounded-full border border-gray-300 grid place-items-center text-[11px]">
+                      ☰
+                    </span>
+                    <span>Context &amp; scope</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="w-full px-3 py-2 text-left text-[13px] text-red-600 hover:bg-red-50"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
 
-            <button
-              onClick={onSignOut}
-              className="h-10 px-4 rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
-            >
-              Sign out
-            </button>
+            {/* xl+ full context + chip + sign out */}
+            <div className="hidden xl:flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setContextOpen((v) => !v)}
+                aria-expanded={contextOpen}
+                aria-controls="context-panel"
+                className="inline-flex items-center gap-2 h-10 xl:h-11 px-3.5 xl:px-4 rounded-full bg-white/20 text-white text-xs xl:text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+                title="Organization & Location"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="M4 7h16M6 12h12M8 17h8" />
+                </svg>
+                <span className="font-medium">Context</span>
+                <svg
+                  className={`h-4 w-4 transition-transform ${
+                    contextOpen ? "rotate-180" : ""
+                  }`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M5.75 7.75L10 12l4.25-4.25" />
+                </svg>
+              </button>
+
+              {/* User chip */}
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 ring-1 ring-white/15">
+                  <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[12px] font-bold text-white shadow-sm">
+                    {initials}
+                  </span>
+                  <span className="max-w-[220px] truncate text-[11px] text-white/95 font-medium">
+                    {email || "—"}
+                  </span>
+                  {roleBadge && <span className="ml-1">{roleBadge}</span>}
+                </div>
+              </div>
+
+              <button
+                onClick={onSignOut}
+                className="inline-flex items-center justify-center h-8 xl:h-9 px-3 rounded-full bg-white/20 text-white text-[12px] xl:text-[13px] ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* ===== Desktop context strip (above everything) ===== */}
+        {/* Desktop context strip (lg+ only) */}
         <DesktopContextStrip
           open={contextOpen}
           orgId={orgId}
@@ -378,100 +574,125 @@ export default function Navbar() {
         />
       </div>
 
-      {/* ===== Mobile panel ===== */}
+      {/* ===== Mobile / tablet / small-desktop panel (Navigation / Scope / Account) ===== */}
       <div
         id="nav-panel"
         className={[
-          "sm:hidden transition-[max-height,opacity] duration-300",
+          "lg:hidden transition-[max-height,opacity] duration-300",
           mobileOpen
-            ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto"
+            ? "max-h-[90vh] opacity-100 overflow-visible pointer-events-auto"
             : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
         ].join(" ")}
       >
         <div
-          className="px-4 pb-4"
+          className="px-3 pb-4 pt-2"
           style={{
-            background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
+            background:
+              "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
           }}
         >
-          {/* Primary quick links (capability-aware) */}
-          <div className="flex gap-2 pt-3">
-            <QuickLink to="/" end>Dashboard</QuickLink>
-            {canViewReportsResolved && (
-              <>
-                <QuickLink to="/reports">Reports</QuickLink>
-                <QuickLink to="/usda-monthly">USDA</QuickLink>
-              </>
-            )}
-          </div>
+          <div className="rounded-3xl bg-black/5 backdrop-blur-sm border border-white/12 p-3 space-y-4 max-h-[calc(100vh-5rem)] overflow-auto">
+            {/* Navigation section */}
+            <section>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-white/60 mb-1.5">
+                Navigation
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <MobileNavLink to="/" end>
+                  Dashboard
+                </MobileNavLink>
 
-          {/* Mobile Current Location badge (always visible) */}
-          <div className="mt-3">
-            <span
-              className="inline-flex items-center gap-2 rounded-full bg-white/15 text-white ring-1 ring-white/20 px-3 py-1.5 text-[12px] font-medium"
-              title="Current scope"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <path d="M12 8v8M8 12h8" opacity=".0" />{/* decorative */}
-                <path d="M12 21a9 9 0 1 1 0-18a9 9 0 0 1 0 18Z" opacity=".35" />
-                <path d="M12 16a4 4 0 1 1 0-8a4 4 0 0 1 0 8Z" />
-              </svg>
-              <span className="truncate max-w-[75vw]">
-                <strong className="font-semibold">{activeOrgName}</strong>
-                <span className="opacity-80"> • </span>
-                <span className="opacity-95">{activeLocName}</span>
-              </span>
-            </span>
-          </div>
+                {canAccessInventory && (
+                  <MobileNavLink to="/inventory">Inventory</MobileNavLink>
+                )}
 
-          {/* Mobile selectors */}
-          <div className="mt-3 rounded-2xl bg-white text-gray-900 p-3 shadow-sm">
-            <MobileSelectPopover
-              id="m-org"
-              label="Organization"
-              valueLabel={activeOrgName}
-              disabled={loading || orgs.length === 0}
-              open={orgOpen}
-              setOpen={setOrgOpen}
-              items={orgs}
-              activeId={orgId}
-              onSelect={(o) => handleOrgChange(o.id)}
-              getKey={(o) => o.id}
-              getLabel={(o) => o.name}
-            />
+                {canAccessDonations && (
+                  <MobileNavLink to="/donations">Donations</MobileNavLink>
+                )}
 
-            <div className="h-2" />
+                {canViewReportsResolved && (
+                  <>
+                    <MobileNavLink to="/reports">Reports</MobileNavLink>
+                    <MobileNavLink to="/usda-monthly">USDA</MobileNavLink>
+                  </>
+                )}
 
-            <MobileSelectPopover
-              id="m-loc"
-              label="Location"
-              valueLabel={
-                !orgId
-                  ? "—"
-                  : (isAdmin && canPickAllLocations && locId === "")
-                    ? "All locations"
-                    : (mobileScopedLocations.find(l => l.id === locId)?.name
-                      || (isAdmin && canPickAllLocations ? "All locations" : "Select a location"))
-              }
-              disabled={loading || !orgId || mobileScopedLocations.length === 0}
-              open={locOpen}
-              setOpen={setLocOpen}
-              items={orgId ? mobileScopedLocations : []}
-              activeId={locId}
-              onSelect={(l) => handleLocChange(l.id)}
-              getKey={(l) => l.id}
-              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
-            />
+                {canAccessVolunteers && (
+                  <MobileNavLink to="/volunteer">Volunteers</MobileNavLink>
+                )}
+              </div>
+            </section>
 
-            <p className="mt-3 text-[11px] text-gray-500">Changes are local (per device).</p>
-          </div>
+            {/* Scope section */}
+            <section className="rounded-2xl bg-white text-gray-900 p-3 shadow-sm">
+              <p className="text-[11px] font-medium text-gray-500 mb-2">
+                Scope (local to this device)
+              </p>
 
-          {/* Identity row */}
-          <div className="mt-3 flex items-center justify-end text-white">
-            <div className="inline-flex items-center gap-2 text-[12px]">
-              <span className="truncate max-w-[220px]">{email || "—"}</span>
-              {roleBadge}
-            </div>
+              <div className="space-y-2">
+                <MobileSelectPopover
+                  id="m-org"
+                  label="Organization"
+                  valueLabel={activeOrgName}
+                  disabled={loading || orgs.length === 0}
+                  open={orgOpen}
+                  setOpen={setOrgOpen}
+                  items={orgs}
+                  activeId={orgId}
+                  onSelect={(o) => handleOrgChange(o.id)}
+                  getKey={(o) => o.id}
+                  getLabel={(o) => o.name}
+                />
+
+                <MobileSelectPopover
+                  id="m-loc"
+                  label="Location"
+                  valueLabel={activeLocName}
+                  disabled={
+                    loading || !orgId || mobileScopedLocations.length === 0
+                  }
+                  open={locOpen}
+                  setOpen={setLocOpen}
+                  items={orgId ? mobileScopedLocations : []}
+                  activeId={locId}
+                  onSelect={(l) => handleLocChange(l.id)}
+                  getKey={(l) => l.id}
+                  getLabel={(l) =>
+                    l.name || (l.id === "" ? "All locations" : l.id)
+                  }
+                />
+              </div>
+
+              <p className="mt-2 text-[11px] text-gray-500">
+                Admins may choose{" "}
+                <span className="font-semibold">All locations</span> when
+                available.
+              </p>
+            </section>
+
+            {/* Account section */}
+            <section className="flex items-center justify-between gap-2 pt-1">
+              <div className="flex items-center gap-2 text-[12px] text-white">
+                <span className="h-7 w-7 rounded-full bg-white/20 grid place-items-center text-[12px] font-semibold">
+                  {initials}
+                </span>
+                <div className="flex flex-col leading-tight">
+                  <span className="max-w-[190px] truncate font-medium">
+                    {email || "—"}
+                  </span>
+                  {roleBadge && (
+                    <span className="mt-0.5 inline-flex">{roleBadge}</span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={onSignOut}
+                className="h-9 px-3 rounded-full bg-white/15 text-white text-xs font-medium ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              >
+                Sign out
+              </button>
+            </section>
           </div>
         </div>
       </div>
@@ -502,31 +723,32 @@ function DesktopContextStrip({
   isAdmin,
   canPickAllLocations = false,
 }) {
-  const activeOrgName = orgs.find((o) => o.id === orgId)?.name || "Select an org";
-  const activeLocName =
-    orgId
-      ? (
-          locations.find((l) => l.id === locId)?.name
-          || (isAdmin && canPickAllLocations ? "All locations" : "Select a location")
-        )
-      : "—";
+  const activeOrgName =
+    orgs.find((o) => o.id === orgId)?.name || "Select an org";
+  const activeLocName = orgId
+    ? locations.find((l) => l.id === locId)?.name ||
+      (isAdmin && canPickAllLocations ? "All locations" : "Select a location")
+    : "—";
 
   return (
     <div
       id="context-panel"
       className={[
-        "hidden sm:block relative z-20 transition-[max-height,opacity] duration-300",
-        open ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto" : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
+        "hidden lg:block relative z-20 transition-[max-height,opacity] duration-300",
+        open
+          ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto"
+          : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
       ].join(" ")}
       aria-hidden={!open}
     >
       <div
-        className="mx-auto w-full max-w-7xl xl:max-w-[90rem] px-4 md:px-8 py-4"
+        className="mx-auto w-full max-w-[112rem] px-3 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4"
         style={{
-          background: "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
+          background:
+            "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
         }}
       >
-        <div className="rounded-2xl bg-white/10 p-4 md:p-5">
+        <div className="rounded-2xl bg-white/10 p-3 md:p-4 lg:p-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             <SelectorCard
               id="org-d"
@@ -556,21 +778,32 @@ function DesktopContextStrip({
               activeId={locId}
               onSelect={(l) => onLocChange(l.id)}
               getKey={(l) => l.id}
-              getLabel={(l) => l.name || (l.id === "" ? "All locations" : l.id)}
+              getLabel={(l) =>
+                l.name || (l.id === "" ? "All locations" : l.id)
+              }
             />
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] text-white/85">
               Changes are local (per device).
-              {isAdmin && canPickAllLocations ? " Use “All locations” for org-wide admin data." : ""}
+              {isAdmin && canPickAllLocations
+                ? " Use “All locations” for org-wide admin data."
+                : ""}
             </p>
             <button
               onClick={onSaveDefault}
               className="inline-flex items-center gap-2 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 px-3 py-1.5 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
               title="Save this scope on this device"
             >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
                 <path d="M5 13l4 4L19 7" />
               </svg>
               Save as default
@@ -583,6 +816,7 @@ function DesktopContextStrip({
 }
 
 /* ========= Small UI primitives ========= */
+
 function TopLink({ to, end, className = "", children }) {
   return (
     <NavLink
@@ -590,7 +824,7 @@ function TopLink({ to, end, className = "", children }) {
       end={end}
       className={({ isActive }) =>
         [
-          "relative h-10 px-3.5 rounded-full text-[15px] tracking-tight font-semibold inline-flex items-center justify-center transition",
+          "relative h-8 xl:h-9 px-3 rounded-full text-[13px] xl:text-[14px] tracking-tight font-semibold inline-flex items-center justify-center whitespace-nowrap transition",
           isActive
             ? "bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm"
             : "text-white hover:bg-white/15",
@@ -615,15 +849,17 @@ function TopLink({ to, end, className = "", children }) {
   );
 }
 
-function QuickLink({ to, end, children }) {
+function MobileNavLink({ to, end, children }) {
   return (
     <NavLink
       to={to}
       end={end}
       className={({ isActive }) =>
         [
-          "relative flex-1 h-11 rounded-full text-[15px] font-medium inline-flex items-center justify-center transition",
-          isActive ? "bg-white/15 text-white" : "text-white/95 hover:bg-white/10",
+          "w-full inline-flex items-center justify-between rounded-2xl px-3.5 py-2.5 text-[14px] font-medium transition",
+          isActive
+            ? "bg-white/20 text-white ring-1 ring-white/40"
+            : "bg-white/10 text-white/95 hover:bg-white/15",
         ].join(" ")
       }
     >
@@ -633,9 +869,8 @@ function QuickLink({ to, end, children }) {
           <span
             aria-hidden
             className={[
-              "pointer-events-none absolute -bottom-2 left-4 right-4 h-[3px] rounded-full bg-white/90 origin-center",
-              "transition-transform duration-300 ease-out",
-              isActive ? "scale-x-100" : "scale-x-0",
+              "h-1.5 w-1.5 rounded-full",
+              isActive ? "bg-white" : "bg-white/40",
             ].join(" ")}
           />
         </>
@@ -683,7 +918,8 @@ function SelectorCard({
               e.preventDefault();
               setOpen(true);
               setTimeout(() => {
-                const first = menuRef.current?.querySelector('[role="option"]');
+                const first =
+                  menuRef.current?.querySelector('[role="option"]');
                 first?.focus();
               }, 0);
             }
@@ -692,11 +928,18 @@ function SelectorCard({
             "group h-11 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
             "border border-brand-200 hover:border-brand-300",
             "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
-            open ? "ring-2 ring-brand-300 border-brand-300" : ""
+            open ? "ring-2 ring-brand-300 border-brand-300" : "",
           ].join(" ")}
         >
           <span className="truncate">{valueLabel}</span>
-          <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <svg
+            className={`h-4 w-4 ml-2 flex-none transition-transform ${
+              open ? "rotate-180" : ""
+            }`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M5.75 7.75L10 12l4.25-4.25" />
           </svg>
         </button>
@@ -709,9 +952,15 @@ function SelectorCard({
           tabIndex={-1}
           className="absolute left-[7rem] top-full z-[60] mt-1 min-w-[calc(100%-7rem)] max-w-[420px] rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden"
         >
-          <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">{label}</div>
+          <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">
+            {label}
+          </div>
           <ul className="max-h-[320px] overflow-auto py-1">
-            {items.length === 0 && <li className="px-3 py-2 text-sm text-gray-500 select-none">No options</li>}
+            {items.length === 0 && (
+              <li className="px-3 py-2 text-sm text-gray-500 select-none">
+                No options
+              </li>
+            )}
             {items.map((it) => {
               const k = getKey(it);
               const isActive = String(activeId) === String(k);
@@ -723,10 +972,26 @@ function SelectorCard({
                     tabIndex={0}
                     onClick={() => onSelect(it)}
                     onKeyDown={(e) => e.key === "Enter" && onSelect(it)}
-                    className={["w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors", isActive ? "bg-brand-50 text-brand-900" : "hover:bg-gray-50"].join(" ")}
+                    className={[
+                      "w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors",
+                      isActive
+                        ? "bg-brand-50 text-brand-900"
+                        : "hover:bg-gray-50",
+                    ].join(" ")}
                   >
-                    <span className={["h-2.5 w-2.5 rounded-full", isActive ? "bg-brand-500" : "bg-brand-200"].join(" ")} />
-                    <span className={isActive ? "font-medium truncate" : "truncate"}>{getLabel(it)}</span>
+                    <span
+                      className={[
+                        "h-2.5 w-2.5 rounded-full",
+                        isActive ? "bg-brand-500" : "bg-brand-200",
+                      ].join(" ")}
+                    />
+                    <span
+                      className={
+                        isActive ? "font-medium truncate" : "truncate"
+                      }
+                    >
+                      {getLabel(it)}
+                    </span>
                   </button>
                 </li>
               );
@@ -756,7 +1021,9 @@ function MobileSelectPopover({
   return (
     <div className="relative">
       <div className="flex items-center gap-3">
-        <label htmlFor={id} className="w-28 text-xs text-gray-700">{label}</label>
+        <label htmlFor={id} className="w-24 text-xs text-gray-700">
+          {label}
+        </label>
 
         <button
           id={id}
@@ -771,14 +1038,21 @@ function MobileSelectPopover({
             setOpen((v) => !v);
           }}
           className={[
-            "h-12 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
+            "h-11 w-full rounded-full bg-white text-gray-900 px-4 text-sm shadow-sm text-left flex items-center justify-between",
             "border border-brand-200 hover:border-brand-300",
             "focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200",
-            open ? "ring-2 ring-brand-300 border-brand-300" : ""
+            open ? "ring-2 ring-brand-300 border-brand-300" : "",
           ].join(" ")}
         >
           <span className="truncate">{valueLabel}</span>
-          <svg className={`h-4 w-4 ml-2 flex-none transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <svg
+            className={`h-4 w-4 ml-2 flex-none transition-transform ${
+              open ? "rotate-180" : ""
+            }`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M5.75 7.75L10 12l4.25-4.25" />
           </svg>
         </button>
@@ -789,12 +1063,18 @@ function MobileSelectPopover({
           ref={menuRef}
           role="listbox"
           tabIndex={-1}
-          className="absolute left-28 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
+          className="absolute left-24 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
         >
-          <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">{label}</div>
+          <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">
+            {label}
+          </div>
           <ul className="max-h-[60vh] overflow-auto py-1">
-            {items.length === 0 && <li className="px-3 py-2 text-sm text-gray-500 select-none">No options</li>}
-            {items.map(it => {
+            {items.length === 0 && (
+              <li className="px-3 py-2 text-sm text-gray-500 select-none">
+                No options
+              </li>
+            )}
+            {items.map((it) => {
               const k = String(getKey(it));
               const isActive = String(activeId) === k;
               return (
@@ -802,14 +1082,30 @@ function MobileSelectPopover({
                   <button
                     role="option"
                     aria-selected={isActive}
-                    onClick={() => { onSelect(it); setOpen(false); }}
+                    onClick={() => {
+                      onSelect(it);
+                      setOpen(false);
+                    }}
                     className={[
                       "w-full text-left px-3 py-2 text-sm flex items-center gap-3 transition-colors",
-                      isActive ? "bg-brand-50 text-brand-900" : "hover:bg-gray-50"
+                      isActive
+                        ? "bg-brand-50 text-brand-900"
+                        : "hover:bg-gray-50",
                     ].join(" ")}
                   >
-                    <span className={["h-2.5 w-2.5 rounded-full", isActive ? "bg-brand-500" : "bg-brand-200"].join(" ")} />
-                    <span className={isActive ? "font-medium truncate" : "truncate"}>{getLabel(it)}</span>
+                    <span
+                      className={[
+                        "h-2.5 w-2.5 rounded-full",
+                        isActive ? "bg-brand-500" : "bg-brand-200",
+                      ].join(" ")}
+                    />
+                    <span
+                      className={
+                        isActive ? "font-medium truncate" : "truncate"
+                      }
+                    >
+                      {getLabel(it)}
+                    </span>
                   </button>
                 </li>
               );

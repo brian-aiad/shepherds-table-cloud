@@ -21,17 +21,15 @@ import {
 
 
 // 🔐 project paths
-import { db } from "../lib/firebase";
+import { db } from "../../lib/firebase";
 // NOTE: useAuth is a DEFAULT export in your app
-import useAuth from "../auth/useAuth";
-import AddVisitButton from "../components/AddVisitButton";
+import useAuth from "../../auth/useAuth";
+import AddVisitButton from "../../components/AddVisitButton";
 
 // EFAP / USDA builders (fixed names)
-import {
-  buildEfapDailyPdf,
-  efapSuggestedFileName,
-} from "../utils/buildEfapDailyPdf";
-import { downloadEfapMonthlyPdf } from "../utils/buildEfapMonthlyPdf";
+// EFAP / USDA builders are large; dynamically import them where needed to keep
+// the initial Reports chunk smaller. We'll load these utilities only when the
+// user triggers an export or PDF build.
 
 // Recharts (charts & responsive container)
 import {
@@ -1485,7 +1483,7 @@ const removeDay = useCallback(
   );
 
   const buildEfapBytesForDay = useCallback(
-    (dayKey) => {
+    async (dayKey) => {
       const src = visitsByDay.get(dayKey) || [];
 
       const rows = src.map((v) => {
@@ -1527,7 +1525,9 @@ const removeDay = useCallback(
       });
 
       // Pass org branding so Food Bank Name fills correctly
-      return buildEfapDailyPdf(rows, {
+      // Dynamically import the EFAP daily builder only when needed.
+      const mod = await import("../../utils/buildEfapDailyPdf");
+      return await mod.buildEfapDailyPdf(rows, {
         dateStamp: dayKey,
         orgSettings,
         orgName: org?.name,
@@ -1540,10 +1540,11 @@ const removeDay = useCallback(
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
       try {
-        const pdfBytes = await buildEfapBytesForDay(dayKey);
-        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
-          .replace(/\s+/g, "_");
-        const fileName = efapSuggestedFileName(dayKey, site);
+          const pdfBytes = await buildEfapBytesForDay(dayKey);
+          const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
+            .replace(/\s+/g, "_");
+          const mod = await import("../../utils/buildEfapDailyPdf");
+          const fileName = mod.efapSuggestedFileName(dayKey, site);
 
         downloadBytes(pdfBytes, fileName, "application/pdf");
         toast.show("EFAP PDF downloaded.", "info");
@@ -1561,7 +1562,8 @@ const removeDay = useCallback(
         const pdfBytes = await buildEfapBytesForDay(dayKey);
         const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
           .replace(/\s+/g, "_");
-        const fileName = efapSuggestedFileName(dayKey, site);
+        const mod = await import("../../utils/buildEfapDailyPdf");
+        const fileName = mod.efapSuggestedFileName(dayKey, site);
 
         const file = new File([toUint8Array(pdfBytes)], fileName, {
           type: "application/pdf",
@@ -1595,7 +1597,8 @@ const removeDay = useCallback(
         }
       );
 
-      await downloadEfapMonthlyPdf(
+      const mod = await import("../../utils/buildEfapMonthlyPdf");
+      await mod.downloadEfapMonthlyPdf(
         {
           year,
           monthIndex0,

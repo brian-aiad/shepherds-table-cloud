@@ -2,40 +2,49 @@
 // Shepherds Table Cloud — App Router (Nov 2025)
 // - React Router v6 with Suspense + lazy routes
 // - Protected shell for all authenticated pages
-// - Capability-based guards per route (dashboard, reports, etc.)
-// - Auth-aware NotFound: unauth → /login, authed → /
-// - Public marketing + legal pages included (about/pricing/privacy/terms/usage)
+// - Capability-based guards per route
+// - Auth-aware NotFound
+// - Updated paths for new folder structure
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 
 import ProtectedRoute from "./auth/ProtectedRoute";
 import Layout from "./components/Layout";
-import UsagePolicy from "./pages/UsagePolicy.jsx";
 
-// Lazy-loaded pages (Vite-friendly)
-const Login = lazy(() => import("./pages/Login"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Reports = lazy(() => import("./pages/Reports"));
-const UsdaMonthly = lazy(() => import("./pages/UsdaMonthly"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const TermsOfService = lazy(() => import("./pages/TermsOfService"));
-const About = lazy(() => import("./pages/About"));
-const Pricing = lazy(() => import("./pages/Pricing"));
+// Static import (legal page required at build-time)
+import UsagePolicy from "./pages/legal/UsagePolicy.jsx";
 
 // ─────────────────────────────────────────────────────────────
-// AuthAwareNotFound — redirect based on auth state
-//  • unauthenticated → /login
-//  • authenticated   → /
+// Lazy-loaded pages with UPDATED PATHS
+// ─────────────────────────────────────────────────────────────
+
+// Auth
+const Login = lazy(() => import("./pages/auth/Login.jsx"));
+
+// App (protected)
+const Dashboard = lazy(() => import("./pages/app/Dashboard.jsx"));
+const Inventory = lazy(() => import("./pages/app/Inventory.jsx"));   // ← NEW
+const Donations = lazy(() => import("./pages/app/Donations.jsx"));   // ← NEW
+const Reports = lazy(() => import("./pages/app/Reports.jsx"));
+const UsdaMonthly = lazy(() => import("./pages/app/UsdaMonthly.jsx"));
+
+// Public marketing
+const About = lazy(() => import("./pages/public/About.jsx"));
+const Pricing = lazy(() => import("./pages/public/Pricing.jsx"));
+
+// Legal
+const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy.jsx"));
+const TermsOfService = lazy(() => import("./pages/legal/TermsOfService.jsx"));
+
+// ─────────────────────────────────────────────────────────────
+// AuthAwareNotFound
 // ─────────────────────────────────────────────────────────────
 function AuthAwareNotFound() {
-  // useAuth is read inside ProtectedRoute, so here we do a simple auth-aware redirect:
-  // If ProtectedRoute isn't mounted, fall back to sending the user to /login.
-  // This keeps the catch-all simple and avoids importing auth state here.
   return <Navigate to="/login" replace />;
 }
 
-// Shared Suspense fallback (accessible)
+// Shared Suspense fallback
 const Fallback = (
   <div
     className="min-h-[40vh] grid place-items-center p-6 text-sm text-gray-600"
@@ -53,17 +62,17 @@ export default function App() {
   return (
     <Suspense fallback={Fallback}>
       <Routes>
-        {/* ───── Public marketing routes ───── */}
+        {/* ───── Public Marketing ───── */}
         <Route path="/about" element={<About />} />
         <Route path="/pricing" element={<Pricing />} />
 
-        {/* ───── Public legal & auth routes ───── */}
+        {/* ───── Auth & Legal ───── */}
         <Route path="/login" element={<Login />} />
         <Route path="/usage" element={<UsagePolicy />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
 
-        {/* ───── Protected application shell ───── */}
+        {/* ───── Protected App Shell ───── */}
         <Route
           path="/"
           element={
@@ -72,7 +81,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          {/* Default Dashboard (capability-based) */}
+          {/* Dashboard (default) */}
           <Route
             index
             element={
@@ -82,7 +91,27 @@ export default function App() {
             }
           />
 
-          {/* Reports (capability-based) */}
+          {/* Inventory */}
+          <Route
+            path="inventory"
+            element={
+              <ProtectedRoute capability="inventory">
+                <Inventory />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Donations */}
+          <Route
+            path="donations"
+            element={
+              <ProtectedRoute capability="donations">
+                <Donations />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Reports */}
           <Route
             path="reports"
             element={
@@ -92,7 +121,7 @@ export default function App() {
             }
           />
 
-          {/* USDA Monthly (capability-based; grouped with reports) */}
+          {/* USDA Monthly */}
           <Route
             path="usda-monthly"
             element={
@@ -102,11 +131,11 @@ export default function App() {
             }
           />
 
-          {/* In-shell catch-all → home */}
+          {/* In-shell catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
 
-        {/* ───── Outside-shell catch-all → auth-aware redirect ───── */}
+        {/* ───── Outer catch-all ───── */}
         <Route path="*" element={<AuthAwareNotFound />} />
       </Routes>
     </Suspense>

@@ -16,9 +16,10 @@ import {
   onSnapshot,
   getDocs,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
-import { useAuth } from "../auth/useAuth";
-import { downloadEfapMonthlyPdf } from "../utils/buildEfapMonthlyPdf";
+import { db } from "../../lib/firebase";
+import { useAuth } from "../../auth/useAuth";
+// downloadEfapMonthlyPdf is large — dynamically import when exporting to keep the
+// initial UsdaMonthly chunk small.
 
 /* =========================
    Pure helpers
@@ -434,7 +435,8 @@ export default function UsdaMonthly() {
       Array.from(agg.byDay.entries()).map(([k, v]) => [k, { households: v.visits, persons: v.persons }])
     );
 
-    await downloadEfapMonthlyPdf(
+    const mod = await import("../../utils/buildEfapMonthlyPdf");
+    await mod.downloadEfapMonthlyPdf(
       {
         year,
         monthIndex0,

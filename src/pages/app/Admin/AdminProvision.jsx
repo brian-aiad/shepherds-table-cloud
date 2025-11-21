@@ -17,8 +17,8 @@ import {
   query, where, orderBy
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../lib/firebase";
-import { useAuth } from "../auth/useAuth";
+import { db, functions } from "../../../lib/firebase";
+import { useAuth } from "../../../auth/useAuth";
 
 function cx(...v) { return v.filter(Boolean).join(" "); }
 const ROLES = [
