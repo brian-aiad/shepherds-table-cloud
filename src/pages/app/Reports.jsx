@@ -17,7 +17,12 @@ import {
   orderBy,
   doc,
   deleteDoc,
+  getDoc,
+  writeBatch,
+  updateDoc,
 } from "firebase/firestore";
+
+
 
 
 // 🔐 project paths
@@ -123,6 +128,7 @@ const isDateKeyInMonth = (dateKey, monthKey) => {
   const { startKey, endKey } = monthRangeFor(monthKey);
   return dateKey >= startKey && dateKey <= endKey;
 };
+
 
 
 /* ---------- tiny toast ---------- */
@@ -783,12 +789,6 @@ export default function Reports() {
   // Input control for adding a day
   const [addDayInput, setAddDayInput] = useState("");
 
-  // Load when org/location/month changes
-  useEffect(() => {
-    const key = mdStorageKey(org?.id, location?.id, selectedMonthKey);
-    setManualDays(loadManualDays(key));
-    setAddDayInput("");
-  }, [org?.id, location?.id, selectedMonthKey]);
   const [visits, setVisits] = useState([]);
   const [clientsById, setClientsById] = useState(new Map());
   const [clientsHydrated, setClientsHydrated] = useState(false);
@@ -796,6 +796,37 @@ export default function Reports() {
   // 🔁 Per-org client cache so changing days/months is instant & future-proof
   const clientCacheRef = useRef(new Map());
   const lastOrgIdRef = useRef(null);
+
+  // live-ish status
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [syncAgo, setSyncAgo] = useState("");
+
+  const dayListRef = useRef(null);
+  const [dayFilter, setDayFilter] = useState("");
+  const [term, setTerm] = useState("");
+  const [usdaFilter, setUsdaFilter] = useState("all"); // all|yes|no
+  const [sortKey, setSortKey] = useState("time"); // time|name|hh
+  const [sortDir, setSortDir] = useState("desc"); // asc|desc
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [kebabOpen, setKebabOpen] = useState(false);
+  const menuRef = useRef(null);
+  const kebabRef = useRef(null);
+
+  const [rowMenuOpen, setRowMenuOpen] = useState(null);
+  const [editVisit, setEditVisit] = useState(null);
+
+
+
+  // Load when org/location/month changes
+  useEffect(() => {
+    const key = mdStorageKey(org?.id, location?.id, selectedMonthKey);
+    setManualDays(loadManualDays(key));
+    setAddDayInput("");
+  }, [org?.id, location?.id, selectedMonthKey]);
+
+
+  // 🔁 Per-org client cache so changing days/months is instant & future-proof
 
   // Reset client cache when org changes (multi-org ready)
   useEffect(() => {
@@ -808,8 +839,7 @@ export default function Reports() {
   }, [org?.id]);
 
   // live-ish status
-  const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const [syncAgo, setSyncAgo] = useState("");
+
   useEffect(() => {
     const tick = () => {
       if (!lastSyncedAt) return setSyncAgo("");
@@ -825,19 +855,7 @@ export default function Reports() {
     return () => clearInterval(id);
   }, [lastSyncedAt]);
 
-  // UI state
-  const dayListRef = useRef(null);
-  const [dayFilter, setDayFilter] = useState("");
-  const [term, setTerm] = useState("");
-  const [usdaFilter, setUsdaFilter] = useState("all"); // all|yes|no
-  const [sortKey, setSortKey] = useState("time"); // time|name|hh
-  const [sortDir, setSortDir] = useState("desc"); // asc|desc
 
-  // menu state (split-button + kebab)
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [kebabOpen, setKebabOpen] = useState(false);
-  const menuRef = useRef(null);
-  const kebabRef = useRef(null);
 
   useEffect(() => {
     const onDocClick = (e) => {
@@ -1141,22 +1159,14 @@ export default function Reports() {
     return { count, hh, usdaYes };
   }, [visitsByDay, selectedDate]);
 
-  // Base row model for the table (one day, before filters/sort)
+   // Base row model for the table (one day, before filters/sort)
   const baseRows = useMemo(() => {
     const dayVisits = visitsByDay.get(selectedDate) || [];
 
     return dayVisits.map((v) => {
       const p = clientsById.get(v.clientId) || {};
 
-      const visitDate = v.visitAt ? toJSDate(v.visitAt) : null;
-      const visitTs = visitDate ? visitDate.getTime() : 0;
-      const localTime = visitDate
-        ? visitDate.toLocaleTimeString([], {
-            hour: "numeric",
-            minute: "2-digit",
-          })
-        : "";
-
+      // build display name from client doc + visit snapshot fields
       const first =
         p.firstName ??
         v.clientFirstName ??
@@ -1172,21 +1182,54 @@ export default function Reports() {
 
       const labelName =
         `${first} ${last}`.trim() ||
-        (typeof v.clientName === "string" ? v.clientName : "Unnamed client");
+        (typeof v.clientName === "string" ? v.clientName : "") ||
+        "—";
 
+      const visitDate = v.visitAt ? toJSDate(v.visitAt) : null;
+      const visitTs = visitDate ? visitDate.getTime() : 0;
+      const localTime = visitDate
+        ? visitDate.toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : "";
+
+      // Prefer historical snapshot on the visit, then fall back to legacy fields / client doc
       const county = v.clientCounty || p.county || "";
-      const zip = p.zip || v.clientZip || v.zip || "";
+      const zip = v.clientZip || v.zip || p.zip || "";
 
       const visitHousehold = Number(v.householdSize || 0) || 0;
 
+      // use addedAt when present, otherwise createdAt, otherwise visitAt
+      const addedSource = v.addedAt || v.createdAt || v.visitAt;
       let addedLocalTime = "";
-      if (v.addedAt) {
-        const ad = toJSDate(v.addedAt);
+      let addedLocalDate = "";
+      let addedTs = 0;
+
+      if (addedSource) {
+        const ad = toJSDate(addedSource);
+        addedTs = ad.getTime();
+
         addedLocalTime = ad.toLocaleTimeString([], {
           hour: "numeric",
           minute: "2-digit",
         });
+
+        addedLocalDate = ad.toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
       }
+
+      const displayDateTime = visitDate
+        ? `${selectedDate ||
+            visitDate.toLocaleDateString([], {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })} • ${localTime || ""}`.trim()
+        : "";
 
       return {
         visitId: v.id,
@@ -1202,13 +1245,17 @@ export default function Reports() {
         zip,
         localTime,
         visitTs,
+        addedTs, // when this visit was added
         labelName,
         labelNameLower: labelName.toLowerCase(),
         addedByReports: !!v.addedByReports,
         addedLocalTime,
+        addedLocalDate,
+        displayDateTime,
       };
     });
   }, [visitsByDay, selectedDate, clientsById]);
+
 
   // Apply USDA filter, search term, and sorting
   const filteredSortedRows = useMemo(() => {
@@ -1233,18 +1280,23 @@ export default function Reports() {
     }
 
     // Sort
-    rows.sort((a, b) => {
+        rows.sort((a, b) => {
       let cmp = 0;
+
       if (sortKey === "name") {
         cmp = a.labelNameLower.localeCompare(b.labelNameLower);
       } else if (sortKey === "hh") {
         cmp = (a.visitHousehold || 0) - (b.visitHousehold || 0);
       } else {
-        // time
-        cmp = (a.visitTs || 0) - (b.visitTs || 0);
+        // time = when it was added (fallback to visitTs if needed)
+        const atA = a.addedTs ?? a.visitTs ?? 0;
+        const atB = b.addedTs ?? b.visitTs ?? 0;
+        cmp = atA - atB;
       }
+
       return sortDir === "asc" ? cmp : -cmp;
     });
+
 
     return rows;
   }, [baseRows, usdaFilter, term, sortKey, sortDir]);
@@ -1304,6 +1356,10 @@ export default function Reports() {
     },
     [canDeleteVisits, toast, org?.id]
   );
+
+
+  
+
 
 
   const addManualDay = useCallback(() => {
@@ -1444,37 +1500,37 @@ const removeDay = useCallback(
     (dayKey) => {
       const src = visitsByDay.get(dayKey) || [];
       const rows = src.map((v) => {
-        const d = toJSDate(v.visitAt);
-        const p = clientsById.get(v.clientId) || {};
-        const address =
-          p.address ||
-          p.addr ||
-          p.street ||
-          p.street1 ||
-          p.line1 ||
-          p.address1 ||
-          v.clientAddress ||
-          v.clientStreet ||
-          v.clientLine1 ||
-          "";
+  const d = toJSDate(v.visitAt);
+  const p = clientsById.get(v.clientId) || {};
+  const address =
+    p.address ||
+    p.addr ||
+    p.street ||
+    p.street1 ||
+    p.line1 ||
+    p.address1 ||
+    v.clientAddress ||
+    v.clientStreet ||
+    v.clientLine1 ||
+    "";
+  const zip = v.clientZip || v.zip || p.zip || "";
 
-        const zip = p.zip || v.clientZip || v.zip || "";
+  return {
+    dateKey: v.dateKey || fmtDateKey(d),
+    monthKey: v.monthKey || "",
+    visitId: v.id,
+    visitAtISO: toISO(d),
+    clientId: v.clientId || "",
+    firstName: p.firstName || "",
+    lastName: p.lastName || "",
+    address,
+    zip,
+    householdSize: v.householdSize ?? "",
+    usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
+    usdaCount: v.usdaCount ?? "",
+  };
+});
 
-        return {
-          dateKey: v.dateKey || fmtDateKey(d),
-          monthKey: v.monthKey || "",
-          visitId: v.id,
-          visitAtISO: toISO(d),
-          clientId: v.clientId || "",
-          firstName: p.firstName || "",
-          lastName: p.lastName || "",
-          address,
-          zip: p.zip || "",
-          householdSize: v.householdSize ?? "",
-          usdaFirstTimeThisMonth: v.usdaFirstTimeThisMonth ?? "",
-          usdaCount: v.usdaCount ?? "",
-        };
-      });
       const csv = buildUsdaMonthlyCsv({ rows });
       downloadText(csv, `visits_${dayKey}.csv`);
       toast.show("CSV exported.", "info");
@@ -1483,13 +1539,31 @@ const removeDay = useCallback(
   );
 
   const buildEfapBytesForDay = useCallback(
-    async (dayKey) => {
+  async (dayKey) => {
+    let srcRows;
+
+    // If we're exporting for the currently selected day,
+    // use the exact same rows as the table.
+    if (dayKey === selectedDate) {
+      srcRows = filteredSortedRows.map((r) => ({
+        name: r.labelName,
+        county: r.county || "",
+        zip: r.zip || "",
+        householdSize: Number(r.visitHousehold || 0),
+        firstTime:
+          r.usdaFirstTimeThisMonth === true
+            ? true
+            : r.usdaFirstTimeThisMonth === false
+            ? false
+            : "",
+      }));
+    } else {
+      // Fallback: build from raw visits for that day (used by sidebar quick actions)
       const src = visitsByDay.get(dayKey) || [];
 
-      const rows = src.map((v) => {
+      srcRows = src.map((v) => {
         const p = clientsById.get(v.clientId) || {};
 
-        // --- Name: match the table’s fallback behavior (NO clientId fallback) ---
         const first =
           p.firstName ??
           v.clientFirstName ??
@@ -1500,14 +1574,13 @@ const removeDay = useCallback(
           v.clientLastName ??
           (typeof p.name === "string"
             ? p.name.split(" ").slice(1).join(" ")
-            : "") ?? "";
+            : "") ??
+          "";
         const name =
           `${first} ${last}`.trim() ||
-          (typeof v.clientName === "string" ? v.clientName : ""); // final human fallback
+          (typeof v.clientName === "string" ? v.clientName : "");
 
-        // --- county
         const county = v.clientCounty || p.county || "";
-
         const zip = p.zip || v.clientZip || "";
 
         return {
@@ -1523,19 +1596,28 @@ const removeDay = useCallback(
               : "",
         };
       });
+    }
 
-      // Pass org branding so Food Bank Name fills correctly
-      // Dynamically import the EFAP daily builder only when needed.
-      const mod = await import("../../utils/buildEfapDailyPdf");
-      return await mod.buildEfapDailyPdf(rows, {
-        dateStamp: dayKey,
-        orgSettings,
-        orgName: org?.name,
-        org,
-      });
-    },
-    [visitsByDay, clientsById, org, orgSettings]
-  );
+    const mod = await import("../../utils/buildEfapDailyPdf");
+    return await mod.buildEfapDailyPdf(srcRows, {
+      dateStamp: dayKey,
+      orgSettings,
+      orgName: org?.name,
+      org,
+    });
+  },
+  [
+    selectedDate,
+    filteredSortedRows,
+    visitsByDay,
+    clientsById,
+    org,
+    orgSettings,
+  ]
+);
+
+
+
 
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
@@ -1676,6 +1758,23 @@ const removeDay = useCallback(
   // Accessible aria-sort helper for table headers
   const ariaSortFor = (key) =>
     sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+
+  
+    const handleHeaderSort = useCallback(
+    (key) => {
+      setSortKey((prevKey) => {
+        if (prevKey === key) {
+          // same column -> just flip direction
+          setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+          return prevKey;
+        }
+        // new column -> sensible defaults
+        setSortDir(key === "name" ? "asc" : "desc");
+        return key;
+      });
+    },
+    []
+  );
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
@@ -1983,44 +2082,47 @@ const removeDay = useCallback(
       {/* ===== Layout: days list + table ===== */}
       <div className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 print:block">
         {/* Days list */}
-        <aside className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1">
+        <aside className={
+          "group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1 " +
+          "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
+        }>
           <div className="mb-3 sm:mb-4 flex flex-col gap-2">
-  <div className="flex items-center justify-between">
-    <div className="font-semibold">
-      Days in {monthLabel(selectedMonthKey)}
-    </div>
-    <input
-      className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
-      placeholder="Filter (YYYY-MM-DD)"
-      value={dayFilter}
-      onChange={(e) => setDayFilter(e.target.value)}
-      aria-label="Filter days"
-    />
-  </div>
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">
+                Days in {monthLabel(selectedMonthKey)}
+              </div>
+              <input
+                className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
+                placeholder="Filter (YYYY-MM-DD)"
+                value={dayFilter}
+                onChange={(e) => setDayFilter(e.target.value)}
+                aria-label="Filter days"
+              />
+            </div>
 
-  {/* Add Day row */}
-  <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-    <input
-      type="date"
-      value={addDayInput}
-      onChange={(e) => setAddDayInput(e.target.value)}
-      aria-label="Pick a day to add"
-      className="rounded-lg border px-2 py-2 text-sm"
-      min={monthRangeFor(selectedMonthKey).startKey}
-      max={monthRangeFor(selectedMonthKey).endKey}
-      placeholder="YYYY-MM-DD"
-    />
-    <button
-      onClick={addManualDay}
-      className="inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-semibold shadow bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
-      title="Add a blank day to this month"
-      aria-label="Add day"
-    >
-      Add Day
-    </button>
-    
-  </div>
-</div>
+            {/* Add Day row */}
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+              <input
+                type="date"
+                value={addDayInput}
+                onChange={(e) => setAddDayInput(e.target.value)}
+                aria-label="Pick a day to add"
+                className="rounded-lg border px-2 py-2 text-sm"
+                min={monthRangeFor(selectedMonthKey).startKey}
+                max={monthRangeFor(selectedMonthKey).endKey}
+                placeholder="YYYY-MM-DD"
+              />
+              <button
+                onClick={addManualDay}
+                className="inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-semibold shadow bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
+                title="Add a blank day to this month"
+                aria-label="Add day"
+              >
+                Add Day
+              </button>
+              
+            </div>
+          </div>
 
 
           <div
@@ -2060,7 +2162,7 @@ const removeDay = useCallback(
                         setSelectedDate(k);
                       }
                     }}
-                    className={`group cursor-pointer flex items-stretch gap-2 p-2 rounded-xl border transition ${
+                    className={`group cursor-pointer flex items-center gap-2 p-2 rounded-xl border transition ${
                       isSelected
                         ? "bg-brand-50 border-brand-200 shadow-sm"
                         : "bg-white border-gray-200 hover:bg-gray-50 shadow-sm"
@@ -2068,13 +2170,13 @@ const removeDay = useCallback(
                   >
                     <div className="flex-1 px-2 py-1">
                                           
+                    <div className="font-medium flex items-center gap-2">
+                      {k}
                       {isToday && (
-                        <span className="inline-block mb-1 text-[10px] leading-none tracking-wide font-semibold rounded px-1.5 py-0.5 bg-brand-700 text-white">
+                        <span className="inline-flex ml-2 items-center text-[10px] leading-none tracking-wide font-semibold rounded px-1.5 py-0.5 bg-brand-700 text-white">
                           TODAY
                         </span>
                       )}
-                    <div className="font-medium flex items-center gap-2">
-                      {k}
                       {!visitsByDay.has(k) ? (
                         <span className="text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 bg-gray-100 text-gray-700 ring-1 ring-gray-200">
                           Added
@@ -2087,35 +2189,62 @@ const removeDay = useCallback(
                       </div>
                     </div>
 
-                    {/* Quick action(s) */}
-                    <div className="ml-1 flex items-center gap-2 shrink-0">
-                      {/* Delete Day — now always available if user can delete */}
-                      {canDeleteVisits ? (
-                        <button
-                          data-day-action
-                          className={BTN.smallIcon + " text-red-700 border-red-200 hover:bg-red-50"}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeDay(k);
-                          }}
-                          aria-label={`Delete ${k}`}
-                          title="Delete day"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      ) : null}
-
-                      {/* Share EFAP PDF */}
+                    {/* Day actions menu */}
+                    <div className="relative ml-1 shrink-0" data-day-action>
                       <button
-                        data-day-action
-                        className={BTN.smallIcon}
-                        onClick={() => shareEfapDailyPdfForDay(k)}
-                        disabled={!k}
-                        aria-label={`Share EFAP PDF for ${k}`}
-                        title="Share EFAP PDF"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 transition"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRowMenuOpen((prev) => (prev === `day-${k}` ? null : `day-${k}`));
+                        }}
+                        aria-label="Day actions"
+                        title="More actions"
                       >
-                        <ShareIcon className="h-4 w-4" />
+                        <KebabIcon className="h-4 w-4" />
                       </button>
+
+                      {rowMenuOpen === `day-${k}` && (
+                        <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl border border-gray-200 shadow-lg z-20 p-1">
+                          
+                          {/* Share EFAP PDF */}
+                          <button
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm"
+                            onClick={() => {
+                              setRowMenuOpen(null);
+                              shareEfapDailyPdfForDay(k);
+                            }}
+                          >
+                            <ShareIcon className="h-4 w-4" />
+                            <span>Share EFAP</span>
+                          </button>
+
+                          {/* Export CSV */}
+                          <button
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm"
+                            onClick={() => {
+                              setRowMenuOpen(null);
+                              exportOneDayCsv(k);
+                            }}
+                          >
+                            <DownloadIcon className="h-4 w-4" />
+                            <span>Export CSV</span>
+                          </button>
+
+                          {/* Delete day (if allowed) */}
+                          {canDeleteVisits && (
+                            <button
+                              className="w-full text-left px-3 py-2 rounded-lg text-red-700 hover:bg-red-50 flex items-center gap-2 text-sm"
+                              onClick={(e) => {
+                                setRowMenuOpen(null);
+                                removeDay(k);
+                              }}
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                              <span>Delete day</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
 
@@ -2130,10 +2259,14 @@ const removeDay = useCallback(
               )}
             </ul>
           </div>
+          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </aside>
 
         {/* Table / details */}
-        <section className="lg:col-span-2 rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3">
+        <section className={
+          "lg:col-span-2 group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 " +
+          "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
+        }>
           {/* Header: date + actions (mobile = tidy grid) */}
           <div className="mb-3">
             {/* Title + desktop actions */}
@@ -2145,6 +2278,29 @@ const removeDay = useCallback(
               {/* Desktop actions: EFAP + split menu + Add Visit (by capability) */}
               <div className="flex items-center gap-1.5" ref={menuRef}>
                 {/* Split menu (desktop) */}
+                
+
+                                <button
+                  className={BTN.primary + " min-w-[120px]"}
+                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+                  disabled={!selectedDate}
+                  title="Download EFAP PDF for this day"
+                  aria-label="EFAP PDF"
+                >
+                  EFAP PDF
+                </button>
+
+                
+
+                {selectedDate && canLogVisits && (
+                  <AddVisitButton
+                    org={org}
+                    location={location}
+                    selectedDate={selectedDate}
+                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
+                  />
+                )}
+
                 <div className="relative">
                   <button
                     className={BTN.icon}
@@ -2174,6 +2330,8 @@ const removeDay = useCallback(
                         <ShareIcon className="h-4 w-4" />
                         <span>Share EFAP</span>
                       </button>
+                  
+
                       <button
                         role="menuitem"
                         className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
@@ -2191,24 +2349,6 @@ const removeDay = useCallback(
                   )}
                 </div>
 
-                <button
-                  className={BTN.primary + " min-w-[120px]"}
-                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-                  disabled={!selectedDate}
-                  title="Download EFAP PDF for this day"
-                  aria-label="EFAP PDF"
-                >
-                  EFAP PDF
-                </button>
-
-                {selectedDate && canLogVisits && (
-                  <AddVisitButton
-                    org={org}
-                    location={location}
-                    selectedDate={selectedDate}
-                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
-                  />
-                )}
               </div>
             </div>
 
@@ -2368,37 +2508,53 @@ const removeDay = useCallback(
           </div>
 
           {/* DESKTOP TABLE */}
-                    <div
-            className={`hidden md:block overflow-hidden rounded-xl border ${isBusy ? "opacity-60" : ""}`}
+          <div
+            className={`hidden md:block overflow-hidden rounded-xl border border-gray-200 ${
+              isBusy ? "opacity-60" : ""
+            }`}
           >
-
             <div className="overflow-x-auto">
               <div
                 className="overflow-y-auto desktop-scrollbar"
-                style={{ maxHeight: filteredSortedRows.length > 25 ? "825px" : "auto" }}
+                style={{ maxHeight: filteredSortedRows.length > 25 ? "780px" : "auto" }}
               >
-                <table className="w-full table-auto text-sm">
+                <table className="w-full table-fixed text-sm">
+                  {/* column widths tuned for actual content */}
                   <colgroup>
-                    <col className="w-[22%]" />
-                    <col className="w-[34%]" />
-                    <col className="w-[9%]" />
-                    <col className="w-[7%]" />
-                    <col className="w-[13%]" />
-                    <col className="w-[7%]" />
-                    <col className="w-[8%]" />
+                    <col className="w-[24%]" />  {/* Client */}
+                    <col className="w-[26%]" />  {/* County */}
+                    <col className="w-[7%]" />   {/* Zip */}
+                    <col className="w-[6%]" />   {/* HH */}
+                    <col className="w-[7%]" />   {/* USDA */}
+                    <col className="w-[18%]" />  {/* Time */}
+                    <col className="w-[12%]" />  {/* Actions */}
                   </colgroup>
 
                   <thead className="bg-gray-100">
-                    <tr className="text-left">
-                      <th className="px-4 py-2" aria-sort={ariaSortFor("name")}>
+                    <tr className="text-left text-[13px]">
+                      <th
+                        className="px-3.5 py-2 cursor-pointer select-none"
+                        aria-sort={ariaSortFor("name")}
+                        onClick={() => handleHeaderSort("name")}
+                      >
                         Client
                       </th>
-                      <th className="px-4 py-2">County</th>
-                      <th className="px-4 py-2">Zip</th>
-                      <th className="px-4 py-2">HH</th>
-                      <th className="px-4 py-2">USDA First-Time</th>
-                      <th className="px-4 py-2 text-right">Time</th>
-                      <th className="px-4 py-2">Actions</th>
+                      <th className="px-3.5 py-2">County</th>
+                      <th className="px-3.5 py-2 text-center">Zip</th>
+<th
+  className="px-2.5 py-2 text-center cursor-pointer select-none"
+  aria-sort={ariaSortFor("hh")}
+  onClick={() => handleHeaderSort("hh")}
+>
+  HH
+</th>                      <th className="px-2.5 py-2 text-center">USDA</th>
+<th
+  className="px-3 py-2 text-right cursor-pointer select-none"
+  aria-sort={ariaSortFor("time")}
+  onClick={() => handleHeaderSort("time")}
+>
+  Time
+</th>                      <th className="px-2.5 py-2 text-center">Actions</th>
                     </tr>
                   </thead>
 
@@ -2408,23 +2564,52 @@ const removeDay = useCallback(
                         key={r.visitId}
                         className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
                       >
-                        <td className="px-4 py-3 break-words">
-                          <div className="font-medium">{r.labelName}</div>
-                          {r.addedByReports && r.addedLocalTime ? (
-                            <div className="mt-0.5 text-xs text-gray-500">
-                              added {r.addedLocalTime}
+                        {/* Client */}
+                        <td className="px-3.5 py-2.5 align-middle">
+                          <div className="min-w-0">
+                            <div
+                              className="font-medium truncate max-w-[210px]"
+                              title={r.labelName}
+                            >
+                              {r.labelName}
                             </div>
-                          ) : null}
+
+                            {r.addedByReports && (
+                              <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                                <span>Added through Reports</span>
+                              </div>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 break-words">{r.county}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{r.zip}</td>
-                        <td className="px-4 py-3 tabular-nums">{r.visitHousehold}</td>
-                        <td className="px-4 py-3">
+
+                        {/* County */}
+                        <td className="px-3.5 py-2.5 align-middle">
+                          <span
+                            className="block truncate max-w-[230px]"
+                            title={r.county}
+                          >
+                            {r.county}
+                          </span>
+                        </td>
+
+                        {/* Zip */}
+                        <td className="px-3 py-2.5 text-center align-middle tabular-nums">
+                          {r.zip}
+                        </td>
+
+                        {/* HH */}
+                        <td className="px-2.5 py-2.5 tabular-nums text-center align-middle">
+                          {r.visitHousehold}
+                        </td>
+
+                        {/* USDA pill */}
+                        <td className="px-2.5 py-2.5 text-center align-middle">
                           {r.usdaFirstTimeThisMonth === "" ? (
                             ""
                           ) : (
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ring-1 ${
+                              className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[11px] leading-none ring-1 ${
                                 r.usdaFirstTimeThisMonth
                                   ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
                                   : "bg-gray-50 text-gray-700 ring-gray-200"
@@ -2434,25 +2619,63 @@ const removeDay = useCallback(
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-[13px] text-gray-700 text-right tabular-nums">
-                          {r.localTime}
-                        </td>
-                        <td className="px-4 py-3">
-                          {canDeleteVisits ? (
-                            <button
-  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-red-700 hover:bg-red-50 transition-colors"
-  onClick={() => removeVisit(r)}
-  title="Delete visit"
-  aria-label="Delete visit"
->
-  <TrashIcon className="h-5 w-5" />
-</button>
 
-                          ) : (
-                            <span className="text-[11px] text-gray-500">
-                              view-only
+                        {/* Time + added date */}
+                        <td className="px-3 py-2.5 text-right align-middle">
+                          <div className="flex flex-col items-end leading-tight">
+                            <span className="text-[12px] font-medium tabular-nums">
+                              {r.localTime}
                             </span>
-                          )}
+
+                            {r.addedLocalDate && (
+                              <span className="text-[10px] text-gray-500 mt-0.5">
+                                {r.addedLocalDate}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Row actions */}
+                        <td className="px-2.5 py-2.5 text-center align-middle relative">
+                          <div className="relative inline-flex justify-end w-full">
+                            <button
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition"
+                              onClick={() =>
+                                setRowMenuOpen((prev) =>
+                                  prev === r.visitId ? null : r.visitId
+                                )
+                              }
+                              aria-label="Row menu"
+                            >
+                              <KebabIcon className="h-5 w-5" />
+                            </button>
+
+                            {rowMenuOpen === r.visitId && (
+                              <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg border border-gray-200 shadow-lg z-20 p-1">
+                                <button
+                                  className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
+                                  onClick={() => {
+                                    setRowMenuOpen(null);
+                                    setEditVisit(r);
+                                  }}
+                                >
+                                  Edit Visit
+                                </button>
+
+                                {canDeleteVisits && (
+                                  <button
+                                    className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
+                                    onClick={() => {
+                                      setRowMenuOpen(null);
+                                      removeVisit(r);
+                                    }}
+                                  >
+                                    Delete Visit
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2468,7 +2691,6 @@ const removeDay = useCallback(
                               <Spinner className="h-4 w-4" /> Loading…
                             </span>
                           ) : (
-
                             <div className="flex flex-col items-center gap-2">
                               <div className="text-2xl">🗓️</div>
                               <div>No visits on this day.</div>
@@ -2493,19 +2715,26 @@ const removeDay = useCallback(
 
                   <tfoot className="bg-gray-100 text-sm font-medium">
                     <tr>
-                      <td className="px-4 py-2">Totals</td>
+                      <td className="px-3.5 py-2">Totals</td>
                       <td />
                       <td />
-                      <td className="px-4 py-2">{dayTotals.hh}</td>
-                      <td className="px-4 py-2">{dayTotals.usdaYes} Yes</td>
-                      <td className="px-4 py-2" />
-                      <td className="px-4 py-2">{filteredSortedRows.length} rows</td>
+                      <td className="px-2.5 py-2 text-center tabular-nums">
+                        {dayTotals.hh}
+                      </td>
+                      <td className="px-2.5 py-2 text-center">
+                        {dayTotals.usdaYes} Yes
+                      </td>
+                      <td />
+                      <td className="px-2.5 py-2 text-center tabular-nums">
+                        {filteredSortedRows.length} rows
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
           </div>
+
 
           {/* MOBILE LIST */}
           <ul
@@ -2540,32 +2769,69 @@ const removeDay = useCallback(
                       )}
                     </div>
 
-                    {r.addedByReports && r.addedLocalTime ? (
-                      <div className="text-[11px] text-gray-500 mt-0.5">
-                        Added {r.addedLocalTime}
-                      </div>
-                    ) : null}
+                    {r.addedByReports && (
+                    <div className="mt-0.5 text-[11px] text-gray-400 flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      <span>Logged from Reports</span>
+                    </div>
+                  )}
+
+
                   </div>
 
-                  <div className="shrink-0 flex flex-col items-end gap-1">
-                    <div
-                      className="px-2 py-0.5 rounded border border-gray-300 text-[11px] whitespace-nowrap bg-gray-100 text-gray-800 font-medium tabular-nums"
-                      title={r.localTime}
-                    >
-                      {r.localTime}
+                                    <div className="shrink-0 flex flex-col items-end gap-1 relative">
+                    <div className="text-right text-[11px] leading-tight">
+                      {r.addedLocalDate && (
+                        <div className="font-medium">{r.addedLocalDate}</div>
+                      )}
+                      <div className="px-2 py-0.5 rounded border border-gray-300 bg-gray-100 text-gray-800 font-medium tabular-nums">
+                        {r.localTime}
+                      </div>
                     </div>
-                    {canDeleteVisits ? (
+
+                    {/* Mobile row actions – same kebab menu as desktop */}
+                    <div className="mt-1 relative">
                       <button
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-red-700 hover:bg-red-50"
-                        onClick={() => removeVisit(r)}
-                        aria-label="Delete visit"
-                        title="Delete visit"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+                        onClick={() =>
+                          setRowMenuOpen((prev) =>
+                            prev === r.visitId ? null : r.visitId
+                          )
+                        }
+                        aria-label="Row menu"
+                        title="More actions"
                       >
-                        <TrashIcon className="h-5 w-5" />
+                        <KebabIcon className="h-4 w-4" />
                       </button>
 
-                    ) : null}
+                      {rowMenuOpen === r.visitId && (
+                        <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg border border-gray-200 shadow-lg z-20 p-1">
+                          <button
+                            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
+                            onClick={() => {
+                              setRowMenuOpen(null);
+                              setEditVisit(r);
+                            }}
+                          >
+                            Edit Visit
+                          </button>
+
+                          {canDeleteVisits && (
+                            <button
+                              className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
+                              onClick={() => {
+                                setRowMenuOpen(null);
+                                removeVisit(r);
+                              }}
+                            >
+                              Delete Visit
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
+
                 </div>
               </li>
             ))}
@@ -2598,6 +2864,7 @@ const removeDay = useCallback(
               </li>
             )}
           </ul>
+          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </section>
       </div>
 
@@ -2607,6 +2874,159 @@ const removeDay = useCallback(
           {error}
         </div>
       )}
+
+      {/* Edit Visit Modal */}
+      {editVisit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setEditVisit(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-4">Edit Visit</h2>
+
+            <div className="space-y-4">
+              {/* Household size */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Household Size
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={editVisit.visitHousehold}
+                  onChange={(e) =>
+                    setEditVisit((prev) => ({
+                      ...prev,
+                      visitHousehold: Number(e.target.value || 0),
+                    }))
+                  }
+                />
+              </div>
+
+              {/* County (visit-level only) */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  County (this visit only)
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={editVisit.county || ""}
+                  onChange={(e) =>
+                    setEditVisit((prev) => ({
+                      ...prev,
+                      county: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., Los Angeles County"
+                />
+              </div>
+
+              {/* Zip (visit-level only) */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Zip (this visit only)
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={editVisit.zip || ""}
+                  onChange={(e) =>
+                    setEditVisit((prev) => ({
+                      ...prev,
+                      zip: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., 90813"
+                />
+              </div>
+
+              {/* USDA flag */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  USDA First Time This Month
+                </label>
+                <select
+                  className="w-full rounded-lg border px-3 py-2 text-sm bg-white"
+                  value={
+                    editVisit.usdaFirstTimeThisMonth === true
+                      ? "yes"
+                      : editVisit.usdaFirstTimeThisMonth === false
+                      ? "no"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditVisit((prev) => ({
+                      ...prev,
+                      usdaFirstTimeThisMonth:
+                        val === "yes" ? true : val === "no" ? false : "",
+                    }));
+                  }}
+                >
+                  <option value="">—</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200"
+                onClick={() => setEditVisit(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 text-sm rounded-lg bg-brand-700 text-white hover:bg-brand-800"
+                onClick={async () => {
+                  try {
+                    // write ONLY to visits collection (snapshot fields)
+                    await updateDoc(doc(db, "visits", editVisit.visitId), {
+                      householdSize: editVisit.visitHousehold,
+                      usdaFirstTimeThisMonth: editVisit.usdaFirstTimeThisMonth,
+                      clientCounty: editVisit.county || "",
+                      clientZip: editVisit.zip || "",
+                    });
+
+                    // keep local state in sync
+                    setVisits((prev) =>
+                      prev.map((v) =>
+                        v.id === editVisit.visitId
+                          ? {
+                              ...v,
+                              householdSize: editVisit.visitHousehold,
+                              usdaFirstTimeThisMonth:
+                                editVisit.usdaFirstTimeThisMonth,
+                              clientCounty: editVisit.county || "",
+                              clientZip: editVisit.zip || "",
+                            }
+                          : v
+                      )
+                    );
+
+                    toast.show("Visit updated.", "info");
+                    setEditVisit(null);
+                  } catch (e) {
+                    console.error(e);
+                    alert("Failed to update visit. Please try again.");
+                  }
+                }}
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Toast */}
       {toast.open && (
@@ -2625,6 +3045,7 @@ const removeDay = useCallback(
         @keyframes bounce-slow { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(2px) } }
         .animate-bounce-slow { animation: bounce-slow 1.6s infinite; }
       `}</style>
+
 
       <style>{`
         @keyframes fadeInOut { 
@@ -2689,9 +3110,21 @@ const BTN = {
 
 function Card({ title, children }) {
   return (
-    <div className="rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 sm:p-4">
+    <div
+      className={
+        "group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 sm:p-4 " +
+        "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 " +
+        "transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
+      }
+    >
       <div className="text-sm font-semibold mb-2">{title}</div>
       {children}
+
+      {/* subtle gradient highlight bar that appears at the bottom on hover */}
+      <div
+        aria-hidden
+        className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none"
+      />
     </div>
   );
 }

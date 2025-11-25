@@ -1,6 +1,8 @@
 // src/pages/Pricing.jsx
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
+import logo from "../../assets/logo.png";
+
 
 /**
  * Shepherds Table Cloud — Pricing (Nov 2025)

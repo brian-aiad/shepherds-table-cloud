@@ -8,6 +8,7 @@
 // - Stable Firestore txn (visit + counters + USDA monthly marker). onAdded gets real id
 // - USDA-first parity with LogVisitForm: monthly marker pre-check + in-tx recheck
 // - Confirmation banner: “Added <Name> for <YYYY-MM-DD>”.
+// - Reports integration: can always open NewClientForm and create + log visit for selected day.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -37,6 +38,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import NewClientForm from "./NewClientForm";
 
 /* =========================
    Helpers
@@ -143,6 +145,9 @@ export default function AddVisitButton({
     return selectedDate.slice(0, 7); // YYYY-MM
   }, [selectedDate]);
 
+  // New client bottom-sheet from Reports (“add new client for this date”)
+  const [showNewClient, setShowNewClient] = useState(false);
+
   /* ---------- Load active candidates for org + (optional) location ---------- */
   const loadCandidates = useCallback(async () => {
     if (!org?.id) {
@@ -182,7 +187,10 @@ export default function AddVisitButton({
     async (clientId) => {
       if (!open || !org?.id || !monthKey || !clientId) return;
 
-      setUsdaElig((m) => ({ ...m, [clientId]: { ...(m[clientId] || {}), checking: true } }));
+      setUsdaElig((m) => ({
+        ...m,
+        [clientId]: { ...(m[clientId] || {}), checking: true },
+      }));
       try {
         const markerId = `${org.id}_${clientId}_${monthKey}`;
         const snap = await getDoc(doc(db, "usda_first", markerId));
@@ -195,7 +203,10 @@ export default function AddVisitButton({
       } catch {
         // If we can't check, default to allowed so we don't block;
         // Firestore rules will still protect on create
-        setUsdaElig((m) => ({ ...m, [clientId]: { allowed: true, checking: false } }));
+        setUsdaElig((m) => ({
+          ...m,
+          [clientId]: { allowed: true, checking: false },
+        }));
       }
     },
     [open, org?.id, monthKey, expandedId]
@@ -630,8 +641,29 @@ export default function AddVisitButton({
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                   </div>
 
-                  {/* Client count */}
-                  <div className="flex items-center justify-end">
+                  {/* Client count + Add New Client CTA */}
+                  <div className="flex items-center justify-end gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      className="
+                        inline-flex items-center gap-2 rounded-xl px-3.5 py-2
+                        text-xs sm:text-sm font-semibold text-white
+                        shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]
+                        hover:brightness-105 hover:contrast-110
+                      "
+                      style={{
+                        background:
+                          "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                      }}
+                      onClick={() => {
+                        setOpen(false);
+                        setShowNewClient(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add New Client for This Day
+                    </button>
+
                     <span
                       className="inline-flex items-center gap-2 rounded-full border border-brand-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-900 shadow-sm"
                       aria-live="polite"
@@ -662,277 +694,326 @@ export default function AddVisitButton({
                   ))}
                 </div>
               ) : (
-                <ul className="divide-y">
-                  {filtered.slice(0, 800).map((c) => {
-                    const initials =
-                      `${(c.firstName || "").slice(0, 1)}${(c.lastName || "").slice(0, 1)}`
-                        .toUpperCase() || "👤";
-                    const fullName =
-                      `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.id;
-                    const sub = [c.address || "", c.zip || ""]
-                      .filter(Boolean)
-                      .join(" • ");
-                    const isOpen = expandedId === c.id;
+                <>
+                  {filtered.length > 0 && (
+                    <ul className="divide-y">
+                      {filtered.slice(0, 800).map((c) => {
+                        const initials =
+                          `${(c.firstName || "").slice(0, 1)}${(
+                            c.lastName || ""
+                          ).slice(0, 1)}`.toUpperCase() || "👤";
+                        const fullName =
+                          `${c.firstName || ""} ${c.lastName || ""}`.trim() ||
+                          c.id;
+                        const sub = [c.address || "", c.zip || ""]
+                          .filter(Boolean)
+                          .join(" • ");
+                        const isOpen = expandedId === c.id;
 
-                    const elig = usdaElig[c.id] || { allowed: true, checking: false };
-                    const usdaYesDisabled = elig.checking || !elig.allowed;
+                        const elig = usdaElig[c.id] || {
+                          allowed: true,
+                          checking: false,
+                        };
+                        const usdaYesDisabled = elig.checking || !elig.allowed;
 
-                    return (
-                      <li key={c.id} className="p-0">
-                        {/* Row (click to expand) */}
-                        <button
-                          type="button"
-                          className={cx(
-                            "w-full text-left p-3 sm:p-4 transition-colors",
-                            "hover:bg-brand-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300",
-                            isOpen ? "bg-brand-50/70" : ""
-                          )}
-                          onClick={() => expandRow(c)}
-                          aria-expanded={isOpen}
-                          aria-controls={`visit-row-${c.id}`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] grid place-items-center text-sm font-semibold shrink-0">
-                                {initials}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-medium truncate text-[15px] text-gray-900">
-                                  {fullName}
-                                </div>
-                                <div className="text-xs text-gray-600 truncate">
-                                  {sub || "—"}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="shrink-0 text-gray-400">
-                              {isOpen ? (
-                                <ChevronDown className="h-5 w-5" />
-                              ) : (
-                                <ChevronRight className="h-5 w-5" />
+                        return (
+                          <li key={c.id} className="p-0">
+                            {/* Row (click to expand) */}
+                            <button
+                              type="button"
+                              className={cx(
+                                "w-full text-left p-3 sm:p-4 transition-colors",
+                                "hover:bg-brand-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300",
+                                isOpen ? "bg-brand-50/70" : ""
                               )}
-                            </div>
-                          </div>
-                        </button>
-
-                        {/* Inline controls (accordion) */}
-                        <div
-                          id={`visit-row-${c.id}`}
-                          className={cx(
-                            "transition-[grid-template-rows] duration-300 ease-out grid",
-                            isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                          )}
-                        >
-                          <div className="overflow-hidden">
-                            <div className="px-3 sm:px-4 pb-3 sm:pb-4">
-                              <div className="rounded-2xl border border-brand-200 bg-white shadow-sm">
-                                <div className="grid items-center gap-3 sm:gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:grid-cols-[1fr,auto,auto]">
-                                  {/* HH (− / input / +) */}
-                                  <div className="flex items-center gap-3">
-                                    <label className="text-xs font-medium text-gray-700 whitespace-nowrap select-none">
-                                      <Users
-                                        size={16}
-                                        className="text-brand-600 inline mr-1"
-                                      />
-                                      Household size
-                                    </label>
-
-                                    <div
-                                      className="
-                                        inline-flex items-center overflow-hidden rounded-2xl bg-white
-                                        border border-brand-300 ring-1 ring-brand-100 shadow-soft
-                                        focus-within:ring-2 focus-within:ring-brand-200
-                                      "
-                                      aria-label="Adjust household size"
-                                    >
-                                      <button
-                                        type="button"
-                                        className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setRowHH((n) =>
-                                            Math.max(
-                                              MIN_HH,
-                                              Number(n || MIN_HH) - 1
-                                            )
-                                          );
-                                        }}
-                                        aria-label="Decrease household size"
-                                      >
-                                        <Minus className="h-4 w-4" />
-                                      </button>
-
-                                      <input
-                                        type="number"
-                                        min={MIN_HH}
-                                        max={MAX_HH}
-                                        value={rowHH}
-                                        onChange={(e) => {
-                                          const v = Number(
-                                            e.target.value || MIN_HH
-                                          );
-                                          setRowHH(
-                                            Math.max(
-                                              MIN_HH,
-                                              Math.min(MAX_HH, v)
-                                            )
-                                          );
-                                        }}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onWheel={(e) =>
-                                          e.currentTarget.blur()
-                                        }
-                                        className="
-                                          h-10 w-[84px] border-x border-brand-200 bg-white text-center
-                                          text-sm font-semibold tabular-nums tracking-tight
-                                          focus:outline-none
-                                        "
-                                        aria-live="polite"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                      />
-
-                                      <button
-                                        type="button"
-                                        className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setRowHH((n) =>
-                                            Math.min(
-                                              MAX_HH,
-                                              Number(n || MIN_HH) + 1
-                                            )
-                                          );
-                                        }}
-                                        aria-label="Increase household size"
-                                      >
-                                        <Plus className="h-4 w-4" />
-                                      </button>
+                              onClick={() => expandRow(c)}
+                              aria-expanded={isOpen}
+                              aria-controls={`visit-row-${c.id}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] grid place-items-center text-sm font-semibold shrink-0">
+                                    {initials}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-medium truncate text-[15px] text-gray-900">
+                                      {fullName}
+                                    </div>
+                                    <div className="text-xs text-gray-600 truncate">
+                                      {sub || "—"}
                                     </div>
                                   </div>
+                                </div>
+                                <div className="shrink-0 text-gray-400">
+                                  {isOpen ? (
+                                    <ChevronDown className="h-5 w-5" />
+                                  ) : (
+                                    <ChevronRight className="h-5 w-5" />
+                                  )}
+                                </div>
+                              </div>
+                            </button>
 
-                                  {/* USDA toggle (with monthly eligibility) */}
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 justify-start lg:justify-center">
-                                    <label className="text-xs font-medium text-gray-700 select-none leading-none">
-                                      USDA
-                                    </label>
+                            {/* Inline controls (accordion) */}
+                            <div
+                              id={`visit-row-${c.id}`}
+                              className={cx(
+                                "transition-[grid-template-rows] duration-300 ease-out grid",
+                                isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                              )}
+                            >
+                              <div className="overflow-hidden">
+                                <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+                                  <div className="rounded-2xl border border-brand-200 bg-white shadow-sm">
+                                    <div className="grid items-center gap-3 sm:gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:grid-cols-[1fr,auto,auto]">
+                                      {/* HH (− / input / +) */}
+                                      <div className="flex items-center gap-3">
+                                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap select-none">
+                                          <Users
+                                            size={16}
+                                            className="text-brand-600 inline mr-1"
+                                          />
+                                          Household size
+                                        </label>
 
-                                    <div
-                                      className="
-                                        inline-flex w-auto shrink-0 self-start sm:self-auto
-                                        rounded-2xl overflow-hidden bg-white
-                                        border border-brand-300 ring-1 ring-brand-100 shadow-soft
-                                      "
-                                      role="group"
-                                      aria-label="USDA first visit this month"
-                                      title={
-                                        usdaElig[c.id]?.checking
-                                          ? "Checking eligibility…"
-                                          : usdaElig[c.id]?.allowed === false
-                                          ? `Already counted for ${monthKey}`
-                                          : "Mark this as first USDA visit this month"
-                                      }
-                                    >
-                                      <button
-                                        type="button"
-                                        className={cx(
-                                          "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
-                                          usdaYesDisabled
-                                            ? "opacity-60 cursor-not-allowed"
-                                            : "hover:bg-brand-50",
-                                          rowUsdaYes && !usdaYesDisabled
-                                            ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
-                                            : "text-brand-900"
-                                        )}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (!usdaYesDisabled) setRowUsdaYes(true);
-                                        }}
-                                        aria-pressed={rowUsdaYes && !usdaYesDisabled}
-                                      >
-                                        <Soup size={16} className="inline mr-1" />
-                                        Yes
-                                      </button>
+                                        <div
+                                          className="
+                                            inline-flex items-center overflow-hidden rounded-2xl bg-white
+                                            border border-brand-300 ring-1 ring-brand-100 shadow-soft
+                                            focus-within:ring-2 focus-within:ring-brand-200
+                                          "
+                                          aria-label="Adjust household size"
+                                        >
+                                          <button
+                                            type="button"
+                                            className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setRowHH((n) =>
+                                                Math.max(
+                                                  MIN_HH,
+                                                  Number(n || MIN_HH) - 1
+                                                )
+                                              );
+                                            }}
+                                            aria-label="Decrease household size"
+                                          >
+                                            <Minus className="h-4 w-4" />
+                                          </button>
 
-                                      <div
-                                        className="w-px bg-brand-200/70"
-                                        aria-hidden="true"
-                                      />
+                                          <input
+                                            type="number"
+                                            min={MIN_HH}
+                                            max={MAX_HH}
+                                            value={rowHH}
+                                            onChange={(e) => {
+                                              const v = Number(
+                                                e.target.value || MIN_HH
+                                              );
+                                              setRowHH(
+                                                Math.max(
+                                                  MIN_HH,
+                                                  Math.min(MAX_HH, v)
+                                                )
+                                              );
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onWheel={(e) =>
+                                              e.currentTarget.blur()
+                                            }
+                                            className="
+                                              h-10 w-[84px] border-x border-brand-200 bg-white text-center
+                                              text-sm font-semibold tabular-nums tracking-tight
+                                              focus:outline-none
+                                            "
+                                            aria-live="polite"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                          />
 
-                                      <button
-                                        type="button"
-                                        className={cx(
-                                          "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
-                                          "hover:bg-brand-50",
-                                          !rowUsdaYes || usdaYesDisabled
-                                            ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
-                                            : "text-brand-900"
-                                        )}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setRowUsdaYes(false);
-                                        }}
-                                        aria-pressed={!rowUsdaYes || usdaYesDisabled}
-                                      >
-                                        No
-                                      </button>
+                                          <button
+                                            type="button"
+                                            className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setRowHH((n) =>
+                                                Math.min(
+                                                  MAX_HH,
+                                                  Number(n || MIN_HH) + 1
+                                                )
+                                              );
+                                            }}
+                                            aria-label="Increase household size"
+                                          >
+                                            <Plus className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* USDA toggle (with monthly eligibility) */}
+                                      <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 justify-start lg:justify-center">
+                                        <label className="text-xs font-medium text-gray-700 select-none leading-none">
+                                          USDA
+                                        </label>
+
+                                        <div
+                                          className="
+                                            inline-flex w-auto shrink-0 self-start sm:self-auto
+                                            rounded-2xl overflow-hidden bg-white
+                                            border border-brand-300 ring-1 ring-brand-100 shadow-soft
+                                          "
+                                          role="group"
+                                          aria-label="USDA first visit this month"
+                                          title={
+                                            usdaElig[c.id]?.checking
+                                              ? "Checking eligibility…"
+                                              : usdaElig[c.id]?.allowed === false
+                                              ? `Already counted for ${monthKey}`
+                                              : "Mark this as first USDA visit this month"
+                                          }
+                                        >
+                                          <button
+                                            type="button"
+                                            className={cx(
+                                              "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
+                                              usdaYesDisabled
+                                                ? "opacity-60 cursor-not-allowed"
+                                                : "hover:bg-brand-50",
+                                              rowUsdaYes && !usdaYesDisabled
+                                                ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
+                                                : "text-brand-900"
+                                            )}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (!usdaYesDisabled)
+                                                setRowUsdaYes(true);
+                                            }}
+                                            aria-pressed={
+                                              rowUsdaYes && !usdaYesDisabled
+                                            }
+                                          >
+                                            <Soup
+                                              size={16}
+                                              className="inline mr-1"
+                                            />
+                                            Yes
+                                          </button>
+
+                                          <div
+                                            className="w-px bg-brand-200/70"
+                                            aria-hidden="true"
+                                          />
+
+                                          <button
+                                            type="button"
+                                            className={cx(
+                                              "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
+                                              "hover:bg-brand-50",
+                                              !rowUsdaYes || usdaYesDisabled
+                                                ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
+                                                : "text-brand-900"
+                                            )}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setRowUsdaYes(false);
+                                            }}
+                                            aria-pressed={
+                                              !rowUsdaYes || usdaYesDisabled
+                                            }
+                                          >
+                                            No
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Actions */}
+                                      <div className="flex items-center justify-end gap-2 sm:gap-3">
+                                        <button
+                                          className="
+                                            h-9 px-3 rounded-xl border border-brand-300 text-brand-800
+                                            bg-white hover:bg-brand-50 hover:border-brand-400
+                                            active:scale-[.99] focus:outline-none
+                                          "
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedId(null);
+                                            setConfirmForId(null);
+                                          }}
+                                          title="Cancel"
+                                        >
+                                          Cancel
+                                        </button>
+
+                                        <button
+                                          className={cx(
+                                            "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white",
+                                            "shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]",
+                                            "hover:brightness-105 hover:contrast-110"
+                                          )}
+                                          style={{
+                                            background:
+                                              "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            addVisit(c, rowHH, rowUsdaYes);
+                                          }}
+                                          disabled={
+                                            busy || !allowLogVisits || isAll
+                                          }
+                                          title="Add visit"
+                                        >
+                                          <Check className="h-4 w-4" />
+                                          Add
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-
-                                  {/* Actions */}
-                                  <div className="flex items-center justify-end gap-2 sm:gap-3">
-                                    <button
-                                      className="
-                                        h-9 px-3 rounded-xl border border-brand-300 text-brand-800
-                                        bg-white hover:bg-brand-50 hover:border-brand-400
-                                        active:scale-[.99] focus:outline-none
-                                      "
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setExpandedId(null);
-                                        setConfirmForId(null);
-                                      }}
-                                      title="Cancel"
-                                    >
-                                      Cancel
-                                    </button>
-
-                                    <button
-                                      className={cx(
-                                        "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white",
-                                        "shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]",
-                                        "hover:brightness-105 hover:contrast-110"
-                                      )}
-                                      style={{
-                                        background:
-                                          "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-                                      }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        addVisit(c, rowHH, rowUsdaYes);
-                                      }}
-                                      disabled={busy || !allowLogVisits || isAll}
-                                      title="Add visit"
-                                    >
-                                      <Check className="h-4 w-4" />
-                                      Add
-                                    </button>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-
-                  {!busy && filtered.length === 0 && (
-                    <li className="p-10 text-sm text-center text-gray-600">
-                      No clients found. Try a different search.
-                    </li>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
-                </ul>
+
+                  {/* Always-visible CTA to add a new client for this date */}
+                  <div className="border-t border-dashed border-brand-100 bg-brand-50/40 px-4 py-4 sm:px-6 sm:py-5 text-sm text-center text-gray-700 space-y-2">
+                    <div>
+                      {filtered.length === 0
+                        ? "No clients found for this location."
+                        : "Can’t find the person you’re looking for?"}
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                      <button
+                        type="button"
+                        className="
+                          inline-flex items-center gap-2 rounded-xl px-3.5 py-2
+                          text-sm font-semibold text-white
+                          shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]
+                          hover:brightness-105 hover:contrast-110
+                        "
+                        style={{
+                          background:
+                            "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                        }}
+                        onClick={() => {
+                          setOpen(false);
+                          setShowNewClient(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add New Client for This Day
+                      </button>
+
+                      <span className="text-[11px] text-gray-500 max-w-xs">
+                        This will create a new client for the current org/location
+                        and log a visit on <b>{selectedDate || "this date"}</b>.
+                      </span>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -991,6 +1072,20 @@ export default function AddVisitButton({
             `}</style>
           </div>
         </div>
-      )}    </>
+      )}
+
+      {/* New client intake in “reports mode” (org+location+selectedDate) */}
+      {showNewClient && (
+        <NewClientForm
+          open={showNewClient}
+          onClose={() => setShowNewClient(false)}
+          onSaved={() => setShowNewClient(false)}
+          defaultOrgId={org?.id || null}
+          defaultLocationId={location?.id || null}
+          visitDateOverride={selectedDate || null}
+          addedByReports
+        />
+      )}
+    </>
   );
 }

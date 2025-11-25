@@ -80,6 +80,18 @@ const sectionHdrCls =
 const shellCls =
   "mx-auto w-full max-w-6xl px-1.5 sm:px-3 md:px-6 pt-3 md:pt-4 pb-4 md:pb-6";
 
+// Primary CTA used across dashboard to match EFAP/Reports buttons
+const primaryBtnCls =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-3.5 py-2.5 text-white font-semibold shadow " +
+  "hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 " +
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 transition";
+
+// Smaller primary variant for compact CTAs (keeps the same gradient & focus ring)
+const primarySmallCls =
+  "inline-flex items-center justify-center h-9 px-4 rounded-lg text-[13px] font-semibold text-white shadow shrink-0 " +
+  "bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 " +
+  "active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 transition";
+
 /* ===========================
    Component
 =========================== */
@@ -428,46 +440,42 @@ export default function Dashboard() {
               </div>
 
               {allowNewClient && (
-                <button
-                  onClick={() => setShowNew(true)}
-                  className="inline-flex items-center justify-center
-                    h-11 px-5 rounded-full font-semibold text-white text-[14px]
-                    bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
-                    hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)]
-                    active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)]
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200
-                    shadow-[0_10px_20px_rgba(199,58,49,0.35)]
-                    w-[70%] ml-auto transition-transform duration-150 active:scale-[0.97]"
-                  aria-label="Add new client"
-                >
-                  <span className="mr-2 grid place-items-center h-6 w-6 rounded-full bg-white/20 shrink-0">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className="h-5 w-5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </span>
-                  <span className="truncate">Add New Client</span>
-                </button>
+                <div className="relative inline-block group hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] w-[70%] ml-auto">
+                  <button
+                    onClick={() => setShowNew(true)}
+                    className={primaryBtnCls + " h-11 px-5 rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] w-full transition-transform duration-150 active:scale-[0.97]"}
+                    aria-label="Add new client"
+                  >
+                    <span className="mr-2 grid place-items-center h-6 w-6 rounded-full bg-white/20 shrink-0">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </span>
+                    <span className="truncate">Add New Client</span>
+                  </button>
+                  <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
+                </div>
               )}
             </div>
           </section>
         </div>
 
         {/* ───────────────── Top bar (search + desktop CTA) ───────────────── */}
-        <div className="relative flex flex-wrap md:flex-nowrap items-center gap-2.5 md:gap-4 mb-2.5 md:mb-3">
-          {/* search */}
-          <div className="relative w-full min-w-0 flex-1 rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm">
+        <div className="relative grid grid-cols-1 md:grid-cols-3 items-center gap-2.5 md:gap-4 mb-2.5 md:mb-3">
+          {/* search (spans two cols on md+) */}
+          <div className="relative w-full min-w-0 md:col-span-2 rounded-2xl bg-white/98 ring-1 ring-gray-200 shadow-sm group hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.12)] hover:ring-gray-200 transition will-change-transform">
             <input
-              className="w-full bg-transparent rounded-2xl pl-10 pr-10 py-2.5 md:py-3 text-[15px] md:text-[16px] placeholder:text-gray-400 focus:outline-none"
+              className="w-full pl-10 pr-10 py-2.5 md:py-3 text-[15px] md:text-[16px] placeholder:text-gray-400 rounded-2xl bg-white border border-gray-200 shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-200/40 focus:border-brand-200"
               placeholder={`Search ${
                 location?.name ? `${location.name} ` : ""
               }clients…`}
@@ -505,57 +513,56 @@ export default function Dashboard() {
                 type="button"
                 aria-label="Clear search"
                 onClick={() => setTerm("")}
-                className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
-           w-7 h-7 text-[18px] font-semibold text-gray-500 
-           hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
+                w-7 h-7 text-[18px] font-semibold text-gray-500 
+                hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-200/40"
               >
                 ×
               </button>
             )}
+            <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
           </div>
 
-          {/* desktop KPI + CTA */}
-          <div className="hidden md:flex items-center gap-2.5 lg:gap-3 shrink-0">
+          {/* desktop KPI + CTA (right column) */}
+          <div className="hidden md:flex md:col-span-1 items-center gap-2.5 lg:gap-3 justify-end">
             <div
               role="status"
               aria-label={`Visits today ${todayCount}`}
-              className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full bg-brand-50/90 ring-1 ring-brand-100 shadow-sm text-brand-900 leading-none"
+              className="inline-flex items-center gap-3 h-10 px-3.5 rounded-full bg-white ring-1 ring-gray-200 shadow-sm text-gray-800 leading-none relative"
             >
-              <span className="text-[11px] font-medium text-gray-600">Visits today</span>
-              <span className="h-5 w-px bg-brand-100" aria-hidden="true" />
-              <span className="text-lg font-extrabold tabular-nums tracking-tight text-brand-800">
+              <span className="text-[12px] font-medium text-gray-600">Visits today</span>
+              <span className="h-5 w-px bg-gray-200" aria-hidden="true" />
+              <span className="text-lg font-extrabold tabular-nums tracking-tight text-gray-900">
                 {todayCount}
               </span>
             </div>
 
             {allowNewClient && (
-              <button
-                onClick={() => setShowNew(true)}
-                className="inline-flex items-center gap-2 h-11 px-6 rounded-full text-[14px] font-semibold text-white 
-           bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)]
-           hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)]
-           active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)]
-           shadow-[0_12px_24px_rgba(199,58,49,0.40)]
-           border border-brand-800/10 transition-all duration-150 active:scale-[0.97]"
-                aria-label="Add new client"
-              >
-                <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </span>
-                <span>Add New Client</span>
-              </button>
+              <div className="relative inline-block group">
+                <button
+                  onClick={() => setShowNew(true)}
+                  className={primaryBtnCls + " h-11 px-6 rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-all duration-150 active:scale-[0.97]"}
+                  aria-label="Add new client"
+                >
+                  <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-5 w-5"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </span>
+                  <span>Add New Client</span>
+                </button>
+                <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
+              </div>
             )}
           </div>
         </div>
@@ -567,7 +574,8 @@ export default function Dashboard() {
         >
           {/* left: list */}
           <div
-            className={`lg:col-span-2 ${cardCls} p-0 flex flex-col h-full lg:max-h-[calc(100vh-260px)] overflow-hidden`}
+            className={`lg:col-span-2 ${cardCls} p-0 flex flex-col h-full lg:max-h-[calc(100vh-260px)] overflow-hidden group relative ` +
+              `hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}
             style={{ minHeight: 0 }}
           >
 
@@ -577,7 +585,7 @@ export default function Dashboard() {
               Client List
             </div>
             <div
-              className="p-2.5 sm:p-3 flex-1 flex flex-col h-full bg-brand-50/40"
+              className="p-2.5 sm:p-3 flex-1 flex flex-col h-full bg-white/95 ring-1 ring-brand-50"
               style={{ minHeight: 0 }}
             >
               <div className="text-sm text-brand-900 mb-2.5 flex items-center justify-between font-semibold">
@@ -604,7 +612,7 @@ export default function Dashboard() {
                           "px-2.5 py-1 rounded-full text-xs mt-0.5 ml-0.5 font-semibold transition-colors duration-150",
                           "ring-1 shadow-sm",
                           isActive
-                            ? "bg-[color:var(--brand-700)] text-white ring-brand-700 shadow-[0_6px_14px_rgba(199,58,49,0.45)]"
+                            ? "bg-[color:var(--brand-700)] text-white ring-brand-700 shadow-[0_6px_14px_rgba(148,27,21,0.12)]"
                             : "bg-white/95 text-brand-900 ring-brand-100 hover:bg-brand-50 active:bg-brand-100",
                         ].join(" ")}
                         onClick={() => setTerm((t) => (t === L ? "" : L))}
@@ -677,24 +685,24 @@ export default function Dashboard() {
 
                                 {/* missing-info icon intentionally removed from list items */}
 
-                                {canLogVisits ?? hasCapability?.("logVisits") ? (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      logVisit(c);
-                                      setSelected(c);
-                                    }}
-                                    className={[
-                                      "inline-flex items-center justify-center",
-                                      "h-9 px-4 rounded-lg bg-brand-700 text-white font-bold shadow hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap",
-                                      "shrink-0",
-                                    ].join(" ")}
-                                    aria-label="Log visit"
-                                    title="Log visit"
-                                  >
-                                    Log Visit
-                                  </button>
-                                ) : null}
+                                                {canLogVisits ?? hasCapability?.("logVisits") ? (
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      logVisit(c);
+                                                      setSelected(c);
+                                                    }}
+                                                    className={[
+                                                      primarySmallCls,
+                                                      // Slightly larger on md+ so the button reads and fits better on desktop
+                                                      "md:h-10 md:px-5 md:text-[16px] md:rounded-lg",
+                                                    ].join(" ")}
+                                                    aria-label="Log visit"
+                                                    title="Log visit"
+                                                  >
+                                                    Log Visit
+                                                  </button>
+                                                ) : null}
                               </div>
                             </li>
                           );
@@ -706,10 +714,12 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
 
           {/* right: quick details */}
           <aside
-            className={`${cardCls} overflow-hidden h-full`}
+            className={`${cardCls} overflow-hidden h-full group relative ` +
+              `hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}
             style={{ height: "100%" }}
           >
             <div className={`${sectionHdrCls} flex items-center justify-between`}>
@@ -720,15 +730,13 @@ export default function Dashboard() {
                     <button
                       onClick={() => logVisit(selected)}
                       className={[
-                        "inline-flex items-center justify-center",
-                        "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                        // use compact primary variant but keep min-width and slightly different shadow
+                        primarySmallCls,
                         "min-w-[64px] sm:min-w-[92px]",
-                        "bg-gradient-to-b from-brand-600 to-brand-700 text-white",
-                        "text-[13px] sm:text-[14px] font-medium",
-                        "shadow-[0_6px_14px_-6px_rgba(199,58,49,0.5)] ring-1 ring-brand-700/40",
-                        "hover:from-brand-500 hover:to-brand-600",
-                        "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(199,58,49,0.6)]",
-                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                        // Slightly larger at md+ so the details-panel CTA matches desktop sizing
+                        "md:h-10 md:px-5 md:text-[16px]",
+                        "shadow-[0_6px_14px_-6px_rgba(148,27,21,0.12)] ring-1 ring-brand-700/40",
+                        "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(148,27,21,0.14)]",
                       ].join(" ")}
                       aria-label="Log visit"
                       title="Log visit"
@@ -904,11 +912,12 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+            <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
           </aside>
         </div>
 
         {/* recent activity table */}
-        <div className={`mt-4 ${cardCls} p-0`}>
+        <div className={`mt-4 ${cardCls} p-0 group relative hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}>
           <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
             Recent Activity (latest 10)
           </div>
@@ -974,6 +983,7 @@ export default function Dashboard() {
               </table>
             </div>
           </div>
+          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </div>
 
         {/* mobile quick actions bar */}
@@ -1000,7 +1010,8 @@ export default function Dashboard() {
                 {(canLogVisits ?? hasCapability?.("logVisits")) && (
                   <button
                     onClick={() => logVisit(selected)}
-                    className="h-8 px-3 rounded-lg bg-brand-700 text-white font-bold shadow-lg hover:bg-brand-800 active:bg-brand-900 transition whitespace-nowrap text-base"
+                    className={"h-8 px-3 rounded-lg text-base font-semibold whitespace-nowrap " +
+                      "bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white shadow-lg hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 transition"}
                   >
                     Log Visit
                   </button>

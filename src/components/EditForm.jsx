@@ -378,7 +378,8 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
         // audit
         updatedAt: serverTimestamp(),
-        updatedBy: uid || auth.currentUser?.uid || null,
+        updatedByUserId: uid || auth.currentUser?.uid || null,
+
       };
 
       await updateDoc(ref, payload);
@@ -413,10 +414,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
       await updateDoc(ref, {
         inactive: true,
         deactivatedAt: serverTimestamp(),
-        deactivatedBy: uid || auth.currentUser?.uid || null,
+        deactivatedByUserId: uid || auth.currentUser?.uid || null,
         updatedAt: serverTimestamp(),
-        updatedBy: uid || auth.currentUser?.uid || null,
+        updatedByUserId: uid || auth.currentUser?.uid || null,
       });
+
 
       onSaved?.({ id: client.id, ...client, inactive: true });
       onClose?.();
@@ -445,10 +447,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
       await updateDoc(ref, {
         inactive: false,
         reactivatedAt: serverTimestamp(),
-        reactivatedBy: uid || auth.currentUser?.uid || null,
+        reactivatedByUserId: uid || auth.currentUser?.uid || null,
         updatedAt: serverTimestamp(),
-        updatedBy: uid || auth.currentUser?.uid || null,
+        updatedByUserId: uid || auth.currentUser?.uid || null,
       });
+
 
       onSaved?.({ id: client.id, ...client, inactive: false });
       onClose?.();

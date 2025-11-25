@@ -228,6 +228,41 @@ function isoWeekKey(d = new Date()) {
   const weekNo = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
   return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
+
+function resolveVisitDate(visitDateOverride) {
+  const now = new Date();
+  if (!visitDateOverride || typeof visitDateOverride !== "string") return now;
+  if (visitDateOverride.length < 10) return now;
+
+  const y = Number(visitDateOverride.slice(0, 4));
+  const m = Number(visitDateOverride.slice(5, 7)) - 1;
+  const d = Number(visitDateOverride.slice(8, 10));
+
+  if (
+    !Number.isFinite(y) ||
+    !Number.isFinite(m) ||
+    !Number.isFinite(d) ||
+    y < 1900 ||
+    m < 0 ||
+    m > 11 ||
+    d < 1 ||
+    d > 31
+  ) {
+    return now;
+  }
+
+  // Keep current time of day, just change the date
+  return new Date(
+    y,
+    m,
+    d,
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds()
+  );
+}
+
 function formatPhone(value) {
   const digits = onlyDigits(value).slice(0, 10);
   const len = digits.length;
@@ -321,7 +356,10 @@ export default function NewClientForm({
   client,
   defaultOrgId,
   defaultLocationId,
+  visitDateOverride,      // "YYYY-MM-DD" from Reports (optional)
+  addedByReports = false, // true when launched from Reports
 }) {
+
   const editing = !!client?.id;
   const authCtx = useAuth() || {};
   const {
@@ -789,8 +827,9 @@ export default function NewClientForm({
           lastVisitMonthKey: null,
         });
 
-        if (form.firstTimeThisMonth === true) {
-          const mk = monthKey(new Date());
+       if (form.firstTimeThisMonth === true) {
+          const when = resolveVisitDate(visitDateOverride);
+          const mk = monthKey(when);
           const markerRef = doc(
             db,
             "usda_first",
@@ -808,33 +847,39 @@ export default function NewClientForm({
           } catch {}
         }
 
+
         await runTransaction(db, async (tx) => {
-          const now = new Date();
-          const mk = monthKey(now);
-          const dk = localDateKey(now);
-          const wk = isoWeekKey(now);
-          const weekday = now.getDay();
+          const when = resolveVisitDate(visitDateOverride);
+          const mk = monthKey(when);
+          const dk = localDateKey(when);
+          const wk = isoWeekKey(when);
+          const weekday = when.getDay();
 
           const visitRef = doc(collection(db, "visits"));
           tx.set(visitRef, {
-            clientId: clientRef.id,
-            clientFirstName: firstName,
-            clientLastName: lastName,
+            clientId: dup.id,
+            clientFirstName: dup.firstName || "",
+            clientLastName: dup.lastName || "",
+            clientAddress: dup.address || "",
+            clientZip: dup.zip || "",
+            clientCounty: dup.county || "",
             orgId,
             locationId,
             householdSize: Number(form.householdSize || 1),
-            visitAt: serverTimestamp(),
+            visitAt: when,
             createdAt: serverTimestamp(),
-            dateKey: dk,
             monthKey: mk,
+            dateKey: dk,
             weekKey: wk,
             weekday,
-            usdaFirstTimeThisMonth: form.firstTimeThisMonth === true,
+            usdaFirstTimeThisMonth: wantsUsdaFirst,
             createdByUserId: auth.currentUser?.uid || null,
             editedAt: null,
             editedByUserId: null,
-            addedByReports: false,
+            addedByReports: !!addedByReports,
           });
+
+
 
           const clientRef2 = doc(db, "clients", clientRef.id);
           tx.set(
@@ -850,6 +895,7 @@ export default function NewClientForm({
             { merge: true }
           );
         });
+
 
         createdId = clientRef.id;
       } else {
@@ -941,11 +987,11 @@ export default function NewClientForm({
     setMsg("");
     try {
       await runTransaction(db, async (tx) => {
-        const now = new Date();
-        const mk = monthKey(now);
-        const dk = localDateKey(now);
-        const wk = isoWeekKey(now);
-        const weekday = now.getDay();
+        const when = resolveVisitDate(visitDateOverride);
+        const mk = monthKey(when);
+        const dk = localDateKey(when);
+        const wk = isoWeekKey(when);
+        const weekday = when.getDay();
 
         const wantsUsdaFirst = form.firstTimeThisMonth === true;
         if (wantsUsdaFirst) {
@@ -971,7 +1017,7 @@ export default function NewClientForm({
           orgId,
           locationId,
           householdSize: Number(form.householdSize || 1),
-          visitAt: serverTimestamp(),
+          visitAt: when,
           createdAt: serverTimestamp(),
           monthKey: mk,
           dateKey: dk,
@@ -981,7 +1027,7 @@ export default function NewClientForm({
           createdByUserId: auth.currentUser?.uid || null,
           editedAt: null,
           editedByUserId: null,
-          addedByReports: false,
+          addedByReports: !!addedByReports,
         });
 
         const clientRef = doc(db, "clients", dup.id);
@@ -998,6 +1044,7 @@ export default function NewClientForm({
           { merge: true }
         );
       });
+
 
       setMsg("Visit logged for existing client ✅");
       onSaved?.({ ...(dup || {}) });
