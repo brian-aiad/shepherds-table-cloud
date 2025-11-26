@@ -356,10 +356,9 @@ export default function NewClientForm({
   client,
   defaultOrgId,
   defaultLocationId,
-  visitDateOverride,      // "YYYY-MM-DD" from Reports (optional)
+  visitDateOverride, // "YYYY-MM-DD" from Reports (optional)
   addedByReports = false, // true when launched from Reports
 }) {
-
   const editing = !!client?.id;
   const authCtx = useAuth() || {};
   const {
@@ -796,7 +795,7 @@ export default function NewClientForm({
 
     try {
       const base = buildBasePayload();
-      const { firstName, lastName, nameDobHash, phoneDigits } = base;
+      const { nameDobHash, phoneDigits } = base;
       let createdId = client?.id;
 
       if (!editing && !force) {
@@ -811,6 +810,8 @@ export default function NewClientForm({
 
       if (!editing) {
         const clientRef = doc(collection(db, "clients"));
+
+        // Create the client
         await setDoc(clientRef, {
           ...base,
           orgId,
@@ -827,7 +828,10 @@ export default function NewClientForm({
           lastVisitMonthKey: null,
         });
 
-       if (form.firstTimeThisMonth === true) {
+        const wantsUsdaFirst = form.firstTimeThisMonth === true;
+
+        // USDA first-time marker for this month (new client)
+        if (wantsUsdaFirst) {
           const when = resolveVisitDate(visitDateOverride);
           const mk = monthKey(when);
           const markerRef = doc(
@@ -838,6 +842,8 @@ export default function NewClientForm({
           try {
             await setDoc(markerRef, {
               clientId: clientRef.id,
+                clientFirstName: base.firstName || "",
+                clientLastName: base.lastName || "",
               orgId,
               locationId,
               monthKey: mk,
@@ -847,7 +853,7 @@ export default function NewClientForm({
           } catch {}
         }
 
-
+        // Log initial visit + bump visit counters for the new client
         await runTransaction(db, async (tx) => {
           const when = resolveVisitDate(visitDateOverride);
           const mk = monthKey(when);
@@ -857,12 +863,12 @@ export default function NewClientForm({
 
           const visitRef = doc(collection(db, "visits"));
           tx.set(visitRef, {
-            clientId: dup.id,
-            clientFirstName: dup.firstName || "",
-            clientLastName: dup.lastName || "",
-            clientAddress: dup.address || "",
-            clientZip: dup.zip || "",
-            clientCounty: dup.county || "",
+            clientId: clientRef.id,
+            clientFirstName: base.firstName,
+            clientLastName: base.lastName,
+            clientAddress: base.address,
+            clientZip: base.zip,
+            clientCounty: base.county,
             orgId,
             locationId,
             householdSize: Number(form.householdSize || 1),
@@ -879,8 +885,6 @@ export default function NewClientForm({
             addedByReports: !!addedByReports,
           });
 
-
-
           const clientRef2 = doc(db, "clients", clientRef.id);
           tx.set(
             clientRef2,
@@ -895,7 +899,6 @@ export default function NewClientForm({
             { merge: true }
           );
         });
-
 
         createdId = clientRef.id;
       } else {
@@ -1000,6 +1003,8 @@ export default function NewClientForm({
           if (!markerSnap.exists()) {
             tx.set(markerRef, {
               clientId: dup.id,
+              clientFirstName: dup.firstName || "",
+              clientLastName: dup.lastName || "",
               orgId,
               locationId,
               monthKey: mk,
@@ -1044,7 +1049,6 @@ export default function NewClientForm({
           { merge: true }
         );
       });
-
 
       setMsg("Visit logged for existing client ✅");
       onSaved?.({ ...(dup || {}) });
@@ -1190,8 +1194,14 @@ export default function NewClientForm({
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header (sticky) */}
-        <div className="sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 12px)", top: "env(safe-area-inset-top, 12px)" }}>
-          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+        <div
+          className="sticky top-0 z-10"
+          style={{
+            paddingTop: "env(safe-area-inset-top, 12px)",
+            top: "env(safe-area-inset-top, 12px)",
+          }}
+        >
+          <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
             <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
                 {/* Title + avatar */}
@@ -1289,10 +1299,7 @@ export default function NewClientForm({
           <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
             <SectionHeader
               icon={ICONS.firstName}
-              label={dual(
-                <>Client details</>,
-                "Name and basic information"
-              )}
+              label={dual(<>Client details</>, "Name and basic information")}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1716,7 +1723,7 @@ export default function NewClientForm({
                       (hasCapability && hasCapability("logVisits"))
                     )
                   }
-                  className="h-10 px-3 rounded-xl bg-[color:var(--brand-700)] text-white text-sm font-medium hover:bg-[color:var(--brand-600)] disabled:opacity-50"
+                  className="h-10 px-3 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white text-sm font-medium hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 disabled:opacity-50"
                 >
                   {t(lang, "dupLogVisit")}
                 </button>
@@ -1790,31 +1797,31 @@ export default function NewClientForm({
               >
                 {t(lang, "cancel")}
               </button>
-              <button
-                type="submit"
-                form="new-client-form"
-                disabled={
-                  busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)
-                }
-                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-[color:var(--brand-700)] text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50 transition-all duration-150"
-                title={
-                  editing
-                    ? !canSubmitEdit
-                      ? t(lang, "permNoEdit")
+                <button
+                  type="submit"
+                  form="new-client-form"
+                  disabled={
+                    busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)
+                  }
+                  className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 disabled:opacity-50 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                  title={
+                    editing
+                      ? !canSubmitEdit
+                        ? t(lang, "permNoEdit")
+                        : ""
+                      : !canSubmitNew
+                      ? `${!canCreateClients ? t(lang, "permNoCreate") : ""} ${
+                          !canLogVisits ? t(lang, "permNoLog") : ""
+                        }`.trim()
                       : ""
-                    : !canSubmitNew
-                    ? `${!canCreateClients ? t(lang, "permNoCreate") : ""} ${
-                        !canLogVisits ? t(lang, "permNoLog") : ""
-                      }`.trim()
-                    : ""
-                }
-              >
-                {busy
-                  ? "Saving…"
-                  : editing
-                  ? t(lang, "save")
-                  : t(lang, "saveLog")}
-              </button>
+                  }
+                >
+                  {busy
+                    ? "Saving…"
+                    : editing
+                    ? t(lang, "save")
+                    : t(lang, "saveLog")}
+                </button>
             </div>
           </div>
 

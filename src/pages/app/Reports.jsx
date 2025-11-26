@@ -7,6 +7,7 @@ import {
   useRef,
   useLayoutEffect,
 } from "react";
+import { MapPin } from "lucide-react";
 import { useLocation as useRouteLocation } from "react-router-dom";
 import {
   collection,
@@ -550,14 +551,14 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
   const size = "h-10 w-10 md:h-11 md:w-11";
 
   return (
-    <div className="relative z-50">
-      {/* unified capsule with black outline */}
+      <div className="relative z-50">
+      {/* unified capsule with brand outline */}
       <div
         className="
           inline-flex items-center gap-0
           rounded-2xl bg-white
-          border border-gray-300 ring-1 ring-gray-200
-          shadow-[0_6px_16px_-6px_rgba(0,0,0,0.15)]
+          border border-brand-200 ring-1 ring-brand-50
+          shadow-[0_6px_16px_-6px_rgba(153,27,27,0.06)]
           px-1.5 py-1
         "
       >
@@ -593,18 +594,16 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
               setYearView(Number(monthKey.slice(0, 4)));
               setOpen((v) => !v);
             }}
-            className="
-              inline-flex items-center justify-center gap-2
-              rounded-full px-4 md:px-5
-              h-10 md:h-11
-              text-gray-900 font-semibold tracking-tight              hover:bg-gray-50 active:bg-gray-100
-              focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50
-            "
+            className={
+              "inline-flex items-center justify-center gap-2 rounded-full " +
+              "px-5 md:px-6 h-11 md:h-12 text-[16px] md:text-[17px] font-semibold tracking-tight " +
+              "hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+            }
             aria-haspopup="dialog"
             aria-expanded={open}
             title="Jump to a specific month/year"
           >
-            <span className="text-[15px] md:text[16px]">{label}</span>
+            <span className="text-[16px] md:text-[17px]">{label}</span>
             <svg
               className={`h-4 w-4 transition-transform ${
                 open ? "rotate-180" : ""
@@ -1721,37 +1720,13 @@ const removeDay = useCallback(
     );
   }
 
-  // Scope chip
+  // Scope chip (icon variant for desktop header)
   const scopeChip = (
-    <span
-      className="
-        inline-flex items-center gap-1.5
-        rounded-full bg-white text-brand-900
-        ring-1 ring-black/5 shadow-sm
-        px-3 py-1 text-[12px]
-      "
-    >
-      <span className="text-gray-600">Scope</span>
-      <span className="text-gray-400">•</span>
-      <span className="font-semibold">{org?.name || "—"}</span>
-      {location?.name ? (
-        <>
-          <span className="text-gray-400">/</span>
-          <span className="text-gray-700">{location.name}</span>
-        </>
-      ) : canPickAllLocations ? (
-        <span className="text-gray-600">(all locations)</span>
-      ) : (
-        <span className="text-gray-600">(select location)</span>
-      )}
-    </span>
-  );
-
-  // Sync chip
-  const syncChip = (
-    <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 px-2.5 py-1 text-[12px]">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      Synced {syncAgo || "—"}
+    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+      </span>
+      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
     </span>
   );
 
@@ -1779,17 +1754,18 @@ const removeDay = useCallback(
   return (
     <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible">
       {/* ===== THEMED TOOLBAR ===== */}
-      <div className="rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+      <div className="block rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative mb-4">
         {/* Brand gradient header (pill sits on the seam) */}
-        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-10 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
           <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
             <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
               Reports
             </h1>
-            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
+            <div className="hidden md:flex items-center gap-2">{scopeChip}</div>
           </div>
           <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-            {scopeChip}
+            {/* keep scope visible in the lower row on smaller screens */}
+            <div className="md:hidden">{scopeChip}</div>
           </div>
 
           {/* Month nav floats between header and controls */}
@@ -1802,8 +1778,8 @@ const removeDay = useCallback(
           </div>
         </div>
 
-        {/* Controls surface – just reserves space under the pill */}
-        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-8 pb-3" />
+        {/* Controls surface – larger reserve under the pill to match Dashboard */}
+        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-6 sm:py-6 min-h-[64px] border border-brand-100 ring-1 ring-brand-50 shadow-soft" />
       </div>
 
       {/* ===== KPI Row (wording tightened) ===== */}
@@ -1849,7 +1825,7 @@ const removeDay = useCallback(
 <div className="grid gap-6 sm:gap-7 lg:gap-8 md:grid-cols-3 mb-6 sm:mb-8">
         {/* Visits per Day */}
         <Card title="Visits per Day">
-<div className="h-[280px] md:h-[300px] flex items-center justify-center px-3 sm:px-4">
+<div className="h-[220px] md:h-[240px] px-2 sm:px-3 pt-2">
             <ResponsiveContainer width="98%" height="95%">
               <LineChart
                 data={monthAgg.charts.visitsPerDay}
@@ -1905,7 +1881,7 @@ const removeDay = useCallback(
 
         {/* USDA Yes vs No — clipping-proof donut (no outside labels, center metric, legend below) */}
 <Card title="USDA Yes vs No">
-<div className="h-[280px] md:h-[300px] px-3 sm:px-4 grid place-items-center">
+<div className="h-[220px] md:h-[240px] px-3 sm:px-4 grid place-items-center">
     <ResponsiveContainer width="100%" height="100%">
       <PieChart margin={{ top: 6, right: 6, bottom: 6, left: 6 }}>
         <Pie
@@ -1988,7 +1964,7 @@ const removeDay = useCallback(
 
         {/* People Served per Day (avg line, tidy axis, labels, wider gap) */}
 <Card title="People Served per Day">
-<div className="h-[280px] md:h-[300px] flex items-center justify-center px-3 sm:px-4">
+<div className="h-[220px] md:h-[240px] px-2 sm:px-3 pt-2">
     <ResponsiveContainer width="100%" height="100%">
       <BarChart
         data={monthAgg.charts.visitsPerDay}
@@ -2086,18 +2062,18 @@ const removeDay = useCallback(
           "group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1 " +
           "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
         }>
-          <div className="mb-3 sm:mb-4 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="font-semibold">
-                Days in {monthLabel(selectedMonthKey)}
+          <div className="mb-3 sm:mb-4">
+            <div className="-mx-3 -mt-3 mb-3 rounded-t-2xl overflow-hidden">
+              <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="text-white font-semibold">Days in {monthLabel(selectedMonthKey)}</div>
+                <input
+                  className="rounded-full bg-white px-3 py-2 text-sm w-[160px] sm:w-[170px] border border-white/30 shadow-sm placeholder-gray-400"
+                  placeholder="Filter (YYYY-MM-DD)"
+                  value={dayFilter}
+                  onChange={(e) => setDayFilter(e.target.value)}
+                  aria-label="Filter days"
+                />
               </div>
-              <input
-                className="rounded-lg border px-2 py-1 text-sm w-[160px] sm:w-[170px]"
-                placeholder="Filter (YYYY-MM-DD)"
-                value={dayFilter}
-                onChange={(e) => setDayFilter(e.target.value)}
-                aria-label="Filter days"
-              />
             </div>
 
             {/* Add Day row */}
@@ -2263,177 +2239,182 @@ const removeDay = useCallback(
         </aside>
 
         {/* Table / details */}
-        <section className={
-          "lg:col-span-2 group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 " +
-          "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
-        }>
-          {/* Header: date + actions (mobile = tidy grid) */}
-          <div className="mb-3">
-            {/* Title + desktop actions */}
-            <div className="hidden sm:flex items-center justify-between">
-              <div className="font-semibold text-lg">
-                {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
-              </div>
+<section
+  className={
+    "lg:col-span-2 group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 " +
+    "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition"
+    // removed will-change-transform, hover:scale, active:scale so the card
+    // doesn’t “jump” when you click buttons inside it
+  }
+>
+  {/* Header: date + actions (branded gradient header, mobile controls kept responsive) */}
+  <div className="-mx-3 -mt-3 mb-3 rounded-t-2xl">
+    <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-3 sm:px-4 py-2.5 text-white flex items-center justify-between gap-3 rounded-t-2xl">
+      <div className="font-semibold text-lg truncate">
+        {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
+      </div>
 
-              {/* Desktop actions: EFAP + split menu + Add Visit (by capability) */}
-              <div className="flex items-center gap-1.5" ref={menuRef}>
-                {/* Split menu (desktop) */}
-                
+      {/* Desktop actions */}
+      <div className="hidden sm:flex items-center gap-2" ref={menuRef}>
+        <button
+          type="button"
+          className="inline-flex h-9 items-center gap-2 rounded-full bg-white/95 text-brand-900 px-3.5 text-sm font-semibold border border-brand-100 shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-brand-600 focus:ring-white"
+          onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+          disabled={!selectedDate}
+          title="Download EFAP PDF for this day"
+          aria-label="EFAP PDF"
+        >
+          EFAP PDF
+        </button>
 
-                                <button
-                  className={BTN.primary + " min-w-[120px]"}
-                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-                  disabled={!selectedDate}
-                  title="Download EFAP PDF for this day"
-                  aria-label="EFAP PDF"
-                >
-                  EFAP PDF
-                </button>
+        {selectedDate && canLogVisits && (
+          <AddVisitButton
+            org={org}
+            location={location}
+            selectedDate={selectedDate}
+            onAdded={(v) => setVisits((prev) => [v, ...prev])}
+            className={
+              "!inline-flex !h-9 !items-center !gap-2 !rounded-full " +
+              "!px-3.5 !text-sm !font-semibold " +
+              "!bg-white/10 !text-white !border !border-white/60 !shadow-sm " +
+              "hover:!bg-white/15 focus:!outline-none focus:!ring-2 focus:!ring-offset-2 focus:!ring-offset-brand-600 focus:!ring-white"
+            }
+          />
+        )}
 
-                
+        <div className="relative">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-brand-900 border border-brand-100 shadow-sm hover:bg-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-brand-600 focus:ring-white"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label="More actions"
+            title="More actions"
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            <KebabIcon className="h-4 w-4" />
+          </button>
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                onClick={() => {
+                  setMenuOpen(false);
+                  shareEfapDailyPdfForDay(selectedDate);
+                }}
+                disabled={!selectedDate}
+                aria-label="Share EFAP"
+              >
+                <ShareIcon className="h-4 w-4" />
+                <span>Share EFAP</span>
+              </button>
 
-                {selectedDate && canLogVisits && (
-                  <AddVisitButton
-                    org={org}
-                    location={location}
-                    selectedDate={selectedDate}
-                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
-                  />
-                )}
-
-                <div className="relative">
-                  <button
-                    className={BTN.icon}
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    aria-label="More actions"
-                    title="More actions"
-                    onClick={() => setMenuOpen((v) => !v)}
-                  >
-                    <KebabIcon className="h-5 w-5" />
-                  </button>
-                  {menuOpen && (
-                    <div
-                      role="menu"
-                      className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-                    >
-                      <button
-                        role="menuitem"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          shareEfapDailyPdfForDay(selectedDate);
-                        }}
-                        disabled={!selectedDate}
-                        aria-label="Share EFAP"
-                      >
-                        <ShareIcon className="h-4 w-4" />
-                        <span>Share EFAP</span>
-                      </button>
-                  
-
-                      <button
-                        role="menuitem"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          exportOneDayCsv(selectedDate);
-                        }}
-                        disabled={!selectedDate}
-                        aria-label="Export CSV"
-                      >
-                        <DownloadIcon className="h-4 w-4" />
-                        <span>Export CSV</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-              </div>
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                onClick={() => {
+                  setMenuOpen(false);
+                  exportOneDayCsv(selectedDate);
+                }}
+                disabled={!selectedDate}
+                aria-label="Export CSV"
+              >
+                <DownloadIcon className="h-4 w-4" />
+                <span>Export CSV</span>
+              </button>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
 
-            {/* Mobile: tidy 2-row grid */}
-            <div className="sm:hidden">
-              <div className="font-semibold text-base mb-2">
-                {selectedDate ? `Visits on ${selectedDate}` : "Select a day"}
-              </div>
+    {/* Mobile actions: stacked under header for visibility */}
+    <div className="sm:hidden bg-white/0 px-3 pt-3 pb-1">
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          className={BTN.primary + " col-span-2 h-11 w-full"}
+          onClick={() => exportEfapDailyPdfForDay(selectedDate)}
+          disabled={!selectedDate}
+          aria-label="EFAP PDF"
+          title="Download EFAP PDF"
+        >
+          EFAP PDF
+        </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                {/* Row 1: EFAP full-width */}
-                <button
-                  className={BTN.primary + " col-span-2 h-11 w-full"}
-                  onClick={() => exportEfapDailyPdfForDay(selectedDate)}
-                  disabled={!selectedDate}
-                  aria-label="EFAP PDF"
-                  title="Download EFAP PDF"
-                >
-                  EFAP PDF
-                </button>
+        {canLogVisits ? (
+          <AddVisitButton
+            org={org}
+            location={location}
+            selectedDate={selectedDate}
+            onAdded={(v) => setVisits((prev) => [v, ...prev])}
+            className={BTN.secondary + " !h-11 w-full"}
+          />
+        ) : (
+          <div />
+        )}
 
-                {/* Row 2: Add Visit (by capability) + kebab */}
-                {canLogVisits ? (
-                  <AddVisitButton
-                    org={org}
-                    location={location}
-                    selectedDate={selectedDate}
-                    onAdded={(v) => setVisits((prev) => [v, ...prev])}
-                    className={BTN.secondary + " !h-11 w-full"}
-                  />
-                ) : (
-                  <div />
-                )}
-
-                <div className="relative" ref={kebabRef}>
-                  <button
-                    className={BTN.icon + " !h-11 w-full"}
-                    aria-haspopup="menu"
-                    aria-expanded={kebabOpen}
-                    aria-label="More actions"
-                    title="More actions"
-                    onClick={() => setKebabOpen((v) => !v)}
-                  >
-                    <KebabIcon className="h-5 w-5" />
-                  </button>
-                  {kebabOpen && (
-                    <div
-                      role="menu"
-                      className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
-                    >
-                      <button
-                        role="menuitem"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                        onClick={() => {
-                          setKebabOpen(false);
-                          shareEfapDailyPdfForDay(selectedDate);
-                        }}
-                        disabled={!selectedDate}
-                        aria-label="Share EFAP"
-                      >
-                        <ShareIcon className="h-4 w-4" />
-                        <span>Share EFAP</span>
-                      </button>
-                      <button
-                        role="menuitem"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                        onClick={() => {
-                          setKebabOpen(false);
-                          exportOneDayCsv(selectedDate);
-                        }}
-                        disabled={!selectedDate}
-                        aria-label="Export CSV"
-                      >
-                        <DownloadIcon className="h-4 w-4" />
-                        <span>Export CSV</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+        <div className="relative" ref={kebabRef}>
+          <button
+            type="button"
+            className={BTN.icon + " !h-11 w-full"}
+            aria-haspopup="menu"
+            aria-expanded={kebabOpen}
+            aria-label="More actions"
+            title="More actions"
+            onClick={() => setKebabOpen((v) => !v)}
+          >
+            <KebabIcon className="h-5 w-5" />
+          </button>
+          {kebabOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                onClick={() => {
+                  setKebabOpen(false);
+                  shareEfapDailyPdfForDay(selectedDate);
+                }}
+                disabled={!selectedDate}
+                aria-label="Share EFAP"
+              >
+                <ShareIcon className="h-4 w-4" />
+                <span>Share EFAP</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm text-gray-700"
+                onClick={() => {
+                  setKebabOpen(false);
+                  exportOneDayCsv(selectedDate);
+                }}
+                disabled={!selectedDate}
+                aria-label="Export CSV"
+              >
+                <DownloadIcon className="h-4 w-4" />
+                <span>Export CSV</span>
+              </button>
             </div>
-          </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+
 
           {/* Subheading separator above filters (visual polish) */}
-          <div className="border-t border-gray-200 pt-3 mb-3">
+          <div className="border-t border-gray-200 pt-6 mb-3">
             {/* Filters, compressed: search + two selects + single sort toggle */}
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex-1 min-w-[180px]">
@@ -3117,7 +3098,15 @@ function Card({ title, children }) {
         "transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
       }
     >
-      <div className="text-sm font-semibold mb-2">{title}</div>
+      {title ? (
+        <div className="-mx-4 sm:-mx-4 -mt-4 mb-2 rounded-t-2xl overflow-hidden">
+          <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-4 sm:px-5 py-2 text-white text-sm font-semibold flex items-center gap-3 border-b border-white/20 shadow-inner">
+            <span className="h-2.5 w-2.5 rounded-full bg-white/30 ring-1 ring-white/20" aria-hidden />
+            <span className="truncate">{title}</span>
+          </div>
+        </div>
+      ) : null}
+
       {children}
 
       {/* subtle gradient highlight bar that appears at the bottom on hover */}

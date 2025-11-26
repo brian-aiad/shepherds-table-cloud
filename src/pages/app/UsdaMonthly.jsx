@@ -7,6 +7,7 @@
 // - Keyboard: ← / → / T
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
@@ -488,52 +489,31 @@ export default function UsdaMonthly() {
     );
   }
 
-  /* ---------- Scope + Sync (USDA style) ---------- */
+  /* ---------- Scope (icon variant) ---------- */
   const scopeChip = (
-    <span
-      className="
-        inline-flex items-center gap-1.5
-        rounded-full bg-white text-brand-900
-        ring-1 ring-black/5 shadow-sm
-        px-3 py-1 text-[12px]
-      "
-    >
-      <span className="text-gray-600">Scope</span>
-      <span className="text-gray-400">•</span>
-      <span className="font-semibold">{org?.name || "—"}</span>
-      {location?.name ? (
-        <>
-          <span className="text-gray-300">/</span>
-          <span className="text-gray-700">{location.name}</span>
-        </>
-      ) : (
-        <span className="text-gray-600">(all locations)</span>
-      )}
-    </span>
-  );
-
-  const syncChip = (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200 px-3 py-1 text-[12px]">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      Synced {syncAgo || "—"}
+    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+      </span>
+      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
     </span>
   );
 
   return (
-    <div className="p-3 sm:p-4 md:p-6" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div className="px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       {/* ===== THEMED TOOLBAR — floating month pill like Reports ===== */}
-      <div className="mb-4 sm:mb-6 rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
+      <div className="block mb-4 sm:mb-6 rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
         {/* Brand gradient header (pill sits on the seam) */}
-        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-8 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
-          <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
-            <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
-              USDA Monthly Report
-            </h1>
-            <div className="hidden md:flex items-center gap-2">{syncChip}</div>
-          </div>
-          <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
-            {scopeChip}
-          </div>
+          <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+            <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+              <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+                USDA Monthly Report
+              </h1>
+              <div className="hidden md:flex items-center gap-2">{scopeChip}</div>
+            </div>
+            <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <div className="md:hidden">{scopeChip}</div>
+            </div>
 
           {/* MonthNav floats between header and controls */}
           <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 z-10">
@@ -542,7 +522,7 @@ export default function UsdaMonthly() {
         </div>
 
         {/* Controls surface – stacked on mobile, aligned L/R on desktop */}
-        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 pt-9 md:pt-6 pb-4 overflow-visible">
+        <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 overflow-visible border border-brand-100 ring-1 ring-brand-50 shadow-soft">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             {/* LEFT: Shade select */}
             <div className="w-full md:w-auto max-w-[480px]">

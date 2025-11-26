@@ -407,6 +407,8 @@ export default function AddVisitButton({
               tx.set(markerRef, {
                 orgId: org.id,
                 clientId: client.id,
+                clientFirstName: cur.firstName || client.firstName || "",
+                clientLastName: cur.lastName || client.lastName || "",
                 locationId: markerLocId,
                 monthKey: mk,
                 createdAt: serverTimestamp(),

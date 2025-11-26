@@ -1,11 +1,5 @@
 // src/components/Navbar.jsx
-// Shepherd’s Table Cloud — Navbar (multi-section, capability-aware, Nov 2025)
-// - Desktop (xl+): Dashboard, Inventory, Donations, Reports, USDA + Context + user chip + Sign out
-// - lg-only (small desktops): brand + nav + compact avatar menu (dropdown with Context + account + Sign out)
-// - <lg (phones, tablets): brand + hamburger + compact Sign out + slide-down panel
-// - Context panel for org/location scope (desktop only)
-// - Capability-aware visibility with safe fallbacks
-// - Org-aware branding, user chip, responsive polish
+// Shepherd’s Table Cloud — Navbar (responsive, capability-aware, Nov 2025)
 
 import {
   useEffect,
@@ -75,12 +69,10 @@ export default function Navbar() {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   useEffect(() => {
     setMobileOpen(false);
     setContextOpen(false);
-    setAccountMenuOpen(false);
   }, [route.pathname]);
 
   const [orgOpen, setOrgOpen] = useState(false);
@@ -90,8 +82,6 @@ export default function Navbar() {
   const orgMenuRef = useRef(null);
   const locBtnRef = useRef(null);
   const locMenuRef = useRef(null);
-  const accountBtnRef = useRef(null);
-  const accountMenuRef = useRef(null);
 
   const orgId = org?.id || "";
   const locId = location?.id ?? null;
@@ -125,7 +115,7 @@ export default function Navbar() {
       labels[role] ||
       String(role).charAt(0).toUpperCase() + String(role).slice(1);
     return (
-      <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/15 text-white select-none">
+      <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white/15 text-white select-none whitespace-nowrap">
         {label}
       </span>
     );
@@ -207,20 +197,12 @@ export default function Navbar() {
           setLocOpen(false);
         }
       }
-      if (accountMenuOpen) {
-        if (
-          !accountBtnRef.current?.contains(e.target) &&
-          !accountMenuRef.current?.contains(e.target)
-        ) {
-          setAccountMenuOpen(false);
-        }
-      }
     };
     const onEsc = (e) => {
       if (e.key === "Escape") {
         setOrgOpen(false);
         setLocOpen(false);
-        setAccountMenuOpen(false);
+        setContextOpen(false);
       }
     };
     document.addEventListener("click", onDocClick);
@@ -229,7 +211,7 @@ export default function Navbar() {
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [orgOpen, locOpen, accountMenuOpen]);
+  }, [orgOpen, locOpen]);
 
   // Auto-pick first location after org change
   useEffect(() => {
@@ -316,10 +298,10 @@ export default function Navbar() {
         }}
       >
         <div className="relative z-10 mx-auto w-full max-w-[112rem] h-16 px-3 sm:px-4 md:px-6 lg:px-8 flex items-center gap-3 sm:gap-4">
-          {/* Hamburger (phones + tablets + small desktop) */}
+          {/* Hamburger (phones + tablets + small/medium desktop) */}
           <button
             type="button"
-            className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/0 text-white ring-1 ring-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="xl:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/0 text-white ring-1 ring-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
             aria-controls="nav-panel"
@@ -344,7 +326,7 @@ export default function Navbar() {
           {/* Brand */}
           <NavLink
             to="/"
-            className="inline-flex items-center gap-3 rounded-xl px-2 sm:px-2.5 py-1.5 -ml-1 lg:-ml-0 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
+            className="inline-flex items-center gap-3 rounded-xl px-2 sm:px-2.5 py-1.5 -ml-1 xl:-ml-0 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all"
             aria-label="Go to Dashboard"
           >
             <div className="relative shrink-0">
@@ -358,36 +340,37 @@ export default function Navbar() {
               <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
             </div>
 
-            <div className="flex flex-col leading-tight min-w-0">
-              <span className="font-semibold text-white text-[16px] sm:text-[18px] md:text-[20px] tracking-tight truncate">
+            <div className="flex flex-col leading-tight">
+              {/* Always show full name, no truncation */}
+              <span className="font-semibold text-white text-[16px] sm:text-[18px] md:text-[20px] tracking-tight whitespace-nowrap">
                 Shepherd’s Table
               </span>
 
               {org?.name && (
-                <span className="text-[11px] sm:text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[140px] sm:max-w-[180px] md:max-w-none">
+                <span className="text-[11px] sm:text-xs font-medium text-white/90 bg-white/15 px-2 py-[2px] rounded-md mt-0.5 truncate max-w-[220px] md:max-w-[260px]">
                   {org.name}
                 </span>
               )}
             </div>
           </NavLink>
 
-          {/* Compact Sign out when nav is collapsed (<lg) */}
+          {/* Compact Sign out when nav is collapsed (< xl) */}
           <button
             onClick={onSignOut}
-            className="lg:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+            className="xl:hidden ml-auto shrink-0 h-9 px-3 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
           >
             Sign out
           </button>
 
-          {/* Primary links (desktop / large only) */}
+          {/* Primary links (desktop / xl+ only) */}
           <nav
             aria-label="Primary"
-            className="hidden lg:flex items-center flex-1 justify-center gap-4 xl:gap-5 px-2"
+            className="hidden xl:flex items-center flex-1 justify-center gap-4 2xl:gap-5 px-2"
           >
             <TopLink
               to="/"
               end
-              className="text-[15px] xl:text-[17px] font-semibold"
+              className="text-[15px] 2xl:text-[17px] font-semibold"
             >
               Dashboard
             </TopLink>
@@ -395,7 +378,7 @@ export default function Navbar() {
             {canAccessInventory && (
               <TopLink
                 to="/inventory"
-                className="text-[15px] xl:text-[17px] font-semibold"
+                className="text-[15px] 2xl:text-[17px] font-semibold"
               >
                 Inventory
               </TopLink>
@@ -404,7 +387,7 @@ export default function Navbar() {
             {canAccessDonations && (
               <TopLink
                 to="/donations"
-                className="text-[15px] xl:text-[17px] font-semibold"
+                className="text-[15px] 2xl:text-[17px] font-semibold"
               >
                 Donations
               </TopLink>
@@ -414,13 +397,13 @@ export default function Navbar() {
               <>
                 <TopLink
                   to="/reports"
-                  className="text-[15px] xl:text-[17px] font-semibold"
+                  className="text-[15px] 2xl:text-[17px] font-semibold"
                 >
                   Reports
                 </TopLink>
                 <TopLink
                   to="/usda-monthly"
-                  className="text-[15px] xl:text-[17px] font-semibold"
+                  className="text-[15px] 2xl:text-[17px] font-semibold"
                 >
                   USDA
                 </TopLink>
@@ -428,129 +411,62 @@ export default function Navbar() {
             )}
           </nav>
 
-          {/* Right group (desktop) */}
-          <div className="hidden lg:flex items-center gap-2.5 xl:gap-3 relative">
-            {/* lg-only compact avatar menu (for small desktops) */}
-            <div className="flex xl:hidden items-center">
-              <button
-                ref={accountBtnRef}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAccountMenuOpen((v) => !v);
-                }}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-white text-sm ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
-                aria-haspopup="menu"
-                aria-expanded={accountMenuOpen}
+          {/* Right group (desktop xl+) */}
+          <div className="hidden xl:flex items-center gap-2.5 2xl:gap-3 ml-3">
+            <button
+              type="button"
+              onClick={() => setContextOpen((v) => !v)}
+              aria-expanded={contextOpen}
+              aria-controls="context-panel"
+              className="inline-flex items-center gap-2 h-10 2xl:h-11 px-3.5 2xl:px-4 rounded-full bg-white/20 text-white text-xs 2xl:text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
+              title="Organization & Location"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
               >
-                <span className="font-semibold">{initials}</span>
-              </button>
-
-              {accountMenuOpen && (
-                <div
-                  ref={accountMenuRef}
-                  className="absolute right-0 top-[3.25rem] z-[60] min-w-[220px] rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden"
-                >
-                  <div className="px-3 py-2 border-b">
-                    <div className="flex items-center gap-2">
-                      <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[12px] font-bold text-white">
-                        {initials}
-                      </span>
-                      <div className="flex flex-col leading-tight">
-                        <span className="text-[12px] font-medium truncate">
-                          {email || "—"}
-                        </span>
-                        {roleBadge && (
-                          <span className="mt-0.5 inline-flex">
-                            {roleBadge}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setContextOpen(true);
-                      setAccountMenuOpen(false);
-                    }}
-                    className="w-full px-3 py-2 text-left text-[13px] flex items-center gap-2 hover:bg-gray-50"
-                  >
-                    <span className="h-4 w-4 rounded-full border border-gray-300 grid place-items-center text-[11px]">
-                      ☰
-                    </span>
-                    <span>Context &amp; scope</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onSignOut}
-                    className="w-full px-3 py-2 text-left text-[13px] text-red-600 hover:bg-red-50"
-                  >
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* xl+ full context + chip + sign out */}
-            <div className="hidden xl:flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setContextOpen((v) => !v)}
-                aria-expanded={contextOpen}
-                aria-controls="context-panel"
-                className="inline-flex items-center gap-2 h-10 xl:h-11 px-3.5 xl:px-4 rounded-full bg-white/20 text-white text-xs xl:text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
-                title="Organization & Location"
+                <path d="M4 7h16M6 12h12M8 17h8" />
+              </svg>
+              <span className="font-medium">Context</span>
+              <svg
+                className={`h-4 w-4 transition-transform ${
+                  contextOpen ? "rotate-180" : ""
+                }`}
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path d="M4 7h16M6 12h12M8 17h8" />
-                </svg>
-                <span className="font-medium">Context</span>
-                <svg
-                  className={`h-4 w-4 transition-transform ${
-                    contextOpen ? "rotate-180" : ""
-                  }`}
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
-                  <path d="M5.75 7.75L10 12l4.25-4.25" />
-                </svg>
-              </button>
+                <path d="M5.75 7.75L10 12l4.25-4.25" />
+              </svg>
+            </button>
 
-              {/* User chip */}
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 ring-1 ring-white/15">
-                  <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[12px] font-bold text-white shadow-sm">
-                    {initials}
-                  </span>
-                  <span className="max-w-[220px] truncate text-[11px] text-white/95 font-medium">
-                    {email || "—"}
-                  </span>
-                  {roleBadge && <span className="ml-1">{roleBadge}</span>}
-                </div>
+            {/* User chip */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-[#ffffff1a] ring-1 ring-white/20 select-none">
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 ring-1 ring-white/15">
+                <span className="h-7 w-7 rounded-full bg-brand-600 grid place-items-center text-[12px] font-bold text-white shadow-sm">
+                  {initials}
+                </span>
+                <span className="max-w-[220px] 2xl:max-w-[260px] truncate text-[11px] text-white/95 font-medium">
+                  {email || "—"}
+                </span>
+                {roleBadge && <span className="ml-1">{roleBadge}</span>}
               </div>
-
-              <button
-                onClick={onSignOut}
-                className="inline-flex items-center justify-center h-8 xl:h-9 px-3 rounded-full bg-white/20 text-white text-[12px] xl:text-[13px] ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
-              >
-                Sign out
-              </button>
             </div>
+
+            <button
+              onClick={onSignOut}
+              className="inline-flex items-center justify-center h-10 2xl:h-11 px-3.5 rounded-full bg-white/20 text-white text-[12px] 2xl:text-[13px] ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
+            >
+              Sign out
+            </button>
           </div>
         </div>
 
-        {/* Desktop context strip (lg+ only) */}
+        {/* Desktop context strip (xl+ only) */}
         <DesktopContextStrip
           open={contextOpen}
           orgId={orgId}
@@ -578,7 +494,7 @@ export default function Navbar() {
       <div
         id="nav-panel"
         className={[
-          "lg:hidden transition-[max-height,opacity] duration-300",
+          "xl:hidden transition-[max-height,opacity] duration-300",
           mobileOpen
             ? "max-h-[90vh] opacity-100 overflow-visible pointer-events-auto"
             : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
@@ -688,7 +604,7 @@ export default function Navbar() {
 
               <button
                 onClick={onSignOut}
-                className="h-9 px-3 rounded-full bg-white/15 text-white text-xs font-medium ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+                className="h-9 px-3 rounded-full bg-white/15 text-white text-xs font-medium ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
               >
                 Sign out
               </button>
@@ -734,7 +650,7 @@ function DesktopContextStrip({
     <div
       id="context-panel"
       className={[
-        "hidden lg:block relative z-20 transition-[max-height,opacity] duration-300",
+        "hidden xl:block relative z-20 transition-[max-height,opacity] duration-300",
         open
           ? "max-h-[80vh] opacity-100 overflow-visible pointer-events-auto"
           : "max-h-0 opacity-0 overflow-hidden pointer-events-none",
@@ -793,7 +709,7 @@ function DesktopContextStrip({
             </p>
             <button
               onClick={onSaveDefault}
-              className="inline-flex items-center gap-2 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 px-3 py-1.5 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+              className="inline-flex items-center gap-2 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 px-3 py-1.5 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
               title="Save this scope on this device"
             >
               <svg
@@ -824,7 +740,7 @@ function TopLink({ to, end, className = "", children }) {
       end={end}
       className={({ isActive }) =>
         [
-          "relative h-8 xl:h-9 px-3 rounded-full text-[13px] xl:text-[14px] tracking-tight font-semibold inline-flex items-center justify-center whitespace-nowrap transition",
+          "relative h-8 2xl:h-9 px-3 rounded-full text-[13px] 2xl:text-[14px] tracking-tight font-semibold inline-flex items-center justify-center whitespace-nowrap transition",
           isActive
             ? "bg-white/20 text-white ring-1 ring-white/25 backdrop-blur-sm"
             : "text-white hover:bg-white/15",

@@ -15,6 +15,7 @@ import {
   useState,
   useRef,
 } from "react";
+import { MapPin } from "lucide-react";
 import {
   collection,
   query,
@@ -406,29 +407,13 @@ export default function Inventory() {
     }
   };
 
-  // Scope pill (re-using pattern from Dashboard / Reports)
+  // Scope pill (icon variant matching Dashboard)
   const scopeChip = (
-    <span
-      className="
-        inline-flex items-center gap-1.5
-        rounded-full bg-white text-brand-900
-        ring-1 ring-black/5 shadow-sm
-        px-3 py-1 text-[12px]
-      "
-    >
-      <span className="text-gray-600">Scope</span>
-      <span className="text-gray-400">•</span>
-      <span className="font-semibold">{org?.name || "—"}</span>
-      {location?.name ? (
-        <>
-          <span className="text-gray-400">/</span>
-          <span className="text-gray-700">{location.name}</span>
-        </>
-      ) : canPickAllLocations ? (
-        <span className="text-gray-600">(all locations)</span>
-      ) : (
-        <span className="text-gray-600">(select location)</span>
-      )}
+    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+      </span>
+      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
     </span>
   );
 
@@ -463,8 +448,8 @@ export default function Inventory() {
         )}
 
         {/* THEMED TOOLBAR */}
-        <div className="rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative">
-          <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-4 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+        <div className="block rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative mb-4">
+          <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
             <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
               <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
                 Inventory
@@ -473,13 +458,13 @@ export default function Inventory() {
                 {scopeChip}
               </div>
             </div>
-            <div className="mt-2 flex md:hidden justify-center">
-              {scopeChip}
+            <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <div className="md:hidden">{scopeChip}</div>
             </div>
           </div>
 
           {/* Controls surface */}
-          <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border border-brand-100 ring-1 ring-brand-50 shadow-soft">
             {/* Search + filters */}
             <div className="flex-1 flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[180px] max-w-md">

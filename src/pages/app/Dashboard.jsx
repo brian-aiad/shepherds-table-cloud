@@ -76,9 +76,9 @@ const subCardCls =
 const sectionHdrCls =
   "sticky top-0 z-10 px-4 py-2.5 rounded-t-2xl bg-brand-50/80 supports-[backdrop-filter]:bg-brand-50/60 backdrop-blur text-brand-900 border-b border-brand-200 shadow-[inset_0_-1px_0_rgba(0,0,0,0.04)]";
 
-// Tighter shell on mobile so content stretches wider
+// Standard shell used across app pages (matches Reports/Inventory/Donations)
 const shellCls =
-  "mx-auto w-full max-w-6xl px-1.5 sm:px-3 md:px-6 pt-3 md:pt-4 pb-4 md:pb-6";
+  "px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible";
 
 // Primary CTA used across dashboard to match EFAP/Reports buttons
 const primaryBtnCls =
@@ -355,6 +355,16 @@ export default function Dashboard() {
   const allowNewClient = (canCreateClients ?? hasCapability?.("createClients")) === true;
   const allowEditClient = (canEditClients ?? hasCapability?.("editClients")) === true;
 
+  // Scope chip (icon variant for header) — render under title on small, inline on md+
+  const scopeChip = (
+    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+      </span>
+      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
+    </span>
+  );
+
   return (
     <>
       <div key={scopeKey} className={shellCls}>
@@ -377,195 +387,180 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ───────────────── Scope pill ───────────────── */}
-        <div className="mb-2.5 md:mb-3 text-xs text-brand-900">
-          <div
-            className="flex w-full items-center gap-3 rounded-2xl bg-white/95 ring-1 ring-brand-100/80 shadow-sm px-3.5 py-2 md:px-4"
-            aria-label="Current scope"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-200 shrink-0">
-              <MapPin className="h-4 w-4" aria-hidden="true" />
+        {/* scope will be rendered in the themed header below (keeps parity with Reports) */}
+
+        {/* ===== Themed header (all sizes; stacks on small screens) ===== */}
+        <div className="block rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative mb-4">
+          <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+            <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
+              <h1 className="text-white text-xl sm:text-2xl font-semibold tracking-tight text-center md:text-left">
+                Dashboard
+              </h1>
+              <div className="hidden md:flex items-center gap-2">{scopeChip}</div>
             </div>
 
-            <div className="flex flex-col gap-0.5 leading-tight min-w-0">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-                Scope
-              </span>
+            <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <div className="md:hidden">{scopeChip}</div>
+            </div>
+          </div>
 
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px] font-semibold text-gray-800">
-                <span className="truncate max-w-[7.5rem] sm:max-w-[11rem]">
-                  {org?.name || "—"}
-                </span>
+          {/* Controls surface: mobile = Visits+CTA card above search, desktop = search left, KPI+CTA right */}
+          <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 border border-brand-100 ring-1 ring-brand-50 shadow-soft">
+            <div className="max-w-7xl mx-auto flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              {/* MOBILE: Visits pill + Add button (inside header, above search) */}
+              <div className="block md:hidden order-1">
+                <section
+                  className="rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm px-3 py-2.5"
+                  aria-labelledby="kpi-today"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0">
+                      <p
+                        id="kpi-today"
+                        className="text-[11px] font-medium text-gray-600 leading-tight mb-0.5"
+                      >
+                        Visits Today
+                      </p>
+                      <p
+                        className="text-[26px] leading-none font-extrabold tracking-tight tabular-nums text-brand-800"
+                        aria-live="polite"
+                      >
+                        {todayCount}
+                      </p>
+                    </div>
 
-                {isAll ? (
-                  <>
-                    <span className="text-gray-300">/</span>
-                    <span className="text-gray-700 whitespace-nowrap">All locations</span>
-                  </>
-                ) : location?.name ? (
-                  <>
-                    <span className="text-gray-300">/</span>
-                    <span className="text-gray-700 whitespace-nowrap">{location.name}</span>
-                  </>
-                ) : canPickAllLocations ? (
-                  <span className="text-gray-500">(all locations)</span>
-                ) : (
-                  <span className="text-gray-500">(select location)</span>
+                    {allowNewClient && (
+                      <div className="ml-auto w-[65%] sm:w-[60%]">
+                        <div className="relative inline-block w-full group">
+                          <button
+                            onClick={() => setShowNew(true)}
+                            className={
+                              primaryBtnCls +
+                              " w-full h-11 px-5 rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-transform duration-150 active:scale-[0.97] whitespace-nowrap flex items-center justify-center gap-2"
+                            }
+                            aria-label="Add new client"
+                          >
+                            <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                                className="h-5 w-5"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            </span>
+                            <span className="truncate">Add New Client</span>
+                          </button>
+                          <div
+                            aria-hidden
+                            className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              {/* SEARCH – full width; sits under KPI card on mobile, left side on desktop */}
+              <div className="order-2 lg:order-1 flex-1 w-full">
+                <div className="relative w-full min-w-0">
+                  <input
+                    type="search"
+                    value={term}
+                    onChange={(e) => setTerm(e.target.value)}
+                    placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
+                    className="w-full pl-12 pr-12 py-2.5 md:py-3 text-[15px] md:text-[17px] placeholder:text-gray-400 rounded-2xl bg-white border border-brand-300 ring-1 ring-brand-300/10 shadow-[0_8px_24px_-12px_rgba(148,27,21,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300/35 focus:border-brand-300"
+                    aria-label="Search clients by name or phone"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                  </span>
+                  {term && (
+                    <button
+                      type="button"
+                      onClick={() => setTerm("")}
+                      aria-label="Clear search"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full grid place-items-center text-gray-500 hover:bg-gray-100"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* DESKTOP: Visits pill + Add button on the right */}
+              <div className="hidden md:flex order-3 lg:order-2 items-center gap-3 justify-end flex-none lg:ml-4">
+                <div
+                  role="status"
+                  aria-label={`Visits today ${todayCount}`}
+                  className="inline-flex items-center gap-3 h-10 px-5 rounded-full bg-white/95 ring-1 ring-gray-200/80 shadow-sm text-gray-800 text-[14px] leading-none"
+                >
+                  <span className="text-[13px] font-medium text-gray-600">Visits Today</span>
+                  <span className="h-5 w-px bg-gray-200" aria-hidden="true" />
+                  <span className="text-xl font-extrabold tabular-nums tracking-tight text-gray-900">
+                    {todayCount}
+                  </span>
+                </div>
+
+                {allowNewClient && (
+                  <div className="relative inline-block group">
+                    <button
+                      onClick={() => setShowNew(true)}
+                      className={
+                        primaryBtnCls +
+                        " h-12 px-7 min-w-[180px] rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-all duration-150 active:scale-[0.97] whitespace-nowrap"
+                      }
+                      aria-label="Add new client"
+                    >
+                      <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-5 w-5"
+                          aria-hidden="true"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </span>
+                      <span>Add New Client</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* ───────────────── Visits today + CTA (mobile) ───────────────── */}
-        <div className="block md:hidden mb-3">
-          <section
-            className="rounded-2xl bg-white/98 ring-1 ring-brand-100/80 shadow-sm px-3 py-2.5"
-            aria-labelledby="kpi-today"
-          >
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 mr-auto">
-                <p
-                  id="kpi-today"
-                  className="text-[11px] font-medium text-gray-600 leading-tight"
-                >
-                  Visits Today
-                </p>
-                <p
-                  className="text-[26px] leading-none font-extrabold tracking-tight tabular-nums text-brand-800"
-                  aria-live="polite"
-                >
-                  {todayCount}
-                </p>
-              </div>
 
-              {allowNewClient && (
-                <div className="relative inline-block group hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] w-[70%] ml-auto">
-                  <button
-                    onClick={() => setShowNew(true)}
-                    className={primaryBtnCls + " h-11 px-5 rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] w-full transition-transform duration-150 active:scale-[0.97]"}
-                    aria-label="Add new client"
-                  >
-                    <span className="mr-2 grid place-items-center h-6 w-6 rounded-full bg-white/20 shrink-0">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="h-5 w-5"
-                        aria-hidden="true"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </span>
-                    <span className="truncate">Add New Client</span>
-                  </button>
-                  <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
 
-        {/* ───────────────── Top bar (search + desktop CTA) ───────────────── */}
-        <div className="relative grid grid-cols-1 md:grid-cols-3 items-center gap-2.5 md:gap-4 mb-2.5 md:mb-3">
-          {/* search (spans two cols on md+) */}
-          <div className="relative w-full min-w-0 md:col-span-2 rounded-2xl bg-white/98 ring-1 ring-gray-200 shadow-sm group hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.12)] hover:ring-gray-200 transition will-change-transform">
-            <input
-              className="w-full pl-10 pr-10 py-2.5 md:py-3 text-[15px] md:text-[16px] placeholder:text-gray-400 rounded-2xl bg-white border border-gray-200 shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-200/40 focus:border-brand-200"
-              placeholder={`Search ${
-                location?.name ? `${location.name} ` : ""
-              }clients…`}
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              type="search"
-              enterKeyHint="search"
-              autoCapitalize="none"
-              inputMode="search"
-              aria-label="Search clients by name or phone"
-            />
 
-            <div
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              aria-hidden="true"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
+        
 
-            {term && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setTerm("")}
-                  className="absolute top-1/2 -translate-y-1/2 right-2 grid place-items-center rounded-full 
-                w-7 h-7 text-[18px] font-semibold text-gray-500 
-                hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-brand-200/40"
-              >
-                ×
-              </button>
-            )}
-            <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
-          </div>
-
-          {/* desktop KPI + CTA (right column) */}
-          <div className="hidden md:flex md:col-span-1 items-center gap-2.5 lg:gap-3 justify-end">
-            <div
-              role="status"
-              aria-label={`Visits today ${todayCount}`}
-              className="inline-flex items-center gap-3 h-10 px-3.5 rounded-full bg-white ring-1 ring-gray-200 shadow-sm text-gray-800 leading-none relative"
-            >
-              <span className="text-[12px] font-medium text-gray-600">Visits today</span>
-              <span className="h-5 w-px bg-gray-200" aria-hidden="true" />
-              <span className="text-lg font-extrabold tabular-nums tracking-tight text-gray-900">
-                {todayCount}
-              </span>
-            </div>
-
-            {allowNewClient && (
-              <div className="relative inline-block group">
-                <button
-                  onClick={() => setShowNew(true)}
-                  className={primaryBtnCls + " h-11 px-6 rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-all duration-150 active:scale-[0.97]"}
-                  aria-label="Add new client"
-                >
-                  <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className="h-5 w-5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H6a1 1 0 110-2h4V5a1 1 0 011-1z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </span>
-                  <span>Add New Client</span>
-                </button>
-                <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* main content grid */}
         <div
@@ -580,7 +575,7 @@ export default function Dashboard() {
           >
 
             <div
-              className={`${sectionHdrCls} text-[15px] font-bold rounded-t-3xl shadow bg-white/90 border-b border-brand-100/70`}
+              className={`px-4 py-2.5 rounded-t-3xl text-white text-[15px] font-bold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}
             >
               Client List
             </div>
@@ -722,7 +717,7 @@ export default function Dashboard() {
               `hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}
             style={{ height: "100%" }}
           >
-            <div className={`${sectionHdrCls} flex items-center justify-between`}>
+            <div className={`px-4 py-2.5 rounded-t-2xl flex items-center justify-between text-white bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}>
               <div className="text-sm font-semibold">Client Details</div>
               {selected && (
                 <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
@@ -730,14 +725,15 @@ export default function Dashboard() {
                     <button
                       onClick={() => logVisit(selected)}
                       className={[
-                        // use compact primary variant but keep min-width and slightly different shadow
-                        primarySmallCls,
-                        "min-w-[64px] sm:min-w-[92px]",
-                        // Slightly larger at md+ so the details-panel CTA matches desktop sizing
-                        "md:h-10 md:px-5 md:text-[16px]",
-                        "shadow-[0_6px_14px_-6px_rgba(148,27,21,0.12)] ring-1 ring-brand-700/40",
-                        "active:translate-y-[1px] active:shadow-[0_4px_10px_-6px_rgba(148,27,21,0.14)]",
-                      ].join(" ")}
+                          "inline-flex items-center justify-center h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
+                          "min-w-[64px] sm:min-w-[92px]",
+                          // match Edit button text color + hover highlight but keep a subtle shadow for separation
+                          "bg-white text-brand-900 font-medium text-[13px] sm:text-[14px]",
+                          "border border-brand-300 shadow-sm",
+                          "hover:bg-brand-50 hover:border-brand-400",
+                          "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
+                          "active:translate-y-[1px]",
+                        ].join(" ")}
                       aria-label="Log visit"
                       title="Log visit"
                     >
@@ -917,8 +913,8 @@ export default function Dashboard() {
         </div>
 
         {/* recent activity table */}
-        <div className={`mt-4 ${cardCls} p-0 group relative hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}>
-          <div className={`${sectionHdrCls} text-[13px] font-semibold rounded-t-2xl`}>
+          <div className={`mt-4 ${cardCls} p-0 group relative hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}>
+          <div className={`px-4 py-2.5 rounded-t-2xl text-white text-[13px] font-semibold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}>
             Recent Activity (latest 10)
           </div>
           <div className="p-3">
@@ -1010,8 +1006,10 @@ export default function Dashboard() {
                 {(canLogVisits ?? hasCapability?.("logVisits")) && (
                   <button
                     onClick={() => logVisit(selected)}
-                    className={"h-8 px-3 rounded-lg text-base font-semibold whitespace-nowrap " +
-                      "bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white shadow-lg hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 transition"}
+                    className={
+                      "h-8 px-3 rounded-lg text-base font-medium whitespace-nowrap " +
+                      "bg-white text-brand-900 border border-brand-300 shadow-sm hover:bg-brand-50 hover:border-brand-400 active:bg-brand-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                    }
                   >
                     Log Visit
                   </button>

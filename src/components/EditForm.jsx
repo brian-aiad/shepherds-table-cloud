@@ -509,7 +509,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
             top: "env(safe-area-inset-top, 12px)",
           }}
         >
-          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+          <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
             <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
                 {/* Title + avatar + scope */}
@@ -855,71 +855,75 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 >
   <div className="w-full h-px bg-gray-200 mb-2" />
 
-  <div className="w-full max-w-xl mx-auto flex flex-col gap-3">
-    {/* Danger / Reactivation — gated by 'deleteClients' */}
-    {canDeleteClients && (
-      <div className="w-full">
-        {!client?.inactive ? (
-          <button
-            type="button"
-            onClick={deactivateClient}
-            disabled={deactivating}
-            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-          >
-            {deactivating ? (
-              "Working…"
+  <div className="w-full max-w-xl mx-auto">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Left: Danger / Reactivation (mobile: full width, desktop: auto) */}
+      <div className="w-full sm:w-auto">
+        {canDeleteClients && (
+          <div>
+            {!client?.inactive ? (
+              <button
+                type="button"
+                onClick={deactivateClient}
+                disabled={deactivating}
+                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
+              >
+                {deactivating ? (
+                  "Working…"
+                ) : (
+                  <>
+                    <ShieldAlert className="h-4 w-4" /> Deactivate client
+                  </>
+                )}
+              </button>
             ) : (
-              <>
-                <ShieldAlert className="h-4 w-4" /> Deactivate client
-              </>
+              <button
+                type="button"
+                onClick={reactivateClient}
+                disabled={reactivating}
+                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
+              >
+                {reactivating ? (
+                  "Working…"
+                ) : (
+                  <>
+                    <RotateCcw className="h-4 w-4" /> Reactivate client
+                  </>
+                )}
+              </button>
             )}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={reactivateClient}
-            disabled={reactivating}
-            className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
-          >
-            {reactivating ? (
-              "Working…"
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4" /> Reactivate client
-              </>
-            )}
-          </button>
+          </div>
         )}
       </div>
-    )}
 
-    {/* Save / Cancel row */}
-    <div className="flex items-center justify-end gap-2 w-full">
-      <button
-        type="button"
-        onClick={onClose}
-        className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-      >
-        Cancel
-      </button>
-      <button
-        type="submit"
-        form="edit-client-form"
-        disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-        aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-        title={
-          readOnlyBlock
-            ? "Not allowed"
-            : !formValid
-            ? "Fix the highlighted fields"
-            : !hasChanges
-            ? "No changes to save"
-            : "Save changes"
-        }
-        className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
-      >
-        {saving ? "Saving…" : "Save changes"}
-      </button>
+      {/* Right: Cancel + Save */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="edit-client-form"
+          disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+          aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+          title={
+            readOnlyBlock
+              ? "Not allowed"
+              : !formValid
+              ? "Fix the highlighted fields"
+              : !hasChanges
+              ? "No changes to save"
+              : "Save changes"
+          }
+          className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+      </div>
     </div>
   </div>
 </div>

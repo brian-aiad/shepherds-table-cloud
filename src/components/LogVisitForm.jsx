@@ -244,6 +244,8 @@ export default function LogVisitForm({
             tx.set(markerRef, {
               orgId,
               clientId: client.id,
+              clientFirstName: cur.firstName || client.firstName || "",
+              clientLastName: cur.lastName || client.lastName || "",
               locationId,
               monthKey: mKey,
               createdAt: serverTimestamp(),
