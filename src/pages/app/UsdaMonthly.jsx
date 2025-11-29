@@ -184,7 +184,7 @@ function MonthNav({ month, setMonth }) {
     <div className="relative z-[1000]">
 
       {/* unified capsule */}
-      <div className="inline-flex items-center gap-0 rounded-2xl bg-white border border-gray-300 ring-1 ring-gray-200 shadow-[0_6px_16px_-6px_rgba(0,0,0,0.15)] px-1.5 py-1">
+      <div className="inline-flex items-center gap-0 rounded-2xl bg-white border border-brand-200 ring-1 ring-brand-50 shadow-[0_6px_16px_-6px_rgba(153,27,27,0.06)] shadow-md px-1.5 py-1">
         {/* Prev */}
         <button
           onClick={() => jump(-1)}
@@ -205,12 +205,16 @@ function MonthNav({ month, setMonth }) {
           <button
             data-month-trigger
             onClick={() => { setYearView(y); setOpen(v => !v); }}
-            className="inline-flex items-center justify-center gap-2 rounded-full px-4 md:px-5 h-10 md:h-11 text-black font-semibold tracking-tight hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+            className={
+              "inline-flex items-center justify-center gap-2 rounded-full " +
+              "px-5 md:px-6 h-11 md:h-12 text-[16px] md:text-[17px] font-semibold tracking-tight " +
+              "hover:bg-gray-50 active:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/50"
+            }
             aria-haspopup="dialog"
             aria-expanded={open}
             title="Jump to a specific month/year"
           >
-            <span className="text-[15px] md:text-[16px]">{label}</span>
+            <span className="text-[16px] md:text-[17px]">{label}</span>
             <svg className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" stroke="currentColor" fill="none">
               <path d="M6 9l6 6 6-6" strokeWidth="2" />
             </svg>
@@ -491,11 +495,11 @@ export default function UsdaMonthly() {
 
   /* ---------- Scope (icon variant) ---------- */
   const scopeChip = (
-    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
-      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+    <span className="inline-flex items-center gap-1 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-2 py-0.5 text-[12px]">
+      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1">
         <MapPin className="h-3 w-3" aria-hidden="true" />
       </span>
-      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
+      <span className="font-semibold text-xs truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
     </span>
   );
 

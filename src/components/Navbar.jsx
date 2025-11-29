@@ -175,6 +175,7 @@ export default function Navbar() {
     nav("/login", { replace: true });
   };
 
+
   /* ─────────────────────────────────────────────────────────────
    * Dismiss popovers on click/esc
    * ──────────────────────────────────────────────────────────── */
@@ -330,18 +331,18 @@ export default function Navbar() {
             aria-label="Go to Dashboard"
           >
             <div className="relative shrink-0">
-              <img
-                src={brandLogoSrc}
-                alt={brandAlt}
-                className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-white/95 p-1.5 object-contain shadow-sm ring-1 ring-black/10"
-                referrerPolicy="no-referrer"
-                loading="eager"
-              />
-              <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent" />
+            <img
+            src={brandLogoSrc}
+            alt={brandAlt}
+            className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-white p-[1px] object-contain shadow-md ring-1 ring-black/10"
+            referrerPolicy="no-referrer"
+            loading="eager"
+          />
+
+
             </div>
 
             <div className="flex flex-col leading-tight">
-              {/* Always show full name, no truncation */}
               <span className="font-semibold text-white text-[16px] sm:text-[18px] md:text-[20px] tracking-tight whitespace-nowrap">
                 Shepherd’s Table
               </span>
@@ -353,6 +354,7 @@ export default function Navbar() {
               )}
             </div>
           </NavLink>
+
 
           {/* Compact Sign out when nav is collapsed (< xl) */}
           <button
@@ -413,12 +415,13 @@ export default function Navbar() {
 
           {/* Right group (desktop xl+) */}
           <div className="hidden xl:flex items-center gap-2.5 2xl:gap-3 ml-3">
+            
             <button
               type="button"
               onClick={() => setContextOpen((v) => !v)}
               aria-expanded={contextOpen}
               aria-controls="context-panel"
-              className="inline-flex items-center gap-2 h-10 2xl:h-11 px-3.5 2xl:px-4 rounded-full bg-white/20 text-white text-xs 2xl:text-sm ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 h-8 2xl:h-9 px-2.5 2xl:px-3 rounded-full bg-white/20 text-white text-[12px] ring-1 ring-white/25 backdrop-blur-sm hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
               title="Organization & Location"
             >
               <svg
@@ -459,7 +462,7 @@ export default function Navbar() {
 
             <button
               onClick={onSignOut}
-              className="inline-flex items-center justify-center h-10 2xl:h-11 px-3.5 rounded-full bg-white/20 text-white text-[12px] 2xl:text-[13px] ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
+              className="inline-flex items-center justify-center h-8 2xl:h-9 px-2.5 rounded-full bg-white/20 text-white text-[12px] 2xl:text-[13px] ring-1 ring-white/25 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
             >
               Sign out
             </button>
@@ -608,6 +611,7 @@ export default function Navbar() {
               >
                 Sign out
               </button>
+              
             </section>
           </div>
         </div>
@@ -709,7 +713,7 @@ function DesktopContextStrip({
             </p>
             <button
               onClick={onSaveDefault}
-              className="inline-flex items-center gap-2 rounded-full bg-white/20 text-white text-xs font-medium ring-1 ring-white/25 px-3 py-1.5 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/20 text-white text-[12px] font-medium ring-1 ring-white/25 px-2 py-1 hover:bg-white/25 focus:outline-none focus-visible:ring-4 focus-visible:ring-white/30 whitespace-nowrap"
               title="Save this scope on this device"
             >
               <svg

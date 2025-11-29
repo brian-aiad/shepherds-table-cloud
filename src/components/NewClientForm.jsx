@@ -183,26 +183,31 @@ const t = (lang, key) => I18N[lang]?.[key] ?? I18N.en[key] ?? key;
    Helpers
 ========================= */
 const ICONS = {
-  firstName: <User size={16} className="text-brand-600 inline mr-1" />,
-  lastName: <IdCard size={16} className="text-brand-600 inline mr-1" />,
-  dob: <Calendar size={16} className="text-brand-600 inline mr-1" />,
-  phone: <Phone size={16} className="text-brand-600 inline mr-1" />,
-  address: <MapPin size={16} className="text-brand-600 inline mr-1" />,
-  zip: <Tag size={16} className="text-brand-600 inline mr-1" />,
-  county: <Landmark size={16} className="text-brand-600 inline mr-1" />,
-  hh: <Users size={16} className="text-brand-600 inline mr-1" />,
-  usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
+  firstName: <User size={16} className="inline mr-1" />,
+  lastName: <IdCard size={16} className="inline mr-1" />,
+  dob: <Calendar size={16} className="inline mr-1" />,
+  phone: <Phone size={16} className="inline mr-1" />,
+  address: <MapPin size={16} className="inline mr-1" />,
+  zip: <Tag size={16} className="inline mr-1" />,
+  county: <Landmark size={16} className="inline mr-1" />,
+  hh: <Users size={16} className="inline mr-1" />,
+  usda: <Soup size={16} className="inline mr-1" />,
 };
 
-// Reusable header with icon + title + horizontal line
+// Full-width section header bar (matches Dashboard card headers)
 function SectionHeader({ icon, label }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
-      <span className="flex items-center gap-1 whitespace-nowrap">
-        {icon}
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    <div className="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 shadow-[0_4px_10px_rgba(148,27,21,0.3)]">
+        {icon && (
+          <span className="flex items-center text-white">
+            {icon}
+          </span>
+        )}
+        <div className="flex-1 text-xs sm:text-sm font-semibold leading-tight text-white [&_*]:text-white">
+          {label}
+        </div>
+      </div>
     </div>
   );
 }
@@ -842,8 +847,8 @@ export default function NewClientForm({
           try {
             await setDoc(markerRef, {
               clientId: clientRef.id,
-                clientFirstName: base.firstName || "",
-                clientLastName: base.lastName || "",
+              clientFirstName: base.firstName || "",
+              clientLastName: base.lastName || "",
               orgId,
               locationId,
               monthKey: mk,
@@ -1412,7 +1417,7 @@ export default function NewClientForm({
             <SectionHeader
               icon={ICONS.address}
               label={dual(
-                <>Address & area</>,
+                <>Address &amp; area</>,
                 "Where the client stays most nights"
               )}
             />
@@ -1580,7 +1585,7 @@ export default function NewClientForm({
             </div>
           </section>
 
-          {/* ==== Section: Household + USDA, matching LogVisit style ==== */}
+          {/* ==== Section: Household + USDA, matching headers ==== */}
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Household size boxed section */}
             <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4">
@@ -1595,35 +1600,47 @@ export default function NewClientForm({
                 <button
                   type="button"
                   aria-label="Decrease household size"
-                  className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
-                      householdSize: Math.max(
-                        1,
-                        Number(f.householdSize) - 1
-                      ),
+                      householdSize: Math.max(1, Number(f.householdSize) - 1),
                     }))
                   }
                 >
-                  –
+                  −
                 </button>
-                <div className="h-11 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
-                  <span className="text-lg font-semibold tabular-nums">
-                    {form.householdSize}
-                  </span>
-                </div>
+
+                <input
+                  id="hh-input"
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={form.householdSize}
+                  onChange={(e) => {
+                    const raw = e.target.value === "" ? "" : Number(e.target.value);
+                    setForm((f) => ({ ...f, householdSize: raw }));
+                  }}
+                  onBlur={(e) => {
+                    const raw = Number(e.target.value);
+                    const clamped = Math.max(1, Math.min(20, Number.isFinite(raw) ? raw : 1));
+                    setForm((f) => ({ ...f, householdSize: clamped }));
+                  }}
+                  className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
+                  aria-describedby="hh-help"
+                />
+
                 <button
                   type="button"
                   aria-label="Increase household size"
-                  className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
-                      householdSize: Math.min(
-                        20,
-                        Number(f.householdSize) + 1
-                      ),
+                      householdSize: Math.min(20, Number(f.householdSize) + 1),
                     }))
                   }
                 >
@@ -1797,31 +1814,31 @@ export default function NewClientForm({
               >
                 {t(lang, "cancel")}
               </button>
-                <button
-                  type="submit"
-                  form="new-client-form"
-                  disabled={
-                    busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)
-                  }
-                  className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 disabled:opacity-50 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
-                  title={
-                    editing
-                      ? !canSubmitEdit
-                        ? t(lang, "permNoEdit")
-                        : ""
-                      : !canSubmitNew
-                      ? `${!canCreateClients ? t(lang, "permNoCreate") : ""} ${
-                          !canLogVisits ? t(lang, "permNoLog") : ""
-                        }`.trim()
+              <button
+                type="submit"
+                form="new-client-form"
+                disabled={
+                  busy || mergeBusy || (editing ? !canSubmitEdit : !canSubmitNew)
+                }
+                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 disabled:opacity-50 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                title={
+                  editing
+                    ? !canSubmitEdit
+                      ? t(lang, "permNoEdit")
                       : ""
-                  }
-                >
-                  {busy
-                    ? "Saving…"
-                    : editing
-                    ? t(lang, "save")
-                    : t(lang, "saveLog")}
-                </button>
+                    : !canSubmitNew
+                    ? `${!canCreateClients ? t(lang, "permNoCreate") : ""} ${
+                        !canLogVisits ? t(lang, "permNoLog") : ""
+                      }`.trim()
+                    : ""
+                }
+              >
+                {busy
+                  ? "Saving…"
+                  : editing
+                  ? t(lang, "save")
+                  : t(lang, "saveLog")}
+              </button>
             </div>
           </div>
 

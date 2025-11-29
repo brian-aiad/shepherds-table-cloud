@@ -116,12 +116,17 @@ const ICONS = {
 /* ---------- tiny presentational helper (parity with NewClient/LogVisit) ---------- */
 function SectionHeader({ icon, label }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
-      <span className="flex items-center gap-1 whitespace-nowrap">
-        {icon}
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    <div className="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 shadow-[0_4px_10px_rgba(148,27,21,0.3)]">
+        {icon && (
+          <span className="flex items-center text-white">
+            {icon}
+          </span>
+        )}
+        <div className="flex-1 text-xs sm:text-sm font-semibold leading-tight text-white">
+          {label}
+        </div>
+      </div>
     </div>
   );
 }
@@ -339,7 +344,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    // 🚫 Capability check for editing
+    // Capability check for editing
     if (!canEditClients) {
       setError("You don’t have permission to edit client profiles.");
       return;
@@ -379,7 +384,6 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         // audit
         updatedAt: serverTimestamp(),
         updatedByUserId: uid || auth.currentUser?.uid || null,
-
       };
 
       await updateDoc(ref, payload);
@@ -419,7 +423,6 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         updatedByUserId: uid || auth.currentUser?.uid || null,
       });
 
-
       onSaved?.({ id: client.id, ...client, inactive: true });
       onClose?.();
       alert(`Deactivated ${name}.`);
@@ -451,7 +454,6 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         updatedAt: serverTimestamp(),
         updatedByUserId: uid || auth.currentUser?.uid || null,
       });
-
 
       onSaved?.({ id: client.id, ...client, inactive: false });
       onClose?.();
@@ -537,13 +539,13 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                         Loc: <b>{location?.id ?? "—"}</b>
                       </div>
                     </div>
-                  </div>
 
-                  {client?.inactive && (
-                    <span className="ml-1 inline-flex items-center h-6 px-2 rounded-lg bg-white/15 border border-white/25 text-[11px] font-semibold">
-                      Inactive
-                    </span>
-                  )}
+                    {client?.inactive && (
+                      <span className="mt-1 inline-flex items-center h-5 px-2 rounded-lg bg-white/15 border border-white/25 text-[10px] font-semibold">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Close */}
@@ -553,7 +555,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                   aria-label="Close"
                   title="Close"
                 >
-                  <X className="h-5 w-5" />
+                  ✕
                 </button>
               </div>
             </div>
@@ -579,7 +581,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
               {/* ===== Section: Client details ===== */}
               <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
                 <SectionHeader
-                  icon={ICONS.firstName}
+                  icon={<UserIcon className="h-3.5 w-3.5" />}
                   label="Client details"
                 />
 
@@ -702,9 +704,12 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 </div>
               </section>
 
-              {/* ===== Section: Address & area ===== */}
+              {/* ===== Section: Address and area ===== */}
               <section className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-3">
-                <SectionHeader icon={ICONS.address} label="Address & area" />
+                <SectionHeader
+                  icon={<MapPin className="h-3.5 w-3.5" />}
+                  label="Address and area"
+                />
 
                 {/* Address + Autocomplete */}
                 <div className="flex flex-col gap-1">
@@ -817,7 +822,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                 </div>
               </section>
 
-              {/* Inactive toggle — visible & writable only with delete capability */}
+              {/* Inactive toggle — visible and writable only with delete capability */}
               {canDeleteClients && (
                 <label className="text-sm flex items-center gap-2 mt-1">
                   <input
@@ -828,17 +833,19 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                     className="h-4 w-4 rounded border-gray-300"
                   />
                   <span className="text-gray-700">
-                    Mark client as inactive (hidden from search/intake)
+                    Mark client as inactive (hidden from search and intake)
                   </span>
                 </label>
               )}
 
-              {/* Error */}
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
-                  {error}
-                </div>
-              )}
+              {/* Error (live region) */}
+              <div aria-live="polite" className="min-h-[1rem]">
+                {error && (
+                  <div className="mt-2 rounded-2xl border border-red-200 bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
+                    {error}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </form>
@@ -849,84 +856,84 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         </div>
 
         {/* Footer (sticky) */}
-<div
-  className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
-  style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
->
-  <div className="w-full h-px bg-gray-200 mb-2" />
+        <div
+          className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
+        >
+          <div className="w-full h-px bg-gray-200 mb-2" />
 
-  <div className="w-full max-w-xl mx-auto">
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-      {/* Left: Danger / Reactivation (mobile: full width, desktop: auto) */}
-      <div className="w-full sm:w-auto">
-        {canDeleteClients && (
-          <div>
-            {!client?.inactive ? (
-              <button
-                type="button"
-                onClick={deactivateClient}
-                disabled={deactivating}
-                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-              >
-                {deactivating ? (
-                  "Working…"
-                ) : (
-                  <>
-                    <ShieldAlert className="h-4 w-4" /> Deactivate client
-                  </>
+          <div className="w-full max-w-xl mx-auto">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              {/* Left: Danger / Reactivation */}
+              <div className="w-full sm:w-auto">
+                {canDeleteClients && (
+                  <div>
+                    {!client?.inactive ? (
+                      <button
+                        type="button"
+                        onClick={deactivateClient}
+                        disabled={deactivating}
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
+                      >
+                        {deactivating ? (
+                          "Working…"
+                        ) : (
+                          <>
+                            <ShieldAlert className="h-4 w-4" /> Deactivate client
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={reactivateClient}
+                        disabled={reactivating}
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
+                      >
+                        {reactivating ? (
+                          "Working…"
+                        ) : (
+                          <>
+                            <RotateCcw className="h-4 w-4" /> Reactivate client
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={reactivateClient}
-                disabled={reactivating}
-                className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
-              >
-                {reactivating ? (
-                  "Working…"
-                ) : (
-                  <>
-                    <RotateCcw className="h-4 w-4" /> Reactivate client
-                  </>
-                )}
-              </button>
-            )}
+              </div>
+
+              {/* Right: Cancel + Save */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="edit-client-form"
+                  disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+                  aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
+                  title={
+                    readOnlyBlock
+                      ? "Not allowed"
+                      : !formValid
+                      ? "Fix the highlighted fields"
+                      : !hasChanges
+                      ? "No changes to save"
+                      : "Save changes"
+                  }
+                  className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Right: Cancel + Save */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          form="edit-client-form"
-          disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-          aria-disabled={saving || readOnlyBlock || !formValid || !hasChanges}
-          title={
-            readOnlyBlock
-              ? "Not allowed"
-              : !formValid
-              ? "Fix the highlighted fields"
-              : !hasChanges
-              ? "No changes to save"
-              : "Save changes"
-          }
-          className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-60"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+        </div>
 
       </div>
     </div>

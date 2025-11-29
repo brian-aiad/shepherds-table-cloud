@@ -67,8 +67,8 @@ function handleFormKeyDown(e) {
 }
 
 const ICONS = {
-  hh: <Users size={16} className="text-brand-600 inline mr-1" />,
-  usda: <Soup size={16} className="text-brand-600 inline mr-1" />,
+  hh: <Users size={16} className="inline mr-1" />,
+  usda: <Soup size={16} className="inline mr-1" />,
 };
 
 export default function LogVisitForm({
@@ -357,7 +357,7 @@ export default function LogVisitForm({
               top: "env(safe-area-inset-top, 12px)",
             }}
           >
-            <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+            <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
               <div className="px-3.5 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between">
                 <h2
                   id="no-cap-title"
@@ -393,7 +393,7 @@ export default function LogVisitForm({
           >
             <div className="flex items-center justify-end">
               <button
-                className="h-11 px-6 rounded-2xl bg-[color:var(--brand-700)] text-white font-semibold shadow-sm hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)]"
+                className="h-11 px-6 rounded-2xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white font-semibold shadow-sm hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700"
                 onClick={onClose}
                 type="button"
               >
@@ -442,7 +442,7 @@ export default function LogVisitForm({
             top: "env(safe-area-inset-top, 12px)",
           }}
         >
-          <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+          <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
             <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
               <div className="flex items-center justify-between gap-3 sm:gap-6">
                 {/* Avatar + title + org/loc */}
@@ -522,7 +522,7 @@ export default function LogVisitForm({
         >
           {/* ==== Section: Household + USDA, matching New Intake layout ==== */}
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* USDA toggle — boxed card with SectionHeader */}
+            {/* USDA toggle — boxed card with full-width SectionHeader */}
             <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-2">
               <SectionHeader
                 icon={ICONS.usda}
@@ -587,7 +587,7 @@ export default function LogVisitForm({
               </p>
             </div>
 
-            {/* Household size — steppers + numeric input (boxed card) */}
+            {/* Household size — boxed card with full-width SectionHeader */}
             <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-2">
               <SectionHeader icon={ICONS.hh} label="Household size" />
 
@@ -690,7 +690,7 @@ export default function LogVisitForm({
                 Cancel
               </button>
               <button
-                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-[color:var(--brand-700)] text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:bg-[color:var(--brand-600)] active:bg-[color:var(--brand-800)] disabled:opacity-50 transition-all duration-150"
+                className="h-12 sm:h-14 w-44 sm:w-56 px-6 sm:px-8 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white font-bold text-base sm:text-xl whitespace-nowrap shadow-md hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 disabled:opacity-50 transition-all duration-150"
                 onClick={submit}
                 type="button"
                 disabled={busy}
@@ -708,12 +708,17 @@ export default function LogVisitForm({
 /* ---------- tiny presentational helpers ---------- */
 function SectionHeader({ icon, label }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-gray-700 tracking-tight">
-      <span className="flex items-center gap-1 whitespace-nowrap">
-        {icon}
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-gradient-to-r from-brand-200 via-brand-100 to-transparent rounded-full" />
+    <div className="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 shadow-[0_4px_10px_rgba(148,27,21,0.3)]">
+        {icon && (
+          <span className="flex items-center text-white">
+            {icon}
+          </span>
+        )}
+        <div className="flex-1 text-xs sm:text-sm font-semibold leading-tight text-white [&_*]:text-white">
+          {label}
+        </div>
+      </div>
     </div>
   );
 }

@@ -504,7 +504,7 @@ export default function AddVisitButton({
   ========================== */
   return (
     <>
-      {/* Entry button */}
+      {/* Entry button – default white pill; parent can override via className */}
       <button
         disabled={disabled || !selectedDate || !allowLogVisits || isAll}
         onClick={openSheet}
@@ -517,7 +517,9 @@ export default function AddVisitButton({
         }
         aria-label="Add visit"
         className={cx(
-          "min-w-[120px] inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-3.5 py-2.5 text-white font-semibold shadow hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 transition",
+          "min-w-[120px] inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold",
+          "border border-gray-200 bg-white text-brand-900 shadow-sm",
+          "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-gray-300 active:scale-[0.995] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300",
           disabled || !selectedDate || !allowLogVisits || isAll
             ? "opacity-60 pointer-events-none"
             : "",
@@ -558,7 +560,7 @@ export default function AddVisitButton({
           >
             {/* Header */}
             <div className="sticky top-0 z-10">
-              <div className="bg-gradient-to-r from-[color:var(--brand-700)] to-[color:var(--brand-600)] text-white border-b shadow-sm">
+              <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
                 <div className="px-4 sm:px-6 py-3 sm:py-4">
                   <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-6">
                     <div className="min-w-0 flex-1">
@@ -584,11 +586,11 @@ export default function AddVisitButton({
 
                     <button
                       onClick={() => setOpen(false)}
-                      className="rounded-xl px-3 h-9 sm:h-10 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                      className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
                       aria-label="Close"
                       title="Close"
                     >
-                      <X className="h-5 w-5" />
+                      ✕
                     </button>
                   </div>
                 </div>
@@ -767,6 +769,12 @@ export default function AddVisitButton({
                               <div className="overflow-hidden">
                                 <div className="px-3 sm:px-4 pb-3 sm:pb-4">
                                   <div className="rounded-2xl border border-brand-200 bg-white shadow-sm">
+                                    {/* New mini gradient header (matches other forms) */}
+                                    <SectionHeader
+                                      icon={<Users className="h-3.5 w-3.5" />}
+                                      label="Log visit details"
+                                    />
+
                                     <div className="grid items-center gap-3 sm:gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:grid-cols-[1fr,auto,auto]">
                                       {/* HH (− / input / +) */}
                                       <div className="flex items-center gap-3">
@@ -1089,5 +1097,18 @@ export default function AddVisitButton({
         />
       )}
     </>
+  );
+}
+
+/* ---------- tiny presentational helper (parity with other forms) ---------- */
+function SectionHeader({ icon, label }) {
+  return (
+    <div className="flex items-center gap-2 px-3 sm:px-4 pt-3 sm:pt-3.5 pb-1.5">
+      <div className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 text-white text-[11px] sm:text-xs font-semibold px-2.5 py-1 shadow-[0_2px_6px_rgba(148,27,21,0.45)]">
+        {icon && <span className="flex items-center">{icon}</span>}
+        <span className="leading-tight">{label}</span>
+      </div>
+      <div className="h-px flex-1 bg-gradient-to-r from-brand-300 via-brand-100 to-transparent rounded-full" />
+    </div>
   );
 }

@@ -59,11 +59,11 @@ const fmtLocal = (ts) => {
 
 const missingFieldsFor = (c = {}) => {
   const miss = [];
-  if (!((c.phone || "").toString().trim() || (c.dob || "").toString().trim())) {
-    miss.push("phone or DOB");
-  }
-  if (!((c.address || "").toString().trim())) miss.push("address");
+  if (!((c.phone || "").toString().trim())) miss.push("Phone");
+  if (!((c.dob || "").toString().trim())) miss.push("DOB");
+  if (!((c.address || "").toString().trim())) miss.push("Address");
   if (!((c.zip || "").toString().trim())) miss.push("ZIP");
+  if (!((c.county || "").toString().trim())) miss.push("County");
   return miss;
 };
 const hasMissingInfo = (c = {}) => missingFieldsFor(c).length > 0;
@@ -357,11 +357,11 @@ export default function Dashboard() {
 
   // Scope chip (icon variant for header) — render under title on small, inline on md+
   const scopeChip = (
-    <span className="inline-flex items-center gap-2 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-3 py-1 text-[13px]">
-      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1.5">
+    <span className="inline-flex items-center gap-1 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-2 py-0.5 text-[12px]">
+      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1">
         <MapPin className="h-3 w-3" aria-hidden="true" />
       </span>
-      <span className="font-semibold text-sm truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
+      <span className="font-semibold text-xs truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
     </span>
   );
 
@@ -430,7 +430,7 @@ export default function Dashboard() {
                     </div>
 
                     {allowNewClient && (
-                      <div className="ml-auto w-[65%] sm:w-[60%]">
+                      <div className="ml-auto w-[72%] sm:w-[70%]">
                         <div className="relative inline-block w-full group">
                           <button
                             onClick={() => setShowNew(true)}
@@ -476,7 +476,7 @@ export default function Dashboard() {
                     value={term}
                     onChange={(e) => setTerm(e.target.value)}
                     placeholder={`Search ${location?.name ? `${location.name} ` : ""}clients…`}
-                    className="w-full pl-12 pr-12 py-2.5 md:py-3 text-[15px] md:text-[17px] placeholder:text-gray-400 rounded-2xl bg-white border border-brand-300 ring-1 ring-brand-300/10 shadow-[0_8px_24px_-12px_rgba(148,27,21,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300/35 focus:border-brand-300"
+                    className="w-full pl-9 pr-12 py-2.5 md:py-3 text-[15px] md:text-[17px] placeholder:text-gray-400 rounded-2xl bg-white border border-brand-300 ring-1 ring-brand-300/10 shadow-[0_8px_24px_-12px_rgba(148,27,21,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300/35 focus:border-brand-300"
                     aria-label="Search clients by name or phone"
                   />
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
@@ -513,11 +513,11 @@ export default function Dashboard() {
                 <div
                   role="status"
                   aria-label={`Visits today ${todayCount}`}
-                  className="inline-flex items-center gap-3 h-10 px-5 rounded-full bg-white/95 ring-1 ring-gray-200/80 shadow-sm text-gray-800 text-[14px] leading-none"
+                  className="inline-flex items-center gap-3 h-10 px-5 rounded-full bg-white/95 border border-brand-100 ring-1 ring-brand-100/80 shadow-sm text-gray-800 text-[14px] leading-none"
                 >
-                  <span className="text-[13px] font-medium text-gray-600">Visits Today</span>
-                  <span className="h-5 w-px bg-gray-200" aria-hidden="true" />
-                  <span className="text-xl font-extrabold tabular-nums tracking-tight text-gray-900">
+                  <span className="text-[13px] font-medium text-brand-800">Visits Today</span>
+                  <span className="h-5 w-px bg-brand-100" aria-hidden="true" />
+                  <span className="text-xl font-extrabold tabular-nums tracking-tight text-brand-900">
                     {todayCount}
                   </span>
                 </div>
@@ -528,7 +528,7 @@ export default function Dashboard() {
                       onClick={() => setShowNew(true)}
                       className={
                         primaryBtnCls +
-                        " h-12 px-7 min-w-[180px] rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-all duration-150 active:scale-[0.97] whitespace-nowrap"
+                        " h-12 px-8 min-w-[220px] rounded-full shadow-[0_10px_24px_rgba(0,0,0,0.08),0_4px_8px_rgba(148,27,21,0.035)] border border-brand-800/10 transition-all duration-150 active:scale-[0.97] whitespace-nowrap"
                       }
                       aria-label="Add new client"
                     >
@@ -720,20 +720,15 @@ export default function Dashboard() {
             <div className={`px-4 py-2.5 rounded-t-2xl flex items-center justify-between text-white bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}>
               <div className="text-sm font-semibold">Client Details</div>
               {selected && (
-                <div className="hidden sm:flex flex-wrap items-center gap-1.5 md:gap-2">
+                <div className="hidden sm:flex items-center gap-2 md:gap-2 flex-nowrap">
                   {(canLogVisits ?? hasCapability?.("logVisits")) && (
                     <button
                       onClick={() => logVisit(selected)}
-                      className={[
-                          "inline-flex items-center justify-center h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
-                          "min-w-[64px] sm:min-w-[92px]",
-                          // match Edit button text color + hover highlight but keep a subtle shadow for separation
-                          "bg-white text-brand-900 font-medium text-[13px] sm:text-[14px]",
-                          "border border-brand-300 shadow-sm",
-                          "hover:bg-brand-50 hover:border-brand-400",
-                          "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-                          "active:translate-y-[1px]",
-                        ].join(" ")}
+                      className={
+                        "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] sm:min-w-[92px] rounded-lg " +
+                        "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
+                        "hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 active:translate-y-[1px]"
+                      }
                       aria-label="Log visit"
                       title="Log visit"
                     >
@@ -744,17 +739,11 @@ export default function Dashboard() {
                   {allowEditClient && (
                     <button
                       onClick={() => setEditor({ open: true, client: selected })}
-                      className={[
-                        "inline-flex items-center justify-center",
-                        "h-9 px-3 shrink-0 whitespace-nowrap rounded-lg",
-                        "min-w-[64px]",
-                        "bg-white text-brand-900",
-                        "text-[13px] sm:text-[14px] font-medium",
-                        "border border-brand-300 shadow-sm",
-                        "hover:bg-brand-50 hover:border-brand-400",
-                        "active:translate-y-[1px]",
-                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200",
-                      ].join(" ")}
+                      className={
+                        "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] rounded-lg " +
+                        "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
+                        "hover:bg-brand-50 hover:border-brand-400 active:translate-y-[1px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                      }
                     >
                       Edit
                     </button>
@@ -766,84 +755,75 @@ export default function Dashboard() {
             {selected ? (
               <div className="p-4 sm:p-5 space-y-4">
                 {(() => {
-                  const missing = [];
-                  if (!selected.address) missing.push("Address");
-                  if (!selected.dob) missing.push("DOB");
-                  if (!selected.phone) missing.push("Phone");
-                  if (!selected.zip) missing.push("ZIP");
-                  if (!selected.county) missing.push("County");
-                  if (missing.length === 0) return null;
-                  return (
-                    <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-4 py-3 text-sm shadow-sm">
-                      <span className="inline-flex items-center justify-center pt-1">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5 text-amber-500"
-                          viewBox="0 0 20 20"
-                          aria-hidden="true"
-                        >
-                          <circle
-                            cx="10"
-                            cy="10"
-                            r="8"
-                            fill="#FEF3C7"
-                            stroke="#F59E0B"
-                            strokeWidth="1.5"
-                          />
-                          <text
-                            x="10"
-                            y="14"
-                            textAnchor="middle"
-                            fontSize="11"
-                            fontWeight="bold"
-                            fill="#92400E"
-                            fontFamily="Arial, sans-serif"
-                          >
-                            !
-                          </text>
-                        </svg>
-                      </span>
-                      <span>
-                        <span className="font-semibold">Missing:</span>
-                        <ul className="list-disc ml-5 mt-1">
-                          {missing.map((field) => (
-                            <li key={field}>{field}</li>
-                          ))}
-                        </ul>
-                        <span className="block mt-1 font-normal">
-                          Please edit to complete.
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })()}
+  const missing = [];
+  if (!((selected.address || "").toString().trim())) missing.push("Address");
+  if (!((selected.dob || "").toString().trim())) missing.push("DOB");
+  if (!((selected.phone || "").toString().trim())) missing.push("Phone");
+  if (!((selected.zip || "").toString().trim())) missing.push("ZIP");
+  if (!((selected.county || "").toString().trim())) missing.push("County");
+  if (missing.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/95 px-3.5 py-3 text-[13px] text-amber-900 shadow-sm">
+      <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 flex-shrink-0">
+    <span
+      className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500 text-white shadow-[0_8px_18px_rgba(217,119,6,0.45)] ring-2 ring-amber-100/80 border border-amber-500"
+      title="Client record has missing information"
+    >
+      <span className="text-[12px] leading-none font-extrabold">!</span>
+      <span className="sr-only">Client record has missing information</span>
+    </span>
+  </div>
+
+        <div className="flex-1">
+          <p className="font-semibold text-[13px] flex items-center gap-2">
+            Missing information
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium border border-amber-200">
+              {missing.length} field{missing.length > 1 ? "s" : ""}
+            </span>
+          </p>
+          <ul className="mt-1.5 list-disc ml-4 space-y-0.5">
+            {missing.map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[12px] text-amber-900/90">
+            Please edit to complete this client record.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+})()}
+
                 <div>
                   <div className="text-base font-semibold leading-tight mb-3 border-b border-gray-100 pb-2">
                     {tcase(selected.firstName)} {tcase(selected.lastName)}
                   </div>
-                  <dl className="grid grid-cols-[120px,1fr] md:grid-cols-[150px,1fr] gap-y-2 text-[14px] leading-6">
+                  <dl className="grid grid-cols-[110px,1fr] md:grid-cols-[130px,1fr] gap-y-2 text-[14px] leading-6">
                     <dt className="text-gray-500 text-left">Address</dt>
-                    <dd className="text-gray-900 break-words">
+                    <dd className="text-gray-900 break-words whitespace-normal">
                       {selected.address || "—"}
                     </dd>
                     <dt className="text-gray-500 text-left">DOB</dt>
-                    <dd className="text-gray-900">{selected.dob || "—"}</dd>
+                    <dd className="text-gray-900 whitespace-normal">{selected.dob || "—"}</dd>
                     <dt className="text-gray-500 text-left">Phone</dt>
-                    <dd className="text-gray-900">{selected.phone || "—"}</dd>
+                    <dd className="text-gray-900 whitespace-normal">{selected.phone || "—"}</dd>
                     <dt className="text-gray-500 text-left">ZIP</dt>
-                    <dd className="text-gray-900">{selected.zip || "—"}</dd>
+                    <dd className="text-gray-900 whitespace-normal">{selected.zip || "—"}</dd>
                     <dt className="text-gray-500 text-left">County</dt>
-                    <dd className="text-gray-900 break-words">
+                    <dd className="text-gray-900 break-words whitespace-normal">
                       {selected.county || "—"}
                     </dd>
                     <dt className="text-gray-500 text-left">Household</dt>
-                    <dd className="text-gray-900">
+                    <dd className="text-gray-900 whitespace-normal">
                       {Number.isFinite(Number(selected.householdSize))
                         ? Number(selected.householdSize)
                         : "—"}
                     </dd>
                     <dt className="text-gray-500 text-left">USDA this month</dt>
-                    <dd className="text-gray-900">
+                    <dd className="text-gray-900 whitespace-normal">
                       {selectedVisits.length ? (usdaThisMonth ? "Yes" : "No") : "—"}
                     </dd>
                   </dl>
@@ -920,12 +900,12 @@ export default function Dashboard() {
           <div className="p-3">
             <div className={`${subCardCls} overflow-auto`}>
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr className="text-left text-gray-700">
-                    <th className="px-3 py-2 w-1/2 font-semibold">Client</th>
-                    <th className="px-3 py-2 font-semibold">Time</th>
-                    <th className="px-3 py-2 font-semibold">HH</th>
-                    <th className="px-3 py-2 font-semibold">USDA (mo)</th>
+                <thead className="bg-[color:#eef1f2] sticky top-0 z-10 shadow-sm">
+                  <tr className="text-left text-gray-800">
+                    <th className="px-3 py-2 w-1/2 font-semibold border-b border-gray-300">Client</th>
+                    <th className="px-3 py-2 font-semibold border-b border-gray-300">Time</th>
+                    <th className="px-3 py-2 font-semibold border-b border-gray-300">HH</th>
+                    <th className="px-3 py-2 font-semibold border-b border-gray-300">USDA (mo)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -981,52 +961,51 @@ export default function Dashboard() {
           </div>
           <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </div>
+{/* mobile quick actions bar */}
+{selected && (
+  <div className="md:hidden fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40">
+    <div className="rounded-3xl bg-white/90 backdrop-blur-xl shadow-xl ring-1 ring-brand-200 border border-brand-300 px-4 py-2.5 flex items-center justify-between gap-3">
+      {/* Name + Missing Info */}
+      <div className="flex items-center min-w-0 gap-2">
+        <div className="truncate font-semibold text-brand-900 text-[15px]">
+          {tcase(selected.firstName)} {tcase(selected.lastName)}
+        </div>
 
-        {/* mobile quick actions bar */}
-        {selected && (
-          <div className="md:hidden fixed inset-x-2 z-40 bottom-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-md">
-            <div
-              className="rounded-3xl border-2 border-brand-700 bg-white/80 shadow-2xl px-3 py-2 flex items-center justify-between gap-3 ring-1 ring-brand-100/60"
-              style={{ borderWidth: "2px", borderColor: "#b91c1c" }}
-            >
-              <div className="min-w-0 text-base font-semibold text-brand-900 truncate">
-                {tcase(selected.firstName)} {tcase(selected.lastName)}
-              </div>
-              <div className="flex gap-2 items-center">
-                {/* show missing-info indicator on mobile quick bar if selected has missing info */}
-                {hasMissingInfo(selected) && (
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-amber-50 border border-amber-200 text-amber-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="12" height="12" aria-hidden="true">
-                      <circle cx="10" cy="10" r="8" fill="none" stroke="#F59E0B" strokeWidth="1" />
-                      <text x="10" y="13" textAnchor="middle" fontSize="9" fontWeight="700" fill="#92400E" fontFamily="Arial, sans-serif">!</text>
-                    </svg>
-                  </span>
-                )}
-
-                {(canLogVisits ?? hasCapability?.("logVisits")) && (
-                  <button
-                    onClick={() => logVisit(selected)}
-                    className={
-                      "h-8 px-3 rounded-lg text-base font-medium whitespace-nowrap " +
-                      "bg-white text-brand-900 border border-brand-300 shadow-sm hover:bg-brand-50 hover:border-brand-400 active:bg-brand-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                    }
-                  >
-                    Log Visit
-                  </button>
-                )}
-                {allowEditClient && (
-                  <button
-                    onClick={() => setEditor({ open: true, client: selected })}
-                    className="h-8 px-4 rounded-lg border-2 border-brand-300 text-brand-800 bg-white font-bold shadow-lg hover:bg-brand-50 active:bg-brand-100 transition whitespace-nowrap text-base"
-                  >
-                    Edit
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+        {hasMissingInfo(selected) && (
+          <span
+            className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500 text-white shadow-[0_8px_18px_rgba(217,119,6,0.45)] ring-2 ring-amber-100/80 border border-amber-500 flex-shrink-0"
+            title="Client record has missing information"
+          >
+            <span className="text-[12px] leading-none font-extrabold">!</span>
+            <span className="sr-only">Client record has missing information</span>
+          </span>
         )}
       </div>
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {(canLogVisits ?? hasCapability?.("logVisits")) && (
+          <button
+            onClick={() => logVisit(selected)}
+            className="h-9 px-4 rounded-xl text-[13px] font-semibold text-white bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-md hover:brightness-105 active:scale-[0.98] transition whitespace-nowrap"
+          >
+            Log Visit
+          </button>
+        )}
+
+        {allowEditClient && (
+          <button
+            onClick={() => setEditor({ open: true, client: selected })}
+            className="h-9 px-4 rounded-xl border border-brand-300 text-brand-900 bg-white shadow-sm font-semibold text-[13px] hover:bg-brand-50 active:scale-[0.98] transition whitespace-nowrap"
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+ </div>
 
       {/* modals */}
       <NewClientForm

@@ -93,41 +93,51 @@ export default function Login() {
   const logoSrc = `${import.meta.env.BASE_URL}logo.png`;
 
   return (
-    <div className="min-h-screen text-gray-900 bg-[#FFE6EB]">
-
-      <div className="grid lg:grid-cols-2 min-h-screen">
-        {/* Left brand panel — same gradient as Navbar + soft sheen */}
-        <aside className="hidden lg:flex relative overflow-hidden text-white">
+    <div className="min-h-screen bg-[#FFE6EB] text-gray-900">
+      <div className="grid min-h-screen lg:grid-cols-2">
+        {/* Left brand panel — matches app brand / Navbar vibe (desktop only) */}
+        <aside className="relative hidden overflow-hidden text-white lg:flex">
+          {/* Base gradient */}
           <div
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-650, var(--brand-600)) 55%, var(--brand-500) 100%)",
             }}
             aria-hidden
           />
+          {/* Sheen lights */}
           <div
-            className="absolute inset-0 opacity-25"
+            className="absolute inset-0 opacity-30"
             style={{
               background:
-                "radial-gradient(800px 380px at -10% 0%, rgba(255,255,255,.45), transparent 60%), radial-gradient(700px 360px at 110% 100%, rgba(255,255,255,.35), transparent 60%)",
+                "radial-gradient(900px 420px at -10% 0%, rgba(255,255,255,.55), transparent 65%), radial-gradient(780px 380px at 115% 105%, rgba(255,255,255,.38), transparent 65%)",
             }}
             aria-hidden
           />
-          <div className="relative z-10 w-full max-w-xl mx-auto px-10 flex flex-col justify-center gap-6">
-            <div className="inline-flex items-center gap-3">
-              <img
-                src={logoSrc}
-                alt="Shepherds Table Cloud"
-                className="h-12 w-12 rounded-2xl bg-white p-2 ring-1 ring-white/30 shadow"
-                loading="eager"
-              />
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Shepherds Table Cloud
-              </h1>
+
+          <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col justify-center gap-7 px-10 xl:px-14 2xl:px-20">
+            {/* Brand lockup with zoomed-in logo */}
+            <div className="inline-flex items-center gap-4">
+              <div className="relative shrink-0">
+                <img
+                  src={logoSrc}
+                  alt="Shepherds Table Cloud"
+                  className="h-16 w-16 rounded-[1.6rem] bg-white p-[2px] object-contain shadow-[0_10px_30px_rgba(0,0,0,.35)] ring-1 ring-white/40"
+                  loading="eager"
+                />
+              </div>
+              <div className="flex flex-col">
+                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+                  Shepherds Table Cloud
+                </h1>
+                <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.22em] text-white/80">
+                  Mobile tools for food banks
+                </p>
+              </div>
             </div>
 
-            <p className="text-white/95 leading-relaxed">
+            <p className="max-w-xl text-sm leading-relaxed text-white/95 md:text-base">
               Mobile-first tools for multi-organization food banks. Sign in to
               serve, track visits, and keep today running smoothly.
             </p>
@@ -135,7 +145,7 @@ export default function Login() {
             <ul className="mt-1.5 space-y-2 text-sm text-white/95">
               <li className="flex items-center gap-2">
                 <CheckIcon />
-                Multi-tenant org & location scoping
+                Multi-tenant org &amp; location scoping
               </li>
               <li className="flex items-center gap-2">
                 <CheckIcon />
@@ -150,23 +160,55 @@ export default function Login() {
         </aside>
 
         {/* Right form column */}
-        <main className="flex items-center justify-center py-10 lg:py-0 px-4">
+        <main className="flex justify-center items-start lg:items-center px-4 pt-10 pb-12 sm:pt-16 sm:pb-10 lg:px-8 lg:py-0">
           <div className="w-full max-w-[480px]">
-            <section className="rounded-3xl bg-white ring-1 ring-black/10 shadow-[0_18px_60px_-20px_rgba(0,0,0,.35)]">
+            {/* Mobile brand header (since left panel is hidden) */}
+            <div className="mb-5 flex items-center justify-center gap-3 sm:mb-7 lg:hidden">
+              <div className="relative shrink-0">
+                <img
+                  src={logoSrc}
+                  alt="Shepherds Table Cloud"
+                  className="h-11 w-11 rounded-2xl bg-white p-[1px] object-contain shadow-md ring-1 ring-black/10"
+                  loading="eager"
+                />
+              </div>
+              <div className="leading-tight text-center">
+                <div className="text-[17px] font-semibold text-[color:var(--brand-700)]">
+                  Shepherds Table Cloud
+                </div>
+                <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-[color:var(--brand-600)]">
+                  Staff sign in
+                </div>
+              </div>
+            </div>
+
+            {/* Sign-in card */}
+            <section className="overflow-hidden rounded-[1.75rem] bg-white ring-1 ring-black/10 shadow-[0_18px_60px_-22px_rgba(0,0,0,.40)]">
+              {/* Top accent strip */}
+              <div
+                className="h-1.5 w-full"
+                style={{
+                  background:
+                    "linear-gradient(90deg, var(--brand-700) 0%, var(--brand-600) 50%, var(--brand-500) 100%)",
+                }}
+              />
+
               {/* Card header */}
-              <header className="px-7 sm:px-9 pt-7 pb-4 border-b border-gray-100">
+              <header className="border-b border-gray-100 px-7 pb-4 pt-6 sm:px-9 sm:pt-7">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={logoSrc}
-                    alt=""
-                    className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] p-2 ring-1 ring-[color:var(--brand-200)]"
-                    loading="lazy"
-                  />
-                  <div>
+                  <div className="relative shrink-0">
+                    <img
+                      src={logoSrc}
+                      alt="Shepherds Table Cloud"
+                      className="h-11 w-11 rounded-2xl bg-[color:var(--brand-50)] p-[2px] object-contain ring-1 ring-[color:var(--brand-200)]"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="leading-tight">
                     <div className="text-[18px] font-semibold text-[color:var(--brand-700)]">
                       Shepherds Table Cloud
                     </div>
-                    <div className="text-xs text-gray-500">Staff sign-in</div>
+                    <div className="text-xs text-gray-500">Staff sign in</div>
                   </div>
                 </div>
               </header>
@@ -175,17 +217,24 @@ export default function Login() {
               {err && (
                 <div
                   role="alert"
-                  className="mx-7 sm:mx-9 mt-4 rounded-lg bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] px-3 py-2 text-sm"
+                  className="mx-7 mt-4 rounded-lg bg-[color:var(--brand-50)] px-3 py-2 text-sm text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] sm:mx-9"
                 >
                   {err}
                 </div>
               )}
 
               {/* Form */}
-              <form onSubmit={submit} className="px-7 sm:px-9 py-7 space-y-5" noValidate>
+              <form
+                onSubmit={submit}
+                className="space-y-5 px-7 py-7 sm:px-9"
+                noValidate
+              >
                 {/* Email */}
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-800">
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium text-gray-800"
+                  >
                     Email
                   </label>
                   <input
@@ -207,7 +256,10 @@ export default function Login() {
                 {/* Password */}
                 <div>
                   <div className="flex items-center justify-between">
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-800">
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-medium text-gray-800"
+                    >
                       Password
                     </label>
                     <button
@@ -220,7 +272,7 @@ export default function Login() {
                     </button>
                   </div>
 
-                  <div className="mt-1 relative">
+                  <div className="relative mt-1">
                     <input
                       id="password"
                       ref={pwRef}
@@ -233,10 +285,11 @@ export default function Login() {
                       onKeyDown={onPwKeyEvent}
                       onKeyPress={onPwKeyEvent}
                       disabled={busy}
-                      className="w-full rounded-xl border border-gray-300 bg-white px-3.5 pr-12 py-3 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:border-[color:var(--brand-500)] focus:ring-4 focus:ring-[color:var(--brand-200)] disabled:opacity-60"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-3 pr-12 text-[15px] shadow-sm placeholder:text-gray-400 focus:outline-none focus:border-[color:var(--brand-500)] focus:ring-4 focus:ring-[color:var(--brand-200)] disabled:opacity-60"
                       placeholder="••••••••"
                       aria-describedby={capsLock ? "caps-hint" : undefined}
                     />
+
                     {/* Toggle visibility */}
                     <button
                       type="button"
@@ -244,7 +297,7 @@ export default function Login() {
                       title={showPw ? "Hide password" : "Show password"}
                       onClick={() => setShowPw((v) => !v)}
                       disabled={busy}
-                      className="absolute inset-y-0 right-0 my-1.5 mr-1.5 grid place-items-center rounded-md px-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                      className="absolute inset-y-0 right-0 my-1.5 mr-1.5 grid place-items-center rounded-md px-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-60"
                     >
                       <EyeIcon open={showPw} />
                     </button>
@@ -257,14 +310,14 @@ export default function Login() {
                   )}
                 </div>
 
-                {/* Submit — gradient like Navbar */}
+                {/* Submit — same brand gradient as Navbar */}
                 <button
                   type="submit"
                   disabled={busy}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-full text-white px-5 py-3.5 text-base font-semibold shadow-sm focus:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--brand-200)] disabled:opacity-60 transition-colors"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3.5 text-base font-semibold text-white shadow-sm transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--brand-200)] disabled:opacity-60"
                   style={{
                     background:
-                      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                      "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-650, var(--brand-600)) 55%, var(--brand-500) 100%)",
                   }}
                 >
                   {busy ? (
@@ -279,8 +332,8 @@ export default function Login() {
               </form>
 
               {/* Card footer */}
-              <footer className="px-7 sm:px-9 pb-7">
-                <p className="text-xs text-gray-500">
+              <footer className="px-7 pb-7 text-xs text-gray-500 sm:px-9">
+                <p>
                   By signing in you agree to Shepherds Table Cloud’s{" "}
                   <Link
                     to="/usage"
@@ -288,14 +341,13 @@ export default function Login() {
                   >
                     usage policy
                   </Link>
-
                   .
                 </p>
               </footer>
             </section>
 
             {/* Site footer */}
-            <div className="mt-6 text-center text-xs text-gray-500">
+            <div className="mt-5 text-center text-[11px] text-gray-500 sm:mt-6">
               © {new Date().getFullYear()} Shepherds Table Cloud
               <div className="mt-1">By Brian Aiad</div>
             </div>
@@ -312,8 +364,19 @@ export default function Login() {
 
 function Spinner() {
   return (
-    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" opacity=".25" />
+    <svg
+      className="h-4 w-4 animate-spin"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        fill="none"
+        opacity=".25"
+      />
       <path d="M22 12a10 10 0 00-10-10" stroke="currentColor" />
     </svg>
   );
@@ -348,7 +411,12 @@ function EyeIcon({ open }) {
 
 function CheckIcon() {
   return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4 flex-none" fill="currentColor" aria-hidden="true">
+    <svg
+      viewBox="0 0 20 20"
+      className="h-4 w-4 flex-none"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <path d="M8.5 13.3l-3-3a1 1 0 011.4-1.4l1.9 1.9 4.3-4.3a1 1 0 111.4 1.4l-5 5a1 1 0 01-1.4 0z" />
     </svg>
   );
