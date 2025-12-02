@@ -1,12 +1,5 @@
 // src/pages/Inventory.jsx
 // Shepherd's Table Cloud — Inventory (multi-tenant, capability-aware, 2025)
-//
-// - Org/location scoped, real-time Firestore list
-// - KPI row (items, low stock, total quantity, estimated value)
-// - Search + filter (category, low-stock toggle, sort)
-// - Add / Edit item sheet (bottom sheet on mobile, centered on desktop)
-// - CSV export
-// - Honors capability model via hasCapability + admin fallback
 
 import {
   useCallback,
@@ -31,7 +24,10 @@ import {
 import { db } from "../../lib/firebase";
 import useAuth from "../../auth/useAuth";
 
-// Basic UI tokens (mirror Dashboard / Reports)
+/* ===========================
+   UI helpers
+=========================== */
+
 const shellCls =
   "px-4 sm:px-6 lg:px-8 pt-2 sm:pt-3 max-w-7xl mx-auto overflow-visible";
 
@@ -45,14 +41,9 @@ const BTN = {
     "hover:from-[color:var(--brand-800)] hover:to-[color:var(--brand-700)] " +
     "active:from-[color:var(--brand-900)] active:to-[color:var(--brand-800)] " +
     "shadow-[0_12px_24px_rgba(199,58,49,0.40)] border border-brand-800/10 transition-all active:scale-[0.97]",
-  secondary:
-    "inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full text-sm font-semibold " +
-    "text-[color:var(--brand-700)] bg-brand-50 hover:bg-brand-100 border border-brand-200",
   ghost:
     "inline-flex items-center justify-center gap-2 h-9 px-3 rounded-full text-xs font-medium " +
     "text-gray-700 bg-white hover:bg-gray-50 border border-gray-200",
-  icon:
-    "inline-flex items-center justify-center rounded-full h-9 w-9 border border-gray-200 bg-white hover:bg-gray-50",
 };
 
 const formatCurrency = (v) => {
@@ -100,6 +91,10 @@ function matchesSearch(row, tokens) {
   return tokens.every((t) => hay.includes(t));
 }
 
+/* ===========================
+   Main component
+=========================== */
+
 export default function Inventory() {
   const {
     loading,
@@ -107,7 +102,6 @@ export default function Inventory() {
     location,
     isAdmin,
     hasCapability,
-    canPickAllLocations = false,
   } = useAuth() || {};
 
   const orgId = org?.id ?? null;
@@ -156,7 +150,7 @@ export default function Inventory() {
     []
   );
 
-  // Live inventory subscription
+  /* ---- Live inventory subscription ---- */
   useEffect(() => {
     setItems([]);
     setError("");
@@ -202,6 +196,8 @@ export default function Inventory() {
 
     return () => unsub();
   }, [loading, orgId, locId, isAll, isAdmin]);
+
+  /* ---- Derived data ---- */
 
   const categories = useMemo(() => {
     const set = new Set();
@@ -258,15 +254,17 @@ export default function Inventory() {
     }
 
     rows.sort((a, b) => {
-      let dir = sortDir === "desc" ? -1 : 1;
+      const dir = sortDir === "desc" ? -1 : 1;
       switch (sortKey) {
         case "category":
           return (
-            (a.category || "").localeCompare(b.category || "") * dir
+            (a.category || "").localeCompare(b.category || "") *
+            dir
           );
         case "quantity":
           return (
-            (Number(a.quantity ?? 0) - Number(b.quantity ?? 0)) * dir
+            (Number(a.quantity ?? 0) -
+              Number(b.quantity ?? 0)) * dir
           );
         case "updatedAt":
           return (
@@ -274,6 +272,7 @@ export default function Inventory() {
               (b.updatedAt?.seconds || 0)) * dir
           );
         default:
+          // name
           return (a.name || "").localeCompare(b.name || "") * dir;
       }
     });
@@ -289,7 +288,11 @@ export default function Inventory() {
   ]);
 
   const ariaSortFor = (key) =>
-    sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+    sortKey === key
+      ? sortDir === "asc"
+        ? "ascending"
+        : "descending"
+      : "none";
 
   const toggleSort = (key) => {
     setSortKey((prevKey) => {
@@ -301,6 +304,8 @@ export default function Inventory() {
       return key;
     });
   };
+
+  /* ---- Actions ---- */
 
   const exportCsv = useCallback(() => {
     if (!filteredSorted.length) {
@@ -407,15 +412,24 @@ export default function Inventory() {
     }
   };
 
-  // Scope pill (icon variant matching Dashboard)
+  /* ---- Scope chip (same as Dashboard) ---- */
+
   const scopeChip = (
     <span className="inline-flex items-center gap-1 rounded-full bg-white text-brand-900 ring-1 ring-black/5 shadow-sm px-2 py-0.5 text-[12px]">
-    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1">
-      <MapPin className="h-3 w-3" aria-hidden="true" />
+      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-50 text-[color:var(--brand-700)] ring-1 ring-brand-100 mr-1">
+        <MapPin className="h-3 w-3" aria-hidden="true" />
+      </span>
+      <span className="font-semibold text-xs truncate">
+        {location?.name
+          ? `${org?.name || "—"} / ${location.name}`
+          : org?.name || "—"}
+      </span>
     </span>
-    <span className="font-semibold text-xs truncate">{location?.name ? `${org?.name || "—"} / ${location.name}` : org?.name || "—"}</span>
-  </span>
   );
+
+  /* ===========================
+     Guard: cannot view
+  =========================== */
 
   if (!canViewInventory) {
     return (
@@ -430,12 +444,16 @@ export default function Inventory() {
     );
   }
 
+  /* ===========================
+     Render
+  =========================== */
+
   return (
     <>
       <div className={shellCls}>
         {/* Toast */}
         {toast && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40">
+          <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+16px)] left-1/2 -translate-x-1/2 z-40">
             <div
               className={`px-4 py-2 rounded-xl shadow-lg text-sm text-white ${
                 toast.kind === "warn" ? "bg-amber-700" : "bg-gray-900"
@@ -447,7 +465,7 @@ export default function Inventory() {
           </div>
         )}
 
-        {/* THEMED TOOLBAR */}
+        {/* ===== Themed header (matches Dashboard) ===== */}
         <div className="block rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative mb-4">
           <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
             <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
@@ -464,104 +482,121 @@ export default function Inventory() {
           </div>
 
           {/* Controls surface */}
-          <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border border-brand-100 ring-1 ring-brand-50 shadow-soft">
-            {/* Search + filters */}
-            <div className="flex-1 flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[180px] max-w-md">
-                <input
-                  type="search"
-                  value={term}
-                  onChange={(e) => setTerm(e.target.value)}
-                  placeholder="Search by name, category, SKU…"
-                  className="w-full h-10 rounded-full border border-gray-200 bg-white px-9 pr-9 text-sm outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-300"
-                />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  <svg
-                    viewBox="0 0 20 20"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
+          <div className="rounded-b-3xl bg-white/95 backdrop-blur px-3 sm:px-5 py-3 border border-brand-100 ring-1 ring-brand-50 shadow-soft">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              {/* Search + filters */}
+              <div className="flex-1 flex flex-col gap-2 min-w-0">
+                <div className="relative w-full">
+                  <input
+                    type="search"
+                    value={term}
+                    onChange={(e) => setTerm(e.target.value)}
+                    placeholder="Search by name, category, SKU…"
+                    className="w-full pl-9 pr-10 py-2.5 rounded-2xl border border-brand-300/80 bg-white text-sm md:text-[15px] placeholder:text-gray-400 ring-1 ring-brand-300/15 shadow-[0_8px_24px_-12px_rgba(148,27,21,0.2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus:border-brand-300"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg
+                      viewBox="0 0 20 20"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <circle cx="9" cy="9" r="5" />
+                      <path d="M13.5 13.5L16 16" />
+                    </svg>
+                  </span>
+                  {term && (
+                    <button
+                      type="button"
+                      onClick={() => setTerm("")}
+                      aria-label="Clear search"
+                      title="Clear search"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 md:h-10 md:w-10 rounded-full grid place-items-center text-gray-500 hover:bg-gray-100 text-lg"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-9 rounded-full border border-gray-200 bg-white px-3 text-xs sm:text-sm"
+                    value={categoryFilter}
+                    onChange={(e) =>
+                      setCategoryFilter(e.target.value)
+                    }
                   >
-                    <circle cx="9" cy="9" r="5" />
-                    <path d="M13.5 13.5L16 16" />
-                  </svg>
-                </span>
-                {term && (
+                    <option value="all">All categories</option>
+                    {categories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+
                   <button
                     type="button"
-                    onClick={() => setTerm("")}
-                    aria-label="Clear search"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full grid place-items-center text-gray-500 hover:bg-gray-100"
+                    onClick={() =>
+                      setShowLowStockOnly((v) => !v)
+                    }
+                    className={`${BTN.ghost} ${
+                      showLowStockOnly
+                        ? "bg-brand-50 text-brand-800 border-brand-300"
+                        : ""
+                    }`}
                   >
-                    ×
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    <span>Low stock</span>
                   </button>
-                )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <select
-                  className="h-9 rounded-full border border-gray-200 bg-white px-3 text-xs sm:text-sm"
-                  value={categoryFilter}
-                  onChange={(e) =>
-                    setCategoryFilter(e.target.value)
-                  }
-                >
-                  <option value="all">All categories</option>
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowLowStockOnly((v) => !v)
-                  }
-                  className={`${BTN.ghost} ${
-                    showLowStockOnly
-                      ? "bg-brand-50 text-brand-800 border-brand-300"
-                      : ""
-                  }`}
-                >
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  <span>Low stock</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={exportCsv}
-                className={BTN.ghost}
-                disabled={!filteredSorted.length}
-              >
-                <span className="hidden sm:inline">Export CSV</span>
-                <span className="sm:hidden">CSV</span>
-              </button>
-
-              {canManageInventory && (
-                <button
-                  type="button"
-                  onClick={openNewSheet}
-                  className={BTN.primary}
-                >
-                  <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
-                    +
+              {/* Actions + summary */}
+              <div className="flex flex-col gap-2 items-stretch lg:items-end lg:flex-none">
+                <div className="flex items-center gap-2 justify-between lg:justify-end text-[11px] text-gray-600">
+                  <span>
+                    {filteredSorted.length} item
+                    {filteredSorted.length === 1 ? "" : "s"} shown
                   </span>
-                  <span>Add Item</span>
-                </button>
-              )}
+                  <span className="hidden sm:inline">
+                    {kpi.lowStock} low-stock •{" "}
+                    {formatCurrency(kpi.estValue)} est. value
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={exportCsv}
+                    className={BTN.ghost}
+                    disabled={!filteredSorted.length}
+                  >
+                    <span className="hidden sm:inline">
+                      Export CSV
+                    </span>
+                    <span className="sm:hidden">CSV</span>
+                  </button>
+
+                  {canManageInventory && (
+                    <button
+                      type="button"
+                      onClick={openNewSheet}
+                      className={BTN.primary}
+                    >
+                      <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
+                        +
+                      </span>
+                      <span>Add item</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* KPI ROW */}
+        {/* KPI ROW – horizontally scrollable on mobile, 4-up on desktop */}
         <div className="mt-4">
           <div className="-mx-4 sm:mx-0">
             <div className="overflow-x-auto no-scrollbar px-4 py-1">
@@ -586,9 +621,7 @@ export default function Inventory() {
                 <KpiCard
                   title="Low-stock items"
                   value={kpi.lowStock}
-                  tone={
-                    kpi.lowStock > 0 ? "warn" : "default"
-                  }
+                  tone={kpi.lowStock > 0 ? "warn" : "default"}
                 />
                 <KpiCard
                   title="Estimated value"
@@ -599,16 +632,16 @@ export default function Inventory() {
           </div>
         </div>
 
-        {/* MAIN TABLE */}
+        {/* MAIN CONTENT CARD */}
         <section
-          className={`${cardCls} mt-5 p-0 overflow-hidden`}
+          className={`${cardCls} mt-5 p-0 overflow-hidden transform transition will-change-transform hover:scale-[1.01] hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300`}
         >
-          <header className="px-4 py-3 border-b border-brand-100 bg-brand-50/70 backdrop-blur rounded-t-2xl flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-brand-900">
+          <header className="rounded-t-2xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-white">
               Inventory items
             </div>
             {busy && (
-              <div className="text-xs text-gray-500 flex items-center gap-1">
+              <div className="text-xs text-white/90 flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Syncing…
               </div>
@@ -621,7 +654,120 @@ export default function Inventory() {
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          {/* Mobile: card list, no horizontal scroll */}
+          <div className="sm:hidden px-3 py-3 space-y-2">
+            {filteredSorted.map((it) => {
+              const qty = Number(it.quantity ?? 0);
+              const min = Number(it.minQuantity ?? 0);
+              const low =
+                Number.isFinite(qty) &&
+                Number.isFinite(min) &&
+                qty <= min;
+
+              return (
+                <div
+                  key={it.id}
+                  className="rounded-2xl border border-gray-100 bg-white shadow-[0_6px_16px_rgba(15,23,42,0.06)] px-3.5 py-3 flex flex-col gap-1.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[15px] text-gray-900 truncate">
+                        {it.name || "Untitled item"}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {(it.category && `${it.category} • `) || ""}
+                        {it.unit || "unit"}
+                      </div>
+                    </div>
+                    <div className="text-right text-sm">
+                      <div className="font-semibold tabular-nums">
+                        {Number.isFinite(qty) ? qty : "—"}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        Qty
+                        {Number.isFinite(min) && (
+                          <>
+                            {" "}
+                            • Min {min}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                      {it.sku && (
+                        <span className="rounded-full bg-gray-50 px-2 py-0.5 border border-gray-100">
+                          SKU {it.sku}
+                        </span>
+                      )}
+                      {low && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 px-2 py-[2px] text-[11px]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Low stock
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-500">
+                        {formatCurrency(
+                          Number(it.quantity ?? 0) *
+                            Number(it.costPerUnit ?? 0)
+                        )}
+                      </span>
+                      {canManageInventory ? (
+                        <button
+                          type="button"
+                          onClick={() => openEditSheet(it)}
+                          className="h-8 px-3 rounded-full text-[11px] font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-gray-400">
+                          View only
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {!filteredSorted.length && !busy && (
+              <div className="py-8 text-center text-sm text-gray-500">
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-2xl">📦</span>
+                  <span>
+                    No inventory items yet for this scope.
+                  </span>
+                  {canManageInventory && (
+                    <button
+                      type="button"
+                      onClick={openNewSheet}
+                      className={`${BTN.primary} mt-1`}
+                    >
+                      <span className="grid place-items-center h-7 w-7 rounded-full bg-white/20">
+                        +
+                      </span>
+                      <span>Add your first item</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {busy && (
+              <div className="py-4 text-center text-sm text-gray-500">
+                Loading inventory…
+              </div>
+            )}
+          </div>
+
+          {/* Desktop / tablet: full table */}
+          <div className="hidden sm:block overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
                 <tr>
@@ -778,9 +924,7 @@ export default function Inventory() {
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       <div className="flex flex-col items-center gap-2">
-                        <span className="text-2xl">
-                          📦
-                        </span>
+                        <span className="text-2xl">📦</span>
                         <span>
                           No inventory items yet for this scope.
                         </span>
@@ -830,7 +974,9 @@ export default function Inventory() {
   );
 }
 
-/* ---------- tiny UI pieces ---------- */
+/* ===========================
+   Tiny UI pieces
+=========================== */
 
 function KpiCard({ title, value, tone = "default" }) {
   const toneCls =
@@ -841,12 +987,12 @@ function KpiCard({ title, value, tone = "default" }) {
   return (
     <div className="snap-start md:snap-none flex-none">
       <div
-        className={`rounded-2xl border shadow-sm px-4 py-3 flex flex-col gap-1 ${toneCls}`}
+        className={`rounded-2xl border ring-1 ring-brand-100 bg-white shadow-soft px-3 sm:px-4 md:p-3 md:h-24 flex flex-col gap-1 ${toneCls}`}
       >
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+        <div className="text-xs sm:text-sm font-semibold uppercase tracking-[0.12em] text-gray-500 md:mb-0">
           {title}
         </div>
-        <div className="text-lg sm:text-xl font-semibold tabular-nums">
+        <div className="text-lg sm:text-xl md:text-3xl font-semibold tabular-nums">
           {value}
         </div>
       </div>
@@ -881,9 +1027,11 @@ function Th({
   );
 }
 
-/* ---------- Inventory sheet ---------- */
+/* ===========================
+   Inventory sheet
+=========================== */
 
-function InventorySheet({ open, item, onClose, onSave }) {
+function InventorySheet({ item, onClose, onSave }) {
   const initial = useMemo(
     () => ({
       name: item?.name || "",
@@ -1065,7 +1213,9 @@ function Field({
     <label className="flex flex-col gap-1 text-xs text-gray-700">
       <span className="font-medium">
         {label}
-        {required && <span className="text-amber-600"> *</span>}
+        {required && (
+          <span className="text-amber-600"> *</span>
+        )}
       </span>
       {textarea ? (
         <textarea

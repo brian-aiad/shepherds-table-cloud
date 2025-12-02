@@ -185,6 +185,58 @@ service cloud.firestore {
         && hasLocationAccess(resource.data.orgId, resource.data.locationId);
     }
 
+    /* ===== inventory ===== */
+    match /inventory/{itemId} {
+      // scoped reads + existence checks
+      allow read: if isAuthed() && (
+        resource == null ||
+        canReadScoped(resource.data.orgId, resource.data.locationId)
+      );
+
+      // create: must specify org + location and have write access there
+      allow create: if isAuthed()
+        && hasOrgId()
+        && hasLocationId()
+        && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId);
+
+      // update: keep org/location fixed, require write access at that location
+      allow update: if isAuthed()
+        && canWriteScoped(resource.data.orgId, resource.data.locationId)
+        && request.resource.data.orgId      == resource.data.orgId
+        && request.resource.data.locationId == resource.data.locationId;
+
+      // delete: admin with location access
+      allow delete: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && hasLocationAccess(resource.data.orgId, resource.data.locationId);
+    }
+
+    /* ===== donations ===== */
+    match /donations/{donationId} {
+      // scoped reads + existence checks
+      allow read: if isAuthed() && (
+        resource == null ||
+        canReadScoped(resource.data.orgId, resource.data.locationId)
+      );
+
+      // create: must specify org + location and have write access there
+      allow create: if isAuthed()
+        && hasOrgId()
+        && hasLocationId()
+        && canWriteScoped(request.resource.data.orgId, request.resource.data.locationId);
+
+      // update: keep org/location fixed, require write access
+      allow update: if isAuthed()
+        && canWriteScoped(resource.data.orgId, resource.data.locationId)
+        && request.resource.data.orgId      == resource.data.orgId
+        && request.resource.data.locationId == resource.data.locationId;
+
+      // delete: admin with location access
+      allow delete: if isAuthed()
+        && isAdminOfOrg(resource.data.orgId)
+        && hasLocationAccess(resource.data.orgId, resource.data.locationId);
+    }
+
     /* ===== reports ===== */
     match /reports/{reportId} {
       allow read:    if isAuthed() && isAdminOfOrg(resource.data.orgId);

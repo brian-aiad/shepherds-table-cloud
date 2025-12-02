@@ -14,7 +14,11 @@
 
 /* ================== Base ================== */
 @layer base {
-  html, body, #root { height: 100%; }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
   body {
     background: var(--app-bg);
@@ -50,16 +54,34 @@
   }
 
   /* Hide native scrollbar (fallback helper) */
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Opt-in soft transitions instead of global * transitions */
+  .transition-soft {
+    transition-property: color, background-color, border-color, opacity, transform, box-shadow, filter;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
 }
 
 @keyframes bounce-slow {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(2px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2px);
+  }
 }
-.animate-bounce-slow { animation: bounce-slow 1.2s infinite; }
-
+.animate-bounce-slow {
+  animation: bounce-slow 1.2s infinite;
+}
 
 /* ================== Pretty custom scrollbar ================== */
 /* Apply by adding `pretty-scroll` to any scroll container */
@@ -169,19 +191,18 @@
 }
 
 /* ================== Motion safety ================== */
-/* Default: smooth scrolling + soft transitions when motion is allowed */
+/* Default: smooth scrolling when motion is allowed */
 @media (prefers-reduced-motion: no-preference) {
-  html { scroll-behavior: smooth; }
-  * {
-    transition-property: color, background-color, border-color, opacity, transform, box-shadow, filter;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  html {
+    scroll-behavior: smooth;
   }
 }
 
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto !important; }
+  html {
+    scroll-behavior: auto !important;
+  }
 
   * {
     animation-duration: 0.01ms !important;

@@ -1770,7 +1770,7 @@ const removeDay = useCallback(
           </div>
           <div className="mt-2 md:mt-3 flex flex-wrap items-center justify-center md:justify-start gap-2">
             {/* keep scope visible in the lower row on smaller screens */}
-            <div className="md:hidden">{scopeChip}</div>
+            <div className="md:hidden mb-3">{scopeChip}</div>
           </div>
 
           {/* Month nav: flow under header on small screens, float on md+ */}
@@ -3301,25 +3301,22 @@ function Card({ title, children }) {
 function KpiModern({ title, value, sub }) {
   return (
     <div
-      className="
-        rounded-2xl border ring-1 bg-white shadow-soft p-4 sm:p-5
-        border-brand-200 ring-brand-100
-        hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)]
-        hover:ring-brand-200
-        hover:border-brand-300
-        transition will-change-transform
-        hover:scale-[1.01] active:scale-[.995]
-      "
+      className={
+        "rounded-2xl border ring-1 bg-white shadow-soft p-3 sm:p-4 md:p-3 " +
+        "border-brand-200 ring-brand-100 hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] " +
+        "hover:ring-brand-200 hover:border-brand-300 transition will-change-transform " +
+        "hover:scale-[1.01] active:scale-[.995] flex flex-col justify-center md:h-24"
+      }
       role="status"
       aria-live="polite"
     >
-      <div className="text-xs sm:text-sm text-gray-600 mb-2">{title}</div>
-      <div className="flex items-end gap-2">
-        <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight">
+      <div className="text-xs sm:text-sm text-gray-600 mb-1 md:mb-0">{title}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-2xl sm:text-3xl md:text-3xl font-semibold tabular-nums tracking-tight">
           {value ?? "—"}
         </div>
         {sub ? (
-          <div className="text-[11px] sm:text-xs text-gray-500 mb-0.5">
+          <div className="text-[11px] sm:text-sm md:text-sm text-gray-500">
             {sub}
           </div>
         ) : null}

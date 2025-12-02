@@ -1,5 +1,8 @@
 // src/main.jsx
-// Adds the "app-ready" class to hide the loading fallback once React runs.
+// Shepherds Table Cloud — Root bootstrap (Dec 2025)
+// - Adds .app-ready class to hide static HTML fallback
+// - Wraps React app with BrowserRouter and AuthProvider
+// - Includes hydration-safe guards and future SRR compatibility
 
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -8,8 +11,10 @@ import App from "./App.jsx";
 import AuthProvider from "./auth/AuthProvider";
 import "./index.css";
 
-// Hide static "Loading Shepherds Table Cloud..." message
-document.body.classList.add("app-ready");
+// Hide static "Loading Shepherds Table Cloud..." message (hydration-safe)
+if (typeof document !== "undefined" && document.body) {
+  document.body.classList.add("app-ready");
+}
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
@@ -18,6 +23,11 @@ if (!rootEl) {
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
+    {/* 
+      NOTE:
+      If you ever deploy to a subpath instead of root (example: /stc/),
+      enable: <BrowserRouter basename="/stc">
+    */}
     <BrowserRouter>
       <AuthProvider>
         <App />

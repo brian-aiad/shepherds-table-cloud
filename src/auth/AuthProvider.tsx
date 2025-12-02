@@ -2,14 +2,14 @@
 // Shepherds Table Cloud — Auth context (multi-tenant, Nov 2025)
 //
 // Exposes useAuth() fields via context:
-// { uid, email, org, orgs, location, locations, role, isAdmin, canPickAllLocations, loading,
+// { uid, email, org, orgs, location, locations, role, isAdmin, isMaster, canPickAllLocations, loading,
 //   setActiveOrg, setActiveLocation, saveDeviceDefaultScope, signOutNow,
 //   roleForActiveOrg, isAdminForActiveOrg, hasCapability,
 //   canAccessDashboard, canCreateClients, canEditClients, canLogVisits,
 //   canDeleteClients, canDeleteVisits, canViewReports, canManageOrg }
 //
 // Role model:
-// - Master (via custom claim `master: true`) → full access across all orgs/locations
+// - Master (via custom claim `master: true` OR email == csbrianaiad@gmail.com) → full access across all orgs/locations
 // - Org Admins (from /orgUsers) → admin inside their org; may be restricted to specific locationIds
 // - Volunteers (from /orgUsers) → restricted to assigned locationIds; no “All locations”
 // Suspensions:
@@ -78,6 +78,9 @@ export type AuthValue = {
 
   /** Admin for the ACTIVE org (or master); kept for back-compat */
   isAdmin: boolean;
+
+  /** Global master (“God mode”) */
+  isMaster: boolean;
 
   /** New: role resolved for ACTIVE org only (null when no active org) */
   roleForActiveOrg: AppRole | null;
@@ -171,6 +174,7 @@ export const AuthContext = createContext<AuthValue>({
 
   role: null,
   isAdmin: false,
+  isMaster: false,
 
   roleForActiveOrg: null,
   isAdminForActiveOrg: false,
@@ -299,13 +303,13 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
   /** Convenience booleans (ACTIVE org) */
   const canAccessDashboard = hasCapability("dashboard");
-  const canCreateClients   = hasCapability("createClients");
-  const canEditClients     = hasCapability("editClients");
-  const canLogVisits       = hasCapability("logVisits");
-  const canDeleteClients   = hasCapability("deleteClients");
-  const canDeleteVisits    = hasCapability("deleteVisits");
-  const canViewReports     = hasCapability("viewReports");
-  const canManageOrg       = hasCapability("manageOrg");
+  const canCreateClients = hasCapability("createClients");
+  const canEditClients = hasCapability("editClients");
+  const canLogVisits = hasCapability("logVisits");
+  const canDeleteClients = hasCapability("deleteClients");
+  const canDeleteVisits = hasCapability("deleteVisits");
+  const canViewReports = hasCapability("viewReports");
+  const canManageOrg = hasCapability("manageOrg");
 
   /* Actions */
   const signOutNow = useCallback(async () => {
@@ -431,13 +435,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         setUid(u.uid);
         setEmail(u.email ?? null);
 
-        // Master via custom claim
+        // Master via custom claim OR email (to match Firestore rule)
         let masterNow = false;
         try {
           const token = await getIdTokenResult(u);
           masterNow = token?.claims?.master === true;
         } catch {
           masterNow = false;
+        }
+        if (u.email === "csbrianaiad@gmail.com") {
+          masterNow = true;
         }
         setIsMaster(masterNow);
 
@@ -551,15 +558,18 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         let pickLocId: string | null =
           typeof device.activeLocationId !== "undefined"
             ? device.activeLocationId
-            : (typeof storedLocId !== "undefined" ? storedLocId : null);
+            : typeof storedLocId !== "undefined"
+            ? storedLocId
+            : null;
 
         if (pickOrg) {
           const locsForOrg = nextLocations.filter((l) => l.orgId === pickOrg.id);
-          const adminHere = masterNow || (mapRolesByOrg[pickOrg.id] === "admin");
+          const adminHere = masterNow || mapRolesByOrg[pickOrg.id] === "admin";
 
           if (pickLocId === "" && adminHere) {
             const allow = mapAllowedLocsByOrg[pickOrg.id] || [];
-            const adminAll = masterNow || mapAdminAllByOrg[pickOrg.id] === true || allow.length === 0;
+            const adminAll =
+              masterNow || mapAdminAllByOrg[pickOrg.id] === true || allow.length === 0;
             if (adminAll) {
               setOrg(pickOrg);
               setLocation({ id: "", orgId: pickOrg.id, name: "All locations" } as LocationRec);
@@ -568,7 +578,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               const resolved = locsForOrg.find((l) => allow.includes(l.id)) ?? locsForOrg[0] ?? null;
               setOrg(pickOrg);
               setLocation(resolved ?? null);
-              writeDeviceScope({ activeOrgId: pickOrg.id, activeLocationId: resolved?.id ?? null });
+              writeDeviceScope({
+                activeOrgId: pickOrg.id,
+                activeLocationId: resolved?.id ?? null,
+              });
             }
           } else {
             const resolved =
@@ -611,8 +624,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       location,
       locations,
 
-      role,                 // coarse badge (any-admin)
-      isAdmin,              // back-compat
+      role, // coarse badge (any-admin)
+      isAdmin, // back-compat
+      isMaster,
 
       roleForActiveOrg,
       isAdminForActiveOrg,
@@ -641,14 +655,12 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       orgs,
       location,
       locations,
-
       role,
       isAdmin,
-
+      isMaster,
       roleForActiveOrg,
       isAdminForActiveOrg,
       hasCapability,
-
       canAccessDashboard,
       canCreateClients,
       canEditClients,
@@ -657,7 +669,6 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       canDeleteVisits,
       canViewReports,
       canManageOrg,
-
       canPickAllLocations,
       loading,
       setActiveOrg,
@@ -673,7 +684,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         <BrandedLoading />
       </AuthContext.Provider>
     );
-    }
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

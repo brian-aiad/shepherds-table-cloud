@@ -500,7 +500,8 @@ export default function Dashboard() {
                       type="button"
                       onClick={() => setTerm("")}
                       aria-label="Clear search"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full grid place-items-center text-gray-500 hover:bg-gray-100"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 md:h-10 md:w-10 rounded-full grid place-items-center text-gray-500 hover:bg-gray-100 text-lg"
+                      title="Clear search"
                     >
                       ×
                     </button>

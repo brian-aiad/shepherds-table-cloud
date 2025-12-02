@@ -24,10 +24,15 @@ const Login = lazy(() => import("./pages/auth/Login.jsx"));
 
 // App (protected)
 const Dashboard = lazy(() => import("./pages/app/Dashboard.jsx"));
-const Inventory = lazy(() => import("./pages/app/Inventory.jsx"));   // ← NEW
-const Donations = lazy(() => import("./pages/app/Donations.jsx"));   // ← NEW
+const Inventory = lazy(() => import("./pages/app/Inventory.jsx"));
+const Donations = lazy(() => import("./pages/app/Donations.jsx"));
 const Reports = lazy(() => import("./pages/app/Reports.jsx"));
 const UsdaMonthly = lazy(() => import("./pages/app/UsdaMonthly.jsx"));
+
+// Master-only admin console
+const MasterConsole = lazy(
+  () => import("./pages/app/Admin/MasterConsole.jsx")
+);
 
 // Public marketing
 const About = lazy(() => import("./pages/public/About.jsx"));
@@ -127,6 +132,16 @@ export default function App() {
             element={
               <ProtectedRoute capability="viewReports">
                 <UsdaMonthly />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Master Console (global super admin) */}
+          <Route
+            path="app/admin/master-console"
+            element={
+              <ProtectedRoute requireMaster>
+                <MasterConsole />
               </ProtectedRoute>
             }
           />

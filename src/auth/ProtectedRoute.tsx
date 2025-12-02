@@ -11,21 +11,48 @@ import { useAuth } from "./useAuth";
  *   <ProtectedRoute role="volunteer"><SomeVolunteerPage /></ProtectedRoute>
  *   <ProtectedRoute role="admin"><Reports /></ProtectedRoute>
  *
+ *   // Master-only (global super admin)
+ *   <ProtectedRoute requireMaster><MasterConsole /></ProtectedRoute>
+ *
+ *   // Capability-based guard (uses hasCapability from AuthProvider)
+ *   <ProtectedRoute capability="viewReports"><Reports /></ProtectedRoute>
+ *
  * Rules implemented:
  * - Auth required for all protected routes (redirects to /login if not signed in).
+ * - Master override:
+ *     • requireMaster === true → only master can access.
+ *     • Master always satisfies admin/volunteer/capability checks.
  * - Role gating:
- *     • role="admin"  → requires isAdmin === true
- *     • role="volunteer" → allows volunteers AND admins (admin is a superset)
+ *     • role="admin"      → requires isAdmin === true (or master).
+ *     • role="volunteer"  → allows volunteers AND admins AND master.
+ * - Capability gating:
+ *     • capability="xyz"  → requires hasCapability("xyz") or master.
  * - Loading state renders a simple, accessible placeholder.
  */
+
+type ProtectedRouteProps = {
+  children: ReactElement;
+  role?: "admin" | "volunteer";
+  /** Only allow global master (God mode) */
+  requireMaster?: boolean;
+  /** Optional capability name for fine-grained gating */
+  capability?: string;
+};
+
 export default function ProtectedRoute({
   children,
   role,
-}: {
-  children: ReactElement;
-  role?: "admin" | "volunteer";
-}) {
-  const { loading, email, role: userRole, isAdmin } = useAuth();
+  requireMaster,
+  capability,
+}: ProtectedRouteProps) {
+  const {
+    loading,
+    email,
+    role: userRole,
+    isAdmin,
+    isMaster,
+    hasCapability,
+  } = useAuth();
 
   if (loading) {
     return (
@@ -42,12 +69,24 @@ export default function ProtectedRoute({
   // Not authenticated → login
   if (!email) return <Navigate to="/login" replace />;
 
-  // Role checks (admin is a superset of volunteer)
-  if (role === "admin" && !isAdmin) return <Navigate to="/" replace />;
+  // Master-only routes
+  if (requireMaster && !isMaster) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Role checks (admin is a superset of volunteer; master is superset of both)
+  if (role === "admin" && !(isAdmin || isMaster)) {
+    return <Navigate to="/" replace />;
+  }
 
   if (role === "volunteer") {
-    const allowed = isAdmin || userRole === "volunteer";
+    const allowed = isMaster || isAdmin || userRole === "volunteer";
     if (!allowed) return <Navigate to="/" replace />;
+  }
+
+  // Capability-based gating (master always allowed)
+  if (capability && !isMaster && !hasCapability(capability)) {
+    return <Navigate to="/" replace />;
   }
 
   return children;

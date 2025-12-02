@@ -1,8 +1,14 @@
+// src/components/Layout.jsx
 import { Outlet, NavLink } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
+import { useAuth } from "../auth/useAuth";
 
 export default function Layout() {
   const year = new Date().getFullYear();
+  const { isMaster, email } = useAuth();
+
+  // Only show for master (and your email as a fallback)
+  const showMasterConsole = isMaster || email === "csbrianaiad@gmail.com";
 
   return (
     <div
@@ -30,14 +36,15 @@ export default function Layout() {
         aria-label="Main content"
         className="flex-1 outline-none overscroll-contain"
         style={{
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 88px)",
+          // extra padding so content doesn’t fight the mobile quick-access bar
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
         }}
       >
         <div
           className="
             mx-auto w-full
             max-w-7xl xl:max-w-[90rem]
-            px-3 sm:px-4 md:px-8
+            px-2 sm:px-4 md:px-8
             pt-3 md:pt-6
           "
         >
@@ -45,8 +52,8 @@ export default function Layout() {
           <section
             aria-label="Content"
             className="
-              rounded-3xl bg-white
-              p-2.5 sm:p-4 md:p-7
+              rounded-2xl sm:rounded-3xl bg-white
+              p-2 sm:p-4 md:p-7
               shadow-sm ring-1 ring-brand-100/70
             "
           >
@@ -56,6 +63,34 @@ export default function Layout() {
           <div className="h-8 md:h-6" />
         </div>
       </main>
+
+      {/* FLOATING MASTER BUTTON (MOBILE ONLY, ABOVE QUICK BAR) */}
+      {showMasterConsole && (
+        <NavLink
+          to="/app/admin/master-console"
+          className="
+            fixed md:hidden
+            right-3
+            bottom-[calc(env(safe-area-inset-bottom,0px)+96px)]
+            z-30
+            inline-flex items-center gap-1.5
+            rounded-full
+            bg-brand-50/95
+            px-3.5 py-1.5
+            text-[11px] font-semibold
+            text-brand-800
+            shadow-lg shadow-black/25
+            border border-white/80
+            backdrop-blur-sm
+          "
+        >
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-emerald-400"
+            aria-hidden
+          />
+          <span>Master console</span>
+        </NavLink>
+      )}
 
       {/* FOOTER */}
       <footer
@@ -68,26 +103,58 @@ export default function Layout() {
           shadow-[0_-1px_0_rgba(255,255,255,0.06)_inset]
         "
         style={{
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+          // a bit of extra height so it peeks nicely above the mobile bar
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 18px)",
         }}
       >
         <div
           className="
             mx-auto w-full max-w-7xl xl:max-w-[90rem]
             px-3 sm:px-4 md:px-8
-            py-4 md:py-6
-            text-center text-[12px] sm:text-xs
+            pt-4 pb-6 md:py-6
+            text-[12px] sm:text-xs
           "
         >
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2">
-            <span>© {year} Shepherd’s Table Cloud</span>
-            <span className="hidden sm:inline text-white/60" aria-hidden>
-              •
-            </span>
-            <span className="text-white/90">by Brian Aiad</span>
+          {/* Top row: branding + master console (desktop) */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex flex-col items-center md:items-start gap-1">
+              <div className="flex flex-row items-center gap-1 sm:gap-2">
+                <span>© {year} Shepherd’s Table Cloud</span>
+                <span className="hidden sm:inline text-white/60" aria-hidden>
+                  •
+                </span>
+                <span className="text-white/90">by Brian Aiad</span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-white/75 max-w-xl text-center md:text-left">
+                We collect basic personal information solely for program
+                eligibility, reporting, and service delivery.
+              </p>
+            </div>
+
+            {showMasterConsole && (
+              <NavLink
+                to="/app/admin/master-console"
+                className="
+                  hidden md:inline-flex
+                  items-center gap-1.5
+                  rounded-full border border-white/40
+                  bg-white/10 px-4 py-1.5
+                  text-[11px] font-semibold text-white
+                  hover:bg-white/20 hover:border-white
+                  transition-colors
+                "
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-emerald-300"
+                  aria-hidden
+                />
+                <span>Master console</span>
+              </NavLink>
+            )}
           </div>
 
-          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+          {/* Legal links */}
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <NavLink
               to="/privacy"
               className="underline underline-offset-2 decoration-white/40 hover:decoration-white"
@@ -105,9 +172,9 @@ export default function Layout() {
             </NavLink>
           </div>
 
-          <p className="mt-2 text-[10px] text-white/70 max-w-3xl mx-auto">
-            We collect basic personal information solely for program eligibility, reporting, and
-            service delivery. See our{" "}
+          {/* Disclaimer line */}
+          <p className="mt-2 text-[10px] text-white/70 max-w-3xl mx-auto text-center">
+            See our{" "}
             <NavLink to="/privacy" className="underline">
               Privacy Policy
             </NavLink>{" "}
