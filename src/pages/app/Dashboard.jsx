@@ -88,7 +88,7 @@ const primaryBtnCls =
 
 // Smaller primary variant for compact CTAs (keeps the same gradient & focus ring)
 const primarySmallCls =
-  "inline-flex items-center justify-center h-9 px-4 rounded-lg text-[13px] font-semibold text-white shadow shrink-0 " +
+  "inline-flex items-center justify-center h-9 leading-none px-4 rounded-lg text-[16px] md:text-[17px] font-semibold text-white shadow shrink-0 " +
   "bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 " +
   "active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 transition";
 
@@ -575,11 +575,17 @@ export default function Dashboard() {
             style={{ minHeight: 0 }}
           >
 
-            <div
-              className={`px-4 py-2.5 rounded-t-3xl text-white text-[15px] font-bold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}
-            >
-              Client List
-            </div>
+           <div
+  className="relative px-4 py-2.5 rounded-t-2xl flex items-center justify-between text-white text-[15px] font-semibold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]"
+>
+  <span className="relative z-10">Client List</span>
+  <div
+    aria-hidden
+    className="pointer-events-none absolute inset-0 rounded-t-2xl bg-[radial-gradient(circle_at_0_0,rgba(255,255,255,0.24),transparent_55%),radial-gradient(circle_at_100%_0,rgba(255,255,255,0.22),transparent_55%)] opacity-60 mix-blend-screen"
+  />
+</div>
+
+
             <div
               className="p-2.5 sm:p-3 flex-1 flex flex-col h-full bg-white/95 ring-1 ring-brand-50"
               style={{ minHeight: 0 }}
@@ -688,11 +694,11 @@ export default function Dashboard() {
                                                       logVisit(c);
                                                       setSelected(c);
                                                     }}
-                                                    className={[
-                                                      primarySmallCls,
-                                                      // Slightly larger on md+ so the button reads and fits better on desktop
-                                                      "md:h-10 md:px-5 md:text-[16px] md:rounded-lg",
-                                                    ].join(" ")}
+                                                      className={[
+    primarySmallCls,
+    "md:h-10 md:px-5 md:rounded-lg",
+  ].join(" ")}
+
                                                     aria-label="Log visit"
                                                     title="Log visit"
                                                   >
@@ -718,40 +724,52 @@ export default function Dashboard() {
               `hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}
             style={{ height: "100%" }}
           >
-            <div className={`px-4 py-2.5 rounded-t-2xl flex items-center justify-between text-white bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}>
-              <div className="text-sm font-semibold">Client Details</div>
-              {selected && (
-                <div className="hidden sm:flex items-center gap-2 md:gap-2 flex-nowrap">
-                  {(canLogVisits ?? hasCapability?.("logVisits")) && (
-                    <button
-                      onClick={() => logVisit(selected)}
-                      className={
-                        "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] sm:min-w-[92px] rounded-lg " +
-                        "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
-                        "hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 active:translate-y-[1px]"
-                      }
-                      aria-label="Log visit"
-                      title="Log visit"
-                    >
-                      Log Visit
-                    </button>
-                  )}
+           <div
+  className="relative px-4 py-2.5 rounded-t-2xl flex items-center justify-between text-white text-[15px] font-semibold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]"
+>
+  {/* content layer */}
+  <div className="relative z-10 flex items-center justify-between w-full">
+    <div>Client Details</div>
+    {selected && (
+      <div className="hidden sm:flex items-center gap-2 md:gap-2 flex-nowrap">
+        {(canLogVisits ?? hasCapability?.("logVisits")) && (
+          <button
+            onClick={() => logVisit(selected)}
+            className={
+              "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] sm:min-w-[92px] rounded-lg " +
+              "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
+              "hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200 active:translate-y-[1px]"
+            }
+            aria-label="Log visit"
+            title="Log visit"
+          >
+            Log Visit
+          </button>
+        )}
 
-                  {allowEditClient && (
-                    <button
-                      onClick={() => setEditor({ open: true, client: selected })}
-                      className={
-                        "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] rounded-lg " +
-                        "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
-                        "hover:bg-brand-50 hover:border-brand-400 active:translate-y-[1px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                      }
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+        {allowEditClient && (
+          <button
+            onClick={() => setEditor({ open: true, client: selected })}
+            className={
+              "inline-flex items-center justify-center h-9 leading-none px-4 min-w-[80px] rounded-lg " +
+              "text-[13px] sm:text-[14px] font-medium bg-white text-brand-900 border border-brand-300 shadow-sm " +
+              "hover:bg-brand-50 hover:border-brand-400 active:translate-y-[1px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+            }
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    )}
+  </div>
+
+  {/* radial highlight layer to match Client List */}
+  <div
+    aria-hidden
+    className="pointer-events-none absolute inset-0 rounded-t-2xl bg-[radial-gradient(circle_at_0_0,rgba(255,255,255,0.24),transparent_55%),radial-gradient(circle_at_100%_0,rgba(255,255,255,0.22),transparent_55%)] opacity-60 mix-blend-screen"
+  />
+</div>
+
 
             {selected ? (
               <div className="p-4 sm:p-5 space-y-4">
@@ -895,9 +913,16 @@ export default function Dashboard() {
 
         {/* recent activity table */}
           <div className={`mt-4 ${cardCls} p-0 group relative hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01]`}>
-          <div className={`px-4 py-2.5 rounded-t-2xl text-white text-[13px] font-semibold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]`}>
-            Recent Activity (latest 10)
-          </div>
+          <div
+  className="relative px-4 py-2.5 rounded-t-2xl text-white text-[15px] font-semibold bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]"
+>
+  <span className="relative z-10">Recent Activity (latest 10)</span>
+  <div
+    aria-hidden
+    className="pointer-events-none absolute inset-0 rounded-t-2xl bg-[radial-gradient(circle_at_0_0,rgba(255,255,255,0.24),transparent_55%),radial-gradient(circle_at_100%_0,rgba(255,255,255,0.22),transparent_55%)] opacity-60 mix-blend-screen"
+  />
+</div>
+
           <div className="p-3">
             <div className={`${subCardCls} overflow-auto`}>
               <table className="min-w-full text-sm">
@@ -962,50 +987,113 @@ export default function Dashboard() {
           </div>
           <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </div>
-{/* mobile quick actions bar */}
-{selected && (
-  <div className="md:hidden fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+12px)] z-40">
-    <div className="rounded-3xl bg-white/90 backdrop-blur-xl shadow-xl ring-1 ring-brand-200 border border-brand-300 px-4 py-2.5 flex items-center justify-between gap-3">
-      {/* Name + Missing Info */}
-      <div className="flex items-center min-w-0 gap-2">
-        <div className="truncate font-semibold text-brand-900 text-[15px]">
-          {tcase(selected.firstName)} {tcase(selected.lastName)}
+
+          {/* mobile quick actions bar */}
+      {selected && (
+        <div
+          className="
+            md:hidden
+            sticky
+            bottom-[calc(env(safe-area-inset-bottom,0px)+10px)]
+            z-30
+            -mx-4 px-2          /* bleed closer to screen edge */
+            pointer-events-none
+          "
+        >
+          <div
+            className="
+              pointer-events-auto
+              w-full
+              max-w-[46rem]      /* a bit wider on larger small screens */
+              mx-auto
+              rounded-[999px]
+              bg-white/95
+              backdrop-blur-xl
+              shadow-xl
+              ring-1 ring-brand-200
+              border border-brand-300
+              px-5 py-3
+              flex items-center gap-3
+            "
+          >
+            {/* Name + Missing Info */}
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <div
+                className="
+                  font-semibold text-brand-900
+                  text-[15px]
+                  leading-snug
+                  whitespace-normal
+                  break-words
+                "
+              >
+                {tcase(selected.firstName)} {tcase(selected.lastName)}
+              </div>
+
+              {hasMissingInfo(selected) && (
+                <span
+                  className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500 text-white shadow-[0_8px_18px_rgba(217,119,6,0.45)] ring-2 ring-amber-100/80 border border-amber-500 flex-shrink-0"
+                  title="Client record has missing information"
+                >
+                  <span className="text-[12px] leading-none font-extrabold">!</span>
+                  <span className="sr-only">Client record has missing information</span>
+                </span>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              {(canLogVisits ?? hasCapability?.("logVisits")) && (
+                <button
+                  onClick={() => logVisit(selected)}
+                  className="
+                    h-10
+                    px-4
+                    rounded-full
+                    text-[16px] leading-none font-semibold
+                    text-white
+                    bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500
+                    shadow-md
+                    hover:brightness-105
+                    active:scale-[0.98]
+                    transition
+                    whitespace-nowrap
+                  "
+                >
+                  Log Visit
+                </button>
+              )}
+
+              {allowEditClient && (
+                <button
+                  onClick={() => setEditor({ open: true, client: selected })}
+                  className="
+                    h-10
+                    px-4
+                    rounded-full
+                    border border-brand-300
+                    text-brand-900
+                    bg-white
+                    shadow-sm
+                    font-semibold text-[16px] leading-none
+                    hover:bg-brand-50
+                    active:scale-[0.98]
+                    transition
+                    whitespace-nowrap
+                  "
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+      )}
 
-        {hasMissingInfo(selected) && (
-          <span
-            className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500 text-white shadow-[0_8px_18px_rgba(217,119,6,0.45)] ring-2 ring-amber-100/80 border border-amber-500 flex-shrink-0"
-            title="Client record has missing information"
-          >
-            <span className="text-[12px] leading-none font-extrabold">!</span>
-            <span className="sr-only">Client record has missing information</span>
-          </span>
-        )}
-      </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {(canLogVisits ?? hasCapability?.("logVisits")) && (
-          <button
-            onClick={() => logVisit(selected)}
-            className="h-9 px-4 rounded-xl text-[13px] font-semibold text-white bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 shadow-md hover:brightness-105 active:scale-[0.98] transition whitespace-nowrap"
-          >
-            Log Visit
-          </button>
-        )}
 
-        {allowEditClient && (
-          <button
-            onClick={() => setEditor({ open: true, client: selected })}
-            className="h-9 px-4 rounded-xl border border-brand-300 text-brand-900 bg-white shadow-sm font-semibold text-[13px] hover:bg-brand-50 active:scale-[0.98] transition whitespace-nowrap"
-          >
-            Edit
-          </button>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+
+
  </div>
 
       {/* modals */}

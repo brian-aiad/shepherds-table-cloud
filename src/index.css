@@ -210,3 +210,18 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Remove focus outlines specifically for Recharts chart wrappers/svg surfaces
+   so interactive charts don't show the browser default blue/black focus box.
+   This is narrow and targets only Recharts-generated elements; accessibility
+   focus rings remain enabled for form controls and other interactive UI. */
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus,
+.recharts-surface:focus,
+svg.recharts-surface:focus,
+.recharts-layer:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+

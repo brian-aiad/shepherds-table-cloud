@@ -23,6 +23,12 @@ import {
   updateDoc,
 } from "firebase/firestore";
 
+// EFAP daily PDF builder (static import so the button works reliably)
+import {
+  buildEfapDailyPdf,
+  efapSuggestedFileName,
+} from "../../utils/buildEfapDailyPdf";
+
 
 
 
@@ -629,6 +635,7 @@ function ReportsMonthNav({ monthKey, setMonthKey, setSelectedDate }) {
     p-4
   "
   role="dialog"
+  aria-label="Select month and year"
 >
 
               {/* Year header */}
@@ -819,6 +826,12 @@ export default function Reports() {
 
   const [rowMenuOpen, setRowMenuOpen] = useState(null);
   const [editVisit, setEditVisit] = useState(null);
+  const [visitMenuCoords, setVisitMenuCoords] = useState(null);
+  const [visitMenuAnchor, setVisitMenuAnchor] = useState(null);
+  const visitMenuRef = useRef(null);
+  const [dayMenuCoords, setDayMenuCoords] = useState(null);
+  const [dayMenuAnchor, setDayMenuAnchor] = useState(null);
+  const dayMenuRef = useRef(null);
 
 
 
@@ -866,6 +879,28 @@ export default function Reports() {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
       if (kebabRef.current && !kebabRef.current.contains(e.target))
         setKebabOpen(false);
+      // Close day/visit actions popover when clicking outside the respective action container
+      if (rowMenuOpen) {
+        let node = e.target;
+        let insideAction = false;
+        const isDay = String(rowMenuOpen).startsWith("day-");
+        while (node) {
+          try {
+            if (isDay && node.getAttribute && node.getAttribute("data-day-action") != null) {
+              insideAction = true;
+              break;
+            }
+            if (!isDay && node.getAttribute && node.getAttribute("data-visit-action") != null) {
+              insideAction = true;
+              break;
+            }
+          } catch (err) {
+            // ignore
+          }
+          node = node.parentNode;
+        }
+        if (!insideAction) setRowMenuOpen(null);
+      }
     };
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
@@ -1543,94 +1578,90 @@ const removeDay = useCallback(
   );
 
   const buildEfapBytesForDay = useCallback(
-  async (dayKey) => {
-    let srcRows;
+    async (dayKey) => {
+      let srcRows;
 
-    // If we're exporting for the currently selected day,
-    // use the exact same rows as the table.
-    if (dayKey === selectedDate) {
-      srcRows = filteredSortedRows.map((r) => ({
-        name: r.labelName,
-        county: r.county || "",
-        zip: r.zip || "",
-        householdSize: Number(r.visitHousehold || 0),
-        firstTime:
-          r.usdaFirstTimeThisMonth === true
-            ? true
-            : r.usdaFirstTimeThisMonth === false
-            ? false
-            : "",
-      }));
-    } else {
-      // Fallback: build from raw visits for that day (used by sidebar quick actions)
-      const src = visitsByDay.get(dayKey) || [];
-
-      srcRows = src.map((v) => {
-        const p = clientsById.get(v.clientId) || {};
-
-        const first =
-          p.firstName ??
-          v.clientFirstName ??
-          (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
-          "";
-        const last =
-          p.lastName ??
-          v.clientLastName ??
-          (typeof p.name === "string"
-            ? p.name.split(" ").slice(1).join(" ")
-            : "") ??
-          "";
-        const name =
-          `${first} ${last}`.trim() ||
-          (typeof v.clientName === "string" ? v.clientName : "");
-
-        const county = v.clientCounty || p.county || "";
-        const zip = p.zip || v.clientZip || "";
-
-        return {
-          name,
-          county,
-          zip,
-          householdSize: Number(v.householdSize || 0),
+      // If we're exporting for the currently selected day,
+      // use the exact same rows as the table (so filters/search are respected).
+      if (dayKey === selectedDate) {
+        srcRows = filteredSortedRows.map((r) => ({
+          name: r.labelName,
+          county: r.county || "",
+          zip: r.zip || "",
+          householdSize: Number(r.visitHousehold || 0),
           firstTime:
-            v.usdaFirstTimeThisMonth === true
+            r.usdaFirstTimeThisMonth === true
               ? true
-              : v.usdaFirstTimeThisMonth === false
+              : r.usdaFirstTimeThisMonth === false
               ? false
               : "",
-        };
+        }));
+      } else {
+        // Fallback: build from raw visits for that day (used by sidebar quick actions)
+        const src = visitsByDay.get(dayKey) || [];
+
+        srcRows = src.map((v) => {
+          const p = clientsById.get(v.clientId) || {};
+
+          const first =
+            p.firstName ??
+            v.clientFirstName ??
+            (typeof p.name === "string" ? p.name.split(" ")[0] : "") ??
+            "";
+          const last =
+            p.lastName ??
+            v.clientLastName ??
+            (typeof p.name === "string"
+              ? p.name.split(" ").slice(1).join(" ")
+              : "") ??
+            "";
+          const name =
+            `${first} ${last}`.trim() ||
+            (typeof v.clientName === "string" ? v.clientName : "");
+
+          const county = v.clientCounty || p.county || "";
+          const zip = p.zip || v.clientZip || "";
+
+          return {
+            name,
+            county,
+            zip,
+            householdSize: Number(v.householdSize || 0),
+            firstTime:
+              v.usdaFirstTimeThisMonth === true
+                ? true
+                : v.usdaFirstTimeThisMonth === false
+                ? false
+                : "",
+          };
+        });
+      }
+
+      // 🔴 IMPORTANT: now use the statically imported builder
+      return await buildEfapDailyPdf(srcRows, {
+        dateStamp: dayKey,
+        orgSettings,
+        orgName: org?.name,
+        org,
       });
-    }
-
-    const mod = await import("../../utils/buildEfapDailyPdf");
-    return await mod.buildEfapDailyPdf(srcRows, {
-      dateStamp: dayKey,
-      orgSettings,
-      orgName: org?.name,
-      org,
-    });
-  },
-  [
-    selectedDate,
-    filteredSortedRows,
-    visitsByDay,
-    clientsById,
-    org,
-    orgSettings,
-  ]
-);
-
+    },
+    [selectedDate, filteredSortedRows, visitsByDay, clientsById, org, orgSettings]
+  );
 
 
 
   const exportEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
+      if (!dayKey) return;
+
       try {
-          const pdfBytes = await buildEfapBytesForDay(dayKey);
-          const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
-            .replace(/\s+/g, "_");
-          const mod = await import("../../utils/buildEfapDailyPdf");
-          const fileName = mod.efapSuggestedFileName(dayKey, site);
+        const pdfBytes = await buildEfapBytesForDay(dayKey);
+
+        const site = (orgSettings?.brandText || org?.name || "ShepherdsTable")
+          .replace(/\s+/g, "_");
+
+        // Use statically imported helper for file name
+        const fileName = efapSuggestedFileName(dayKey, site);
 
         downloadBytes(pdfBytes, fileName, "application/pdf");
         toast.show("EFAP PDF downloaded.", "info");
@@ -1641,6 +1672,7 @@ const removeDay = useCallback(
     },
     [buildEfapBytesForDay, toast, orgSettings?.brandText, org?.name]
   );
+
 
   const shareEfapDailyPdfForDay = useCallback(
     async (dayKey) => {
@@ -1761,7 +1793,7 @@ const removeDay = useCallback(
       {/* ===== THEMED TOOLBAR ===== */}
       <div className="block rounded-3xl overflow-visible shadow-sm ring-1 ring-black/5 relative mb-4">
         {/* Brand gradient header (pill sits on the seam) */}
-        <div className="rounded-t-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
+        <div className="rounded-t-3xl bg-gradient-to-br from-brand-800 via-brand-700 to-brand-500 p-3 sm:p-4 relative pb-6 shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)]">
           <div className="flex flex-wrap items-center justify-center md:justify-between gap-2">
             <h1 className="text-white text-lg sm:text-2xl font-semibold tracking-tight text-center md:text-left">
               Reports
@@ -2066,58 +2098,53 @@ const removeDay = useCallback(
     </ResponsiveContainer>
   </div>
 </Card>
+</div>
 
-      </div>
 
       {/* ===== Layout: days list + table ===== */}
       <div className="mt-6 sm:mt-8 grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 print:block">
         {/* Days list */}
-        <aside className={
-          "group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 print:hidden lg:col-span-1 " +
-          "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
-        }>
-          <div className="mb-3 sm:mb-4">
-            <div className="-mx-3 -mt-3 mb-3 rounded-t-2xl overflow-hidden">
-              <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-4 py-3 flex items-center justify-between gap-3">
-                <div className="text-white font-semibold">Days in {monthLabel(selectedMonthKey)}</div>
-                <input
-                  className="rounded-full bg-white px-3 py-2 text-sm w-[160px] sm:w-[170px] border border-white/30 shadow-sm placeholder-gray-400"
-                  placeholder="Filter (YYYY-MM-DD)"
-                  value={dayFilter}
-                  onChange={(e) => setDayFilter(e.target.value)}
-                  aria-label="Filter days"
-                />
+        <aside
+          className={
+            "group relative rounded-3xl border border-brand-100 ring-1 ring-brand-100 bg-white shadow-[0_2px_10px_rgba(0,0,0,0.04)] p-3 sm:p-4 print:hidden lg:col-span-1 " +
+            "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 " +
+            "transition will-change-transform hover:scale-[1.01]"
+          }
+        >
+          {/* Header strip */}
+          <div className="-mx-3 -mt-3 mb-3 sm:-mx-4 sm:-mt-4 sm:mb-4 rounded-t-3xl overflow-hidden">
+            <div className="bg-gradient-to-br from-brand-800 via-brand-700 to-brand-500 px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col">
+                <p className="text-[11px] uppercase tracking-[0.16em] font-semibold text-brand-50/90">
+                  Service days
+                </p>
+                <h2 className="mt-0.5 text-sm sm:text-lg font-semibold leading-snug text-white">
+                  {monthLabel(selectedMonthKey)}
+                </h2>
               </div>
-            </div>
 
-            {/* Add Day row */}
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-              <input
-                type="date"
-                value={addDayInput}
-                onChange={(e) => setAddDayInput(e.target.value)}
-                aria-label="Pick a day to add"
-                className="rounded-lg border px-2 py-2 text-sm"
-                min={monthRangeFor(selectedMonthKey).startKey}
-                max={monthRangeFor(selectedMonthKey).endKey}
-                placeholder="YYYY-MM-DD"
-              />
-              <button
-                onClick={addManualDay}
-                className="inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-semibold shadow bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 active:from-brand-900 active:via-brand-800 active:to-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300 transition"
-                title="Add a blank day to this month"
-                aria-label="Add day"
-              >
-                Add Day
-              </button>
-              
+              {/* Day filter input */}
+              <div className="w-full sm:w-auto">
+                <div className="relative">
+                  <input
+                    className="w-full sm:w-[190px] rounded-full bg-white/95 pl-9 pr-3 py-2 text-xs sm:text-sm border border-white/40 shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                    placeholder="Filter (YYYY-MM-DD)"
+                    value={dayFilter}
+                    onChange={(e) => setDayFilter(e.target.value)}
+                    aria-label="Filter days"
+                  />
+                  <span className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <SearchIcon className="h-3.5 w-3.5 text-gray-400" />
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-
+          {/* Scrollable days list + add-day card */}
           <div
             ref={dayListRef}
-            className="max-h-[68svh] overflow-y-auto overscroll-contain pr-1"
+            className="mt-0.5 overscroll-contain pr-1 max-h-[640px] overflow-y-auto desktop-scrollbar"
             style={{ WebkitOverflowScrolling: "touch" }}
             aria-label="Days list"
           >
@@ -2143,7 +2170,13 @@ const removeDay = useCallback(
                     tabIndex={0}
                     aria-pressed={isSelected}
                     onClick={(e) => {
-                      if (e.target.closest("[data-day-action]")) return;
+                      const target = e.target;
+                      if (
+                        target instanceof HTMLElement &&
+                        target.closest("[data-day-action]")
+                      ) {
+                        return;
+                      }
                       setSelectedDate(k);
                     }}
                     onKeyDown={(e) => {
@@ -2152,119 +2185,166 @@ const removeDay = useCallback(
                         setSelectedDate(k);
                       }
                     }}
-                    className={`group cursor-pointer flex items-center gap-2 p-2 rounded-xl border transition ${
-                      isSelected
-                        ? "bg-brand-50 border-brand-200 shadow-sm"
-                        : "bg-white border-gray-200 hover:bg-gray-50 shadow-sm"
-                    }`}
+                    className={
+                      "group cursor-pointer flex items-center gap-2 rounded-2xl border bg-white/95 backdrop-blur-sm transition " +
+                      "min-h-[56px] px-2.5 py-2 sm:px-3 shadow-sm " +
+                      (isSelected
+                        ? "border-brand-300 ring-1 ring-brand-200 bg-brand-50/90"
+                        : "border-gray-200 hover:bg-gray-50 hover:border-brand-200")
+                    }
                   >
-                    <div className="flex-1 px-2 py-1">
-                                          
-                    <div className="font-medium flex items-center gap-2">
-                      {k}
-                      {isToday && (
-                        <span className="inline-flex ml-2 items-center text-[10px] leading-none tracking-wide font-semibold rounded px-1.5 py-0.5 bg-brand-700 text-white">
-                          TODAY
+                    {/* Date + badges */}
+                    <div className="flex-1 px-1">
+                      <div className="flex items-center gap-2 text-sm text-gray-900">
+                        <span className="font-semibold tabular-nums">{k}</span>
+                        {isToday && (
+                          <span className="inline-flex items-center text-[10px] leading-none tracking-wide font-semibold rounded-full px-1.5 py-0.5 bg-brand-700 text-white shadow-sm">
+                            TODAY
+                          </span>
+                        )}
+                        {!visitsByDay.has(k) && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full px-1.5 py-0.5 bg-gray-100 text-gray-700 ring-1 ring-gray-200">
+                            Added
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11px] text-gray-600">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-50 border border-gray-200">
+                          {items.length} visit{items.length === 1 ? "" : "s"}
                         </span>
-                      )}
-                      {!visitsByDay.has(k) ? (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 bg-gray-100 text-gray-700 ring-1 ring-gray-200">
-                          Added
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-50 border border-gray-200">
+                          HH&nbsp;
+                          <span className="tabular-nums">{dayHH}</span>
                         </span>
-                      ) : null}
-                    </div>
-                      <div className="text-xs text-gray-500">
-                        {items.length} visit{items.length === 1 ? "" : "s"} • HH{" "}
-                        {dayHH} • USDA {dayUsda}
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-50 border border-gray-200">
+                          USDA&nbsp;
+                          <span className="tabular-nums">{dayUsda}</span>
+                        </span>
                       </div>
                     </div>
 
                     {/* Day actions menu */}
                     <div className="relative ml-1 shrink-0" data-day-action>
                       <button
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 transition"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-900 hover:bg-brand-50 transition shadow-sm"
+                        data-day-menu-trigger
                         onClick={(e) => {
                           e.stopPropagation();
-                          setRowMenuOpen((prev) => (prev === `day-${k}` ? null : `day-${k}`));
+                          const isOpen = rowMenuOpen === `day-${k}`;
+                          if (isOpen) {
+                            setRowMenuOpen(null);
+                            setDayMenuCoords(null);
+                            setDayMenuAnchor(null);
+                            return;
+                          }
+                          const btn = e.currentTarget;
+                          const rect = btn.getBoundingClientRect();
+                          const popW = 176; // approx width
+                          const popH = 120;
+                          let left = rect.right - popW;
+                          left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+                          // Prefer placing the menu below the button on mobile so it doesn't overlap the Service Days header above.
+                          let top = rect.bottom + 8;
+                          // If there's not enough space below, place above instead
+                          if (top + popH > window.innerHeight - 8) {
+                            top = rect.top - popH - 8;
+                          }
+                          setDayMenuCoords({ left, top });
+                          setDayMenuAnchor(btn);
+                          setRowMenuOpen(`day-${k}`);
                         }}
                         aria-label="Day actions"
                         title="More actions"
                       >
                         <KebabIcon className="h-4 w-4" />
                       </button>
-
-                      {rowMenuOpen === `day-${k}` && (
-                        <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl border border-gray-200 shadow-lg z-20 p-1">
-                          
-                          {/* Share EFAP PDF */}
-                          <button
-                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm"
-                            onClick={() => {
-                              setRowMenuOpen(null);
-                              shareEfapDailyPdfForDay(k);
-                            }}
-                          >
-                            <ShareIcon className="h-4 w-4" />
-                            <span>Share EFAP</span>
-                          </button>
-
-                          {/* Export CSV */}
-                          <button
-                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm"
-                            onClick={() => {
-                              setRowMenuOpen(null);
-                              exportOneDayCsv(k);
-                            }}
-                          >
-                            <DownloadIcon className="h-4 w-4" />
-                            <span>Export CSV</span>
-                          </button>
-
-                          {/* Delete day (if allowed) */}
-                          {canDeleteVisits && (
-                            <button
-                              className="w-full text-left px-3 py-2 rounded-lg text-red-700 hover:bg-red-50 flex items-center gap-2 text-sm"
-                              onClick={(e) => {
-                                setRowMenuOpen(null);
-                                removeDay(k);
-                              }}
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                              <span>Delete day</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
-
-
                   </li>
                 );
               })}
 
               {!sortedDayKeys.length && (
-                <li className="py-6 px-2 text-sm text-gray-600 text-center">
+                <li className="py-4 px-2 text-sm text-gray-600 text-center bg-white/80 rounded-2xl border border-dashed border-gray-300">
                   {loading ? "Loading…" : "No days found for this month."}
                 </li>
               )}
+
+              {/* Add Day card at end */}
+              <li
+                key="add-day-card"
+                className="group flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-brand-300 bg-white/90 px-3 py-2.5 shadow-sm hover:border-brand-400 hover:bg-brand-50/70 hover:shadow-[0_6px_18px_rgba(0,0,0,0.06)] transition"
+              >
+                {/* Left: Icon + Label */}
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-100 text-brand-700 text-lg font-semibold shadow-sm">
+                    +
+                  </div>
+                  <p className="text-sm font-semibold text-brand-900">Add Day</p>
+                </div>
+
+                {/* Right: Date input + button */}
+                <div className="flex items-center gap-2 shrink-0">
+
+                  <input
+                    type="date"
+                    value={addDayInput}
+                    onChange={(e) => setAddDayInput(e.target.value)}
+                    aria-label="Pick a day to add"
+                    className="
+                      w-[10rem]
+                      rounded-full
+                      border border-gray-300
+                      bg-white
+                      px-4
+                      py-2.5
+                      text-sm
+                      shadow-sm
+                      focus:outline-none
+                      focus:ring-2
+                      focus:ring-brand-300
+                    "
+                    min={monthRangeFor(selectedMonthKey).startKey}
+                    max={monthRangeFor(selectedMonthKey).endKey}
+                  />
+
+                  <button
+                    onClick={addManualDay}
+                    disabled={!addDayInput}
+                    className="inline-flex items-center justify-center rounded-full px-5 py-2 text-[13px] font-semibold shadow-sm bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white hover:from-brand-800 hover:via-brand-700 hover:to-brand-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
+              </li>
+
+
             </ul>
           </div>
-          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
+
+          {/* subtle bottom accent */}
+          <div
+            aria-hidden
+            className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.08] transition-opacity pointer-events-none"
+          />
         </aside>
 
-        {/* Table / details */}
+    
+
+
+{/* Table / details */}
 <section
   className={
-    "lg:col-span-2 group relative rounded-3xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm overflow-hidden " +
-    "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 transition"
+    "lg:col-span-2 group relative rounded-3xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm " +
+    "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 will-change-transform hover:scale-[1.01] transition"
   }
 >
-  {/* Header: date + actions (branded gradient header, flush rounded top) */}
-  <div className="bg-gradient-to-r from-brand-800 via-brand-700 to-brand-500 px-3 sm:px-4 py-2.5 sm:py-3 text-white">
+  {/* Header: date + actions */}
+  <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-4 sm:px-5 py-2.5 sm:py-2.5 text-white rounded-t-3xl">
     <div className="flex items-center justify-between gap-3">
       {/* Title / date */}
       <div className="min-w-0">
-        <p className="text-[11px] uppercase tracking-[0.16em] font-semibold text-white">
+        <p className="text-[11px] uppercase tracking-[0.16em] font-semibold text-brand-50/90">
           Daily visits
         </p>
         <h2 className="mt-0.5 text-sm sm:text-lg font-semibold leading-snug truncate">
@@ -2272,12 +2352,11 @@ const removeDay = useCallback(
         </h2>
       </div>
 
-      {/* Desktop actions (white pills) */}
+      {/* Desktop actions */}
       <div className="hidden sm:flex items-center gap-2" ref={menuRef}>
-        {/* EFAP = solid white pill */}
         <button
           type="button"
-          className="inline-flex h-9 items-center gap-2 rounded-full bg-white text-brand-900 px-4 text-[13px] font-semibold border border-gray-200 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700 focus-visible:ring-brand-200"
+          className="inline-flex h-8 items-center gap-2 rounded-full bg-white text-brand-900 px-4 text-[13px] font-semibold border border-brand-100 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700 focus-visible:ring-brand-200"
           onClick={() => exportEfapDailyPdfForDay(selectedDate)}
           disabled={!selectedDate}
           title="Download EFAP PDF for this day"
@@ -2286,7 +2365,6 @@ const removeDay = useCallback(
           EFAP PDF
         </button>
 
-        {/* Add Visit = white pill */}
         {selectedDate && canLogVisits && (
           <AddVisitButton
             org={org}
@@ -2294,18 +2372,18 @@ const removeDay = useCallback(
             selectedDate={selectedDate}
             onAdded={(v) => setVisits((prev) => [v, ...prev])}
             className={
-              "inline-flex h-9 items-center gap-2 rounded-full bg-white text-brand-900 px-4 text-[13px] font-semibold min-w-[110px] " +
-              "border border-gray-200 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] hover:bg-brand-50/60 " +
+              "inline-flex h-8 items-center gap-2 rounded-full bg-white text-brand-900 px-4 text-[13px] font-semibold min-w-[110px] " +
+              "border border-brand-100 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 hover:bg-brand-50/80 " +
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700 focus-visible:ring-brand-200"
             }
           />
         )}
 
-        {/* Kebab = white circular icon */}
+        {/* Kebab */}
         <div className="relative">
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-brand-900 border border-gray-200 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] hover:bg-brand-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-brand-900 border border-brand-100 shadow-sm transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 hover:bg-brand-50/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="More actions"
@@ -2317,7 +2395,7 @@ const removeDay = useCallback(
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+              className="absolute right-0 z-40 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-xl p-1"
             >
               <button
                 type="button"
@@ -2355,15 +2433,17 @@ const removeDay = useCallback(
     </div>
   </div>
 
-  {/* Mobile actions: clean stacked layout under the bar */}
-  <div className="sm:hidden bg-white/95 px-3 pt-3 pb-2 border-t border-brand-100/70" ref={kebabRef}>
+  {/* Mobile actions */}
+  <div
+    className="sm:hidden bg-white px-3 pt-3 pb-2 border-t border-brand-100"
+    ref={kebabRef}
+  >
     <div className="grid grid-cols-[1.4fr,1.4fr,0.7fr] gap-2 items-stretch">
-      {/* EFAP button */}
       <button
         type="button"
         className={
           "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white text-brand-900 text-[13px] font-semibold shadow-sm h-10 w-full " +
-          "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] disabled:opacity-60 disabled:cursor-not-allowed"
+          "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 disabled:opacity-60 disabled:cursor-not-allowed"
         }
         onClick={() => exportEfapDailyPdfForDay(selectedDate)}
         disabled={!selectedDate}
@@ -2373,7 +2453,6 @@ const removeDay = useCallback(
         EFAP PDF
       </button>
 
-      {/* Add Visit button */}
       {canLogVisits ? (
         <AddVisitButton
           org={org}
@@ -2383,20 +2462,19 @@ const removeDay = useCallback(
           className={
             "inline-flex items-center justify-center gap-2 rounded-full min-w-[110px] h-10 " +
             "bg-white text-brand-900 border border-gray-200 px-4 text-[13px] font-semibold shadow-sm " +
-            "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] hover:bg-white"
+            "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 hover:bg-brand-50/80"
           }
         />
       ) : (
         <div />
       )}
 
-      {/* Kebab button */}
       <div className="relative">
         <button
           type="button"
           className={
             "inline-flex items-center justify-center rounded-full border border-gray-200 bg-white text-brand-900 shadow-sm h-10 w-full " +
-            "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 active:scale-[0.995] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+            "transition transform hover:scale-[1.03] hover:shadow-lg hover:border-brand-200 hover:bg-brand-50/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
           }
           aria-haspopup="menu"
           aria-expanded={kebabOpen}
@@ -2409,7 +2487,7 @@ const removeDay = useCallback(
         {kebabOpen && (
           <div
             role="menu"
-            className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-lg p-1"
+            className="absolute right-0 z-40 mt-2 w-44 rounded-xl border border-gray-200 bg-white shadow-xl p-1"
           >
             <button
               type="button"
@@ -2445,419 +2523,422 @@ const removeDay = useCallback(
     </div>
   </div>
 
-
-
-                 {/* Body: filters + summary + table/list with inner padding */}
-          <div className="px-3 sm:px-4 md:px-5 pt-4 pb-4 md:pb-5 space-y-3 md:space-y-4">
-            {/* Subheading separator above filters (visual polish) */}
-            <div className="border-t border-gray-200 pt-4 md:pt-5">
-              {/* Filters, compressed: search + two selects + single sort toggle */}
-              <div className="flex flex-wrap items-center gap-2 md:gap-3">
-                <div className="flex-1 min-w-[190px]">
-                  <div className="relative">
-                    <input
-                      id="table-search"
-                      className="w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 py-2.5 md:py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-                      placeholder="Search…"
-                      value={term}
-                      onChange={(e) => setTerm(e.target.value)}
-                      aria-label="Search"
-                    />
-                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                      <SearchIcon className="h-4 w-4 text-gray-500" />
-                    </div>
-                  </div>
-                </div>
-
-                <select
-                  className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-                  value={usdaFilter}
-                  onChange={(e) => setUsdaFilter(e.target.value)}
-                  aria-label="USDA filter"
-                >
-                  <option value="all">USDA</option>
-                  <option value="yes">USDA Yes</option>
-                  <option value="no">USDA No</option>
-                </select>
-
-                <select
-                  className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value)}
-                  aria-label="Sort column"
-                >
-                  <option value="time">Sort</option>
-                  <option value="time">Time</option>
-                  <option value="name">Name</option>
-                  <option value="hh">HH</option>
-                </select>
-
-                <button
-                  className={
-                    BTN.secondary +
-                    " h-10 w-10 md:h-9 md:w-9 px-0 py-0 flex items-center justify-center"
-                  }
-                  onClick={() =>
-                    setSortDir((d) => (d === "asc" ? "desc" : "asc"))
-                  }
-                  title="Toggle sort direction"
-                  aria-label="Toggle sort direction"
-                >
-                  {sortDir === "asc" ? (
-                    <ArrowUp className="h-4 w-4" />
-                  ) : (
-                    <ArrowDown className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
+  {/* Body: filters + summary + table/list */}
+  <div className="px-3 sm:px-4 md:px-5 pt-2 pb-4 md:pb-5 space-y-3 md:space-y-4">
+    {/* Filters */}
+    <div className="border-t border-brand-100 pt-2 md:pt-3">
+      <div className="flex flex-wrap items-center gap-2 md:gap-4">
+        <div className="flex-1 min-w-[190px]">
+          <div className="relative">
+            <input
+              id="table-search"
+              className="w-full rounded-full border border-gray-300 bg-white pl-10 pr-4 py-2.5 md:py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+              placeholder="Search…"
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              aria-label="Search"
+            />
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <SearchIcon className="h-4 w-4 text-gray-500" />
             </div>
+          </div>
+        </div>
 
-            {/* Summary stripe */}
-            <div className="mt-1 mb-1 text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1">
-              <span className="inline-flex items-center gap-1">
-                <strong className="tabular-nums">{dayTotals.count}</strong> visit
-                {dayTotals.count === 1 ? "" : "s"}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                HH <strong className="tabular-nums">{dayTotals.hh}</strong>
-              </span>
-              <span className="inline-flex items-center gap-1">
-                USDA first-time{" "}
-                <strong className="tabular-nums">{dayTotals.usdaYes}</strong>
-              </span>
-            </div>
+        <select
+          className="rounded-full border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300 min-w-[120px]"
+          value={usdaFilter}
+          onChange={(e) => setUsdaFilter(e.target.value)}
+          aria-label="USDA filter"
+        >
+          <option value="all">USDA</option>
+          <option value="yes">USDA Yes</option>
+          <option value="no">USDA No</option>
+        </select>
+
+        <select
+          className="rounded-full border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-300 min-w-[120px]"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          aria-label="Sort column"
+        >
+          <option value="time">Sort</option>
+          <option value="time">Time</option>
+          <option value="name">Name</option>
+          <option value="hh">HH</option>
+        </select>
+
+        <button
+          className={BTN.icon}
+          onClick={() =>
+            setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+          }
+          title="Toggle sort direction"
+          aria-label="Toggle sort direction"
+        >
+          {sortDir === "asc" ? (
+            <ArrowUp className="h-4 w-4" />
+          ) : (
+            <ArrowDown className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+    </div>
+
+    {/* Summary stripe */}
+    <div className="mt-1 mb-1 text-sm text-gray-700 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-gradient-to-r from-brand-500/5 via-white to-brand-500/5 px-3 py-2 border border-gray-100">
+      <span className="inline-flex items-center gap-1">
+        <strong className="tabular-nums">{dayTotals.count}</strong> visit
+        {dayTotals.count === 1 ? "" : "s"}
+      </span>
+      <span className="inline-flex items-center gap-1">
+        HH <strong className="tabular-nums">{dayTotals.hh}</strong>
+      </span>
+      <span className="inline-flex items-center gap-1">
+        USDA first-time{" "}
+        <strong className="tabular-nums">{dayTotals.usdaYes}</strong>
+      </span>
+    </div>
+
+
 
             {/* DESKTOP TABLE */}
-            <div
-              className={`hidden md:block rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-sm ${
-                isBusy ? "opacity-60" : ""
-              }`}
+<div
+  className={`hidden md:block rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm ${
+    isBusy ? "opacity-60" : ""
+  }`}
+>
+  <div className="overflow-x-auto">
+    <div
+      className="overflow-y-auto desktop-scrollbar relative"
+      style={{
+        maxHeight: filteredSortedRows.length > 25 ? "780px" : "auto",
+      }}
+    >
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-[24%]" />
+          <col className="w-[26%]" />
+          <col className="w-[7%]" />
+          <col className="w-[6%]" />
+          <col className="w-[7%]" />
+          <col className="w-[18%]" />
+          <col className="w-[12%]" />
+        </colgroup>
+
+        {/* Header row — stronger visual, matches app chrome */}
+        <thead className="sticky top-0 z-20 border-b border-brand-100 bg-gradient-to-r from-brand-50 via-white to-brand-50 shadow-[0_1px_0_rgba(148,163,184,0.4)]">
+          <tr className="text-left text-[13px] uppercase tracking-[0.16em] text-gray-600">
+            <th
+              className="pl-5 pr-4 py-3 cursor-pointer select-none"
+              aria-sort={ariaSortFor("name")}
+              onClick={() => handleHeaderSort("name")}
             >
-              <div className="overflow-x-auto">
-                <div
-                  className="overflow-y-auto desktop-scrollbar"
-                  style={{
-                    maxHeight: filteredSortedRows.length > 25 ? "780px" : "auto",
-                  }}
-                >
-                  <table className="w-full table-fixed text-sm">
-                    {/* column widths tuned for actual content */}
-                    <colgroup>
-                      <col className="w-[24%]" /> {/* Client */}
-                      <col className="w-[26%]" /> {/* County */}
-                      <col className="w-[7%]" /> {/* Zip */}
-                      <col className="w-[6%]" /> {/* HH */}
-                      <col className="w-[7%]" /> {/* USDA */}
-                      <col className="w-[18%]" /> {/* Time */}
-                      <col className="w-[12%]" /> {/* Actions */}
-                    </colgroup>
+              <span className="inline-flex items-center gap-1">
+                <span className="font-semibold">Client</span>
+              </span>
+            </th>
+            <th className="px-4 py-3">
+              <span className="font-semibold">County</span>
+            </th>
+            <th className="px-3.5 py-3 text-center">
+              <span className="font-semibold">Zip</span>
+            </th>
+            <th
+              className="px-3 py-3 text-center cursor-pointer select-none"
+              aria-sort={ariaSortFor("hh")}
+              onClick={() => handleHeaderSort("hh")}
+            >
+              <span className="font-semibold">HH</span>
+            </th>
+            <th className="px-3 py-3 text-center">
+              <span className="font-semibold">USDA</span>
+            </th>
+            <th
+              className="px-4 py-3 text-right cursor-pointer select-none"
+              aria-sort={ariaSortFor("time")}
+              onClick={() => handleHeaderSort("time")}
+            >
+              <span className="font-semibold">Time</span>
+            </th>
+            <th className="px-3 py-3 text-center">
+              <span className="font-semibold">Actions</span>
+            </th>
+          </tr>
+        </thead>
 
-                    <thead className="bg-gray-100">
-                      <tr className="text-left text-[13px]">
-                        <th
-                          className="px-4 py-2.5 cursor-pointer select-none"
-                          aria-sort={ariaSortFor("name")}
-                          onClick={() => handleHeaderSort("name")}
-                        >
-                          Client
-                        </th>
-                        <th className="px-4 py-2.5">County</th>
-                        <th className="px-3.5 py-2.5 text-center">Zip</th>
-                        <th
-                          className="px-3 py-2.5 text-center cursor-pointer select-none"
-                          aria-sort={ariaSortFor("hh")}
-                          onClick={() => handleHeaderSort("hh")}
-                        >
-                          HH
-                        </th>
-                        <th className="px-3 py-2.5 text-center">USDA</th>
-                        <th
-                          className="px-4 py-2.5 text-right cursor-pointer select-none"
-                          aria-sort={ariaSortFor("time")}
-                          onClick={() => handleHeaderSort("time")}
-                        >
-                          Time
-                        </th>
-                        <th className="px-3 py-2.5 text-center">Actions</th>
-                      </tr>
-                    </thead>
+        <tbody className="divide-y divide-gray-200 align-top">
+          {filteredSortedRows.map((r) => (
+            <tr
+              key={r.visitId}
+              className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
+            >
+              {/* Client */}
+              <td className="px-4 py-4 align-middle">
+                <div className="min-w-0">
+                  <div
+                    className="font-medium truncate max-w-[210px] text-gray-900"
+                    title={r.labelName}
+                  >
+                    {r.labelName}
+                  </div>
 
-                    <tbody className="divide-y divide-gray-200 align-top">
-                      {filteredSortedRows.map((r) => (
-                        <tr
-                          key={r.visitId}
-                          className="odd:bg-white even:bg-gray-50 hover:bg-gray-100"
-                        >
-                          {/* Client */}
-                          <td className="px-4 py-3 align-middle">
-                            <div className="min-w-0">
-                              <div
-                                className="font-medium truncate max-w-[210px]"
-                                title={r.labelName}
-                              >
-                                {r.labelName}
-                              </div>
-
-                              {r.addedByReports && (
-                                <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
-                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-                                  <span>Added through Reports</span>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* County */}
-                          <td className="px-4 py-3 align-middle">
-                            <span
-                              className="block truncate max-w-[230px]"
-                              title={r.county}
-                            >
-                              {r.county}
-                            </span>
-                          </td>
-
-                          {/* Zip */}
-                          <td className="px-3.5 py-3 text-center align-middle tabular-nums">
-                            {r.zip}
-                          </td>
-
-                          {/* HH */}
-                          <td className="px-3 py-3 tabular-nums text-center align-middle">
-                            {r.visitHousehold}
-                          </td>
-
-                          {/* USDA pill */}
-                          <td className="px-3 py-3 text-center align-middle">
-                            {r.usdaFirstTimeThisMonth === "" ? (
-                              ""
-                            ) : (
-                              <span
-                                className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[11px] leading-none ring-1 ${
-                                  r.usdaFirstTimeThisMonth
-                                    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                                    : "bg-gray-50 text-gray-700 ring-gray-200"
-                                }`}
-                              >
-                                {r.usdaFirstTimeThisMonth ? "Yes" : "No"}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Time + added date */}
-                          <td className="px-4 py-3 text-right align-middle">
-                            <div className="flex flex-col items-end leading-tight">
-                              <span className="text-[12px] font-medium tabular-nums">
-                                {r.localTime}
-                              </span>
-
-                              {r.addedLocalDate && (
-                                <span className="text-[10px] text-gray-500 mt-0.5">
-                                  {r.addedLocalDate}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Row actions */}
-                          <td className="px-3 py-3 text-center align-middle relative">
-                            <div className="relative inline-flex justify-end w-full">
-                              <button
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition"
-                                onClick={() =>
-                                  setRowMenuOpen((prev) =>
-                                    prev === r.visitId ? null : r.visitId
-                                  )
-                                }
-                                aria-label="Row menu"
-                              >
-                                <KebabIcon className="h-5 w-5" />
-                              </button>
-
-                              {rowMenuOpen === r.visitId && (
-                                <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg border border-gray-200 shadow-lg z-20 p-1">
-                                  <button
-                                    className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
-                                    onClick={() => {
-                                      setRowMenuOpen(null);
-                                      setEditVisit(r);
-                                    }}
-                                  >
-                                    Edit Visit
-                                  </button>
-
-                                  {canDeleteVisits && (
-                                    <button
-                                      className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
-                                      onClick={() => {
-                                        setRowMenuOpen(null);
-                                        removeVisit(r);
-                                      }}
-                                    >
-                                      Delete Visit
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {filteredSortedRows.length === 0 && (
-                        <tr>
-                          <td
-                            colSpan={7}
-                            className="px-4 py-8 text-center text-gray-500"
-                          >
-                            {isBusy ? (
-                              <span className="inline-flex items-center gap-2">
-                                <Spinner className="h-4 w-4" /> Loading…
-                              </span>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2">
-                                <div className="text-2xl">🗓️</div>
-                                <div>No visits on this day.</div>
-                                {canLogVisits && selectedDate ? (
-                                  <div className="mt-1">
-                                    <AddVisitButton
-                                      org={org}
-                                      location={location}
-                                      selectedDate={selectedDate}
-                                      onAdded={(newVisit) =>
-                                        setVisits((prev) => [
-                                          newVisit,
-                                          ...prev,
-                                        ])
-                                      }
-                                    />
-                                  </div>
-                                ) : null}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-
-                    <tfoot className="bg-gray-100 text-sm font-medium">
-                      <tr>
-                        <td className="px-4 py-2.5">Totals</td>
-                        <td />
-                        <td />
-                        <td className="px-3 py-2.5 text-center tabular-nums">
-                          {dayTotals.hh}
-                        </td>
-                        <td className="px-3 py-2.5 text-center">
-                          {dayTotals.usdaYes} Yes
-                        </td>
-                        <td />
-                        <td className="px-3 py-2.5 text-center tabular-nums">
-                          {filteredSortedRows.length} rows
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                  {r.addedByReports && (
+                    <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      <span>Added through Reports</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
+              </td>
+
+              {/* County */}
+              <td className="px-4 py-4 align-middle">
+                <span
+                  className="block truncate max-w-[230px] text-gray-800"
+                  title={r.county}
+                >
+                  {r.county}
+                </span>
+              </td>
+
+              {/* Zip */}
+              <td className="px-3.5 py-3 text-center align-middle tabular-nums text-gray-800">
+                {r.zip}
+              </td>
+
+              {/* HH */}
+              <td className="px-3 py-3 tabular-nums text-center align-middle text-gray-800">
+                {r.visitHousehold}
+              </td>
+
+              {/* USDA pill */}
+              <td className="px-3 py-3 text-center align-middle">
+                {r.usdaFirstTimeThisMonth === "" ? (
+                  ""
+                ) : (
+                  <span
+                    className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[11px] leading-none ring-1 ${
+                      r.usdaFirstTimeThisMonth
+                        ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                        : "bg-gray-50 text-gray-700 ring-gray-200"
+                    }`}
+                  >
+                    {r.usdaFirstTimeThisMonth ? "Yes" : "No"}
+                  </span>
+                )}
+              </td>
+
+              {/* Time + added date */}
+              <td className="px-4 py-3 text-right align-middle">
+                <div className="flex flex-col items-end leading-tight">
+                  <span className="text-[12px] font-medium tabular-nums text-gray-900">
+                    {r.localTime}
+                  </span>
+
+                  {r.addedLocalDate && (
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      {r.addedLocalDate}
+                    </span>
+                  )}
+                </div>
+              </td>
+
+              {/* Row actions */}
+              <td className="px-3 py-3 text-center align-middle">
+                <div className="relative inline-flex justify-end w-full" data-visit-action>
+                  <button
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const isOpen = rowMenuOpen === r.visitId;
+                      if (isOpen) {
+                        setRowMenuOpen(null);
+                        setVisitMenuCoords(null);
+                        setVisitMenuAnchor(null);
+                        return;
+                      }
+                      const btn = e.currentTarget;
+                      const rect = btn.getBoundingClientRect();
+                      const popW = 160; // approx width
+                      const popH = 120;
+                      let left = rect.right - popW;
+                      left = Math.max(
+                        8,
+                        Math.min(left, window.innerWidth - popW - 8)
+                      );
+                      let top = rect.bottom + 8;
+                      if (top + popH > window.innerHeight - 8) {
+                        top = rect.top - popH - 8;
+                      }
+                      setVisitMenuCoords({ left, top });
+                      setVisitMenuAnchor(btn);
+                      setRowMenuOpen(r.visitId);
+                    }}
+                    aria-label="Row menu"
+                  >
+                    <KebabIcon className="h-5 w-5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+
+          {filteredSortedRows.length === 0 && (
+            <tr>
+              <td
+                colSpan={7}
+                className="px-4 py-8 text-center text-gray-500"
+              >
+                {isBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Spinner className="h-4 w-4" /> Loading…
+                  </span>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="text-2xl">🗓️</div>
+                    <div>No visits on this day.</div>
+                    {canLogVisits && selectedDate ? (
+                      <div className="mt-1">
+                        <AddVisitButton
+                          org={org}
+                          location={location}
+                          selectedDate={selectedDate}
+                          onAdded={(newVisit) =>
+                            setVisits((prev) => [newVisit, ...prev])
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </td>
+            </tr>
+          )}
+        </tbody>
+
+        <tfoot className="bg-gray-100 text-sm font-medium text-gray-800">
+          <tr>
+            <td className="px-4 py-2.5">Totals</td>
+            <td />
+            <td />
+            <td className="px-3 py-2.5 text-center tabular-nums">
+              {dayTotals.hh}
+            </td>
+            <td className="px-3 py-2.5 text-center">
+              {dayTotals.usdaYes} Yes
+            </td>
+            <td />
+            <td className="px-3 py-2.5 text-center tabular-nums">
+              {filteredSortedRows.length} rows
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
 
             {/* MOBILE LIST */}
-            <ul
-              className={`md:hidden rounded-2xl border border-gray-200 overflow-hidden divide-y divide-gray-200 bg-white ${
+            <div
+              className={`md:hidden rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm ${
                 isBusy ? "opacity-60" : ""
               }`}
             >
-              {filteredSortedRows.map((r, i) => (
+              <div className="relative overflow-hidden rounded-2xl">
+                <ul
+                  className="divide-y divide-gray-100 bg-white"
+                  style={{ maxHeight: `${15 * 72}px`, overflowY: "auto" }}
+                >
+                  {filteredSortedRows.map((r) => (
                 <li
                   key={r.visitId}
-                  className="p-3.5 bg-white odd:bg-gray-50"
+                  className="p-3.5 bg-white odd:bg-gray-50 hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-medium truncate">
+                      {/* Name */}
+                      <div className="font-semibold truncate text-sm text-gray-900">
                         {r.labelName}
                       </div>
+
+                      {/* County + Zip */}
                       {r.county || r.zip ? (
-                        <div className="text-xs text-gray-700 truncate">
+                        <div className="text-xs text-gray-600 truncate mt-0.5">
                           {r.county || ""}
                           {r.zip ? (r.county ? `, ${r.zip}` : r.zip) : ""}
                         </div>
                       ) : null}
 
-                      <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
-                        <span className="px-1.5 py-0.5 rounded border bg-white">
+                      {/* Pills */}
+                      <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-gray-800">
+                        <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white shadow-[0_0_0_1px_rgba(148,163,184,0.15)]">
                           HH {r.visitHousehold || 0}
                         </span>
                         {r.usdaFirstTimeThisMonth !== "" && (
-                          <span className="px-1.5 py-0.5 rounded border bg-white">
-                            {r.usdaFirstTimeThisMonth
-                              ? "USDA Yes"
-                              : "USDA No"}
+                          <span className="px-1.5 py-0.5 rounded-full border border-gray-200 bg-white shadow-[0_0_0_1px_rgba(148,163,184,0.15)]">
+                            {r.usdaFirstTimeThisMonth ? "USDA Yes" : "USDA No"}
                           </span>
                         )}
                       </div>
 
+                      {/* Logged from reports badge */}
                       {r.addedByReports && (
-                        <div className="mt-0.5 text-[11px] text-gray-400 flex items-center gap-1">
+                        <div className="mt-1 text-[11px] text-gray-400 flex items-center gap-1">
                           <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
                           <span>Logged from Reports</span>
                         </div>
                       )}
                     </div>
 
+                    {/* Right side: time + menu */}
                     <div className="shrink-0 flex flex-col items-end gap-1 relative">
                       <div className="text-right text-[11px] leading-tight">
                         {r.addedLocalDate && (
-                          <div className="font-medium">
+                          <div className="font-medium text-gray-700">
                             {r.addedLocalDate}
                           </div>
                         )}
-                        <div className="mt-0.5 px-3 py-0.5 rounded border border-gray-300 bg-gray-100 text-gray-800 font-medium tabular-nums">
+                        <div className="mt-0.5 inline-flex px-3 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-900 font-medium tabular-nums shadow-sm">
                           {r.localTime}
                         </div>
                       </div>
 
-                      {/* Mobile row actions – same kebab menu as desktop */}
-                      <div className="mt-1 relative">
+                      {/* Mobile row actions */}
+                      <div className="mt-1 relative" data-visit-action>
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
-                          onClick={() =>
-                            setRowMenuOpen((prev) =>
-                              prev === r.visitId ? null : r.visitId
-                            )
-                          }
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100 transition"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const isOpen = rowMenuOpen === r.visitId;
+                            if (isOpen) {
+                              setRowMenuOpen(null);
+                              setVisitMenuCoords(null);
+                              setVisitMenuAnchor(null);
+                              return;
+                            }
+                            const btn = e.currentTarget;
+                            const rect = btn.getBoundingClientRect();
+                            const popW = 160;
+                            const popH = 120;
+                            let left = rect.right - popW;
+                            left = Math.max(
+                              8,
+                              Math.min(left, window.innerWidth - popW - 8)
+                            );
+                            let top = rect.bottom + 8;
+                            if (top + popH > window.innerHeight - 8) {
+                              top = rect.top - popH - 8;
+                            }
+                            setVisitMenuCoords({ left, top });
+                            setVisitMenuAnchor(btn);
+                            setRowMenuOpen(r.visitId);
+                          }}
                           aria-label="Row menu"
                           title="More actions"
                         >
                           <KebabIcon className="h-4 w-4" />
                         </button>
-
-                        {rowMenuOpen === r.visitId && (
-                          <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg border border-gray-200 shadow-lg z-20 p-1">
-                            <button
-                              className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
-                              onClick={() => {
-                                setRowMenuOpen(null);
-                                setEditVisit(r);
-                              }}
-                            >
-                              Edit Visit
-                            </button>
-
-                            {canDeleteVisits && (
-                              <button
-                                className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
-                                onClick={() => {
-                                  setRowMenuOpen(null);
-                                  removeVisit(r);
-                                }}
-                              >
-                                Delete Visit
-                              </button>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -2890,142 +2971,119 @@ const removeDay = useCallback(
                   )}
                 </li>
               )}
-            </ul>
+                </ul>
+
+                {/* Soft fade overlays to hint at scrollable content */}
+                <div className="pointer-events-none absolute left-0 right-0 top-0 h-6 rounded-t-2xl bg-gradient-to-b from-white/90 to-transparent" />
+                <div className="pointer-events-none absolute left-0 right-0 bottom-0 h-6 rounded-b-2xl bg-gradient-to-t from-white/90 to-transparent" />
+              </div>
+            </div>
           </div>
-
-
-
-          {/* MOBILE LIST */}
-          <ul
-            className={`md:hidden divide-y divide-gray-200 rounded-xl border overflow-hidden ${
-              isBusy ? "opacity-60" : ""
-            }`}
-          >
-
-            {filteredSortedRows.map((r, i) => (
-              <li
-                key={r.visitId}
-                className={`p-3 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{r.labelName}</div>
-                    {r.county || r.zip ? (
-                      <div className="text-xs text-gray-700 truncate">
-                        {r.county || ""}
-                        {r.zip ? (r.county ? `, ${r.zip}` : r.zip) : ""}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-gray-700">
-                      <span className="px-1.5 py-0.5 rounded border bg-white">
-                        HH {r.visitHousehold || 0}
-                      </span>
-                      {r.usdaFirstTimeThisMonth !== "" && (
-                        <span className="px-1.5 py-0.5 rounded border bg-white">
-                          {r.usdaFirstTimeThisMonth ? "USDA Yes" : "USDA No"}
-                        </span>
-                      )}
-                    </div>
-
-                    {r.addedByReports && (
-                    <div className="mt-0.5 text-[11px] text-gray-400 flex items-center gap-1">
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      <span>Logged from Reports</span>
-                    </div>
-                  )}
-
-
-                  </div>
-
-                                    <div className="shrink-0 flex flex-col items-end gap-1 relative">
-                    <div className="text-right text-[11px] leading-tight">
-                      {r.addedLocalDate && (
-                        <div className="font-medium">{r.addedLocalDate}</div>
-                      )}
-                                        <div className="px-3 py-0.5 rounded border border-gray-300 bg-gray-100 text-gray-800 font-medium tabular-nums">
-                        {r.localTime}
-                      </div>
-                    </div>
-
-                    {/* Mobile row actions – same kebab menu as desktop */}
-                    <div className="mt-1 relative">
-                      <button
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
-                        onClick={() =>
-                          setRowMenuOpen((prev) =>
-                            prev === r.visitId ? null : r.visitId
-                          )
-                        }
-                        aria-label="Row menu"
-                        title="More actions"
-                      >
-                        <KebabIcon className="h-4 w-4" />
-                      </button>
-
-                      {rowMenuOpen === r.visitId && (
-                        <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg border border-gray-200 shadow-lg z-20 p-1">
-                          <button
-                            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
-                            onClick={() => {
-                              setRowMenuOpen(null);
-                              setEditVisit(r);
-                            }}
-                          >
-                            Edit Visit
-                          </button>
-
-                          {canDeleteVisits && (
-                            <button
-                              className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
-                              onClick={() => {
-                                setRowMenuOpen(null);
-                                removeVisit(r);
-                              }}
-                            >
-                              Delete Visit
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                </div>
-              </li>
-            ))}
-
-            {filteredSortedRows.length === 0 && (
-              <li className="p-6 text-center text-gray-500">
-                                {isBusy ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Spinner className="h-4 w-4" /> Loading…
-                  </span>
-                ) : (
-
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="text-2xl">🗓️</div>
-                    <div>No visits on this day.</div>
-                    {canLogVisits && selectedDate ? (
-                      <div className="mt-1">
-                        <AddVisitButton
-                          org={org}
-                          location={location}
-                          selectedDate={selectedDate}
-                          onAdded={(newVisit) =>
-                            setVisits((prev) => [newVisit, ...prev])
-                          }
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </li>
-            )}
-          </ul>
-          <div aria-hidden className="absolute left-0 right-0 bottom-0 h-1 rounded-b-2xl bg-gradient-to-r from-brand-500 via-brand-400 to-brand-300 opacity-0 group-hover:opacity-[0.06] transition-opacity pointer-events-none" />
         </section>
       </div>
+
+      {rowMenuOpen && String(rowMenuOpen).startsWith("day-") && dayMenuCoords && (
+        <div
+          ref={dayMenuRef}
+          style={{
+            position: "fixed",
+            left: dayMenuCoords.left + "px",
+            top: dayMenuCoords.top + "px",
+          }}
+          className="z-50 w-44 bg-white rounded-xl border border-gray-200 shadow-xl p-1"
+          data-day-action
+        >
+          <button
+            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm flex items-center gap-2"
+            onClick={() => {
+              setRowMenuOpen(null);
+              setDayMenuCoords(null);
+              setDayMenuAnchor(null);
+              const dayKey = String(rowMenuOpen).replace(/^day-/, "");
+              shareEfapDailyPdfForDay(dayKey);
+            }}
+          >
+            <ShareIcon className="h-4 w-4" />
+            <span>Share EFAP</span>
+          </button>
+
+          <button
+            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm flex items-center gap-2"
+            onClick={() => {
+              setRowMenuOpen(null);
+              setDayMenuCoords(null);
+              setDayMenuAnchor(null);
+              const dayKey = String(rowMenuOpen).replace(/^day-/, "");
+              exportOneDayCsv(dayKey);
+            }}
+          >
+            <DownloadIcon className="h-4 w-4" />
+            <span>Export CSV</span>
+          </button>
+
+          {canDeleteVisits && (
+            <button
+              className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm flex items-center gap-2"
+              onClick={() => {
+                setRowMenuOpen(null);
+                setDayMenuCoords(null);
+                setDayMenuAnchor(null);
+                const dayKey = String(rowMenuOpen).replace(/^day-/, "");
+                removeDay(dayKey);
+              }}
+            >
+              <TrashIcon className="h-4 w-4" />
+              <span>Delete day</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {rowMenuOpen && !String(rowMenuOpen).startsWith("day-") && visitMenuCoords && (
+        <div
+          ref={visitMenuRef}
+          style={{
+            position: "fixed",
+            left: visitMenuCoords.left + "px",
+            top: visitMenuCoords.top + "px",
+          }}
+          className="z-50 w-40 bg-white rounded-xl border border-gray-200 shadow-xl p-1"
+        >
+          <button
+            className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 text-sm"
+            onClick={() => {
+              setRowMenuOpen(null);
+              setVisitMenuCoords(null);
+              setVisitMenuAnchor(null);
+              const visitId = rowMenuOpen;
+              const found = filteredSortedRows.find(
+                (x) => x.visitId === visitId
+              );
+              if (found) setEditVisit(found);
+            }}
+          >
+            Edit Visit
+          </button>
+
+          {canDeleteVisits && (
+            <button
+              className="w-full text-left px-3 py-2 rounded-md text-red-700 hover:bg-red-50 text-sm"
+              onClick={() => {
+                setRowMenuOpen(null);
+                setVisitMenuCoords(null);
+                setVisitMenuAnchor(null);
+                const visitId = rowMenuOpen;
+                const found = filteredSortedRows.find(
+                  (x) => x.visitId === visitId
+                );
+                if (found) removeVisit(found);
+              }}
+            >
+              Delete Visit
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Error helper (index enable hint if present) */}
       {!!error && (
@@ -3034,6 +3092,7 @@ const removeDay = useCallback(
         </div>
       )}
 
+
       {/* Edit Visit Modal */}
       {editVisit && (
         <div
@@ -3041,21 +3100,30 @@ const removeDay = useCallback(
           onClick={() => setEditVisit(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold mb-4">Edit Visit</h2>
+            {/* Modal header */}
+            <div className="px-5 pt-4 pb-3 border-b border-gray-100 bg-gradient-to-r from-brand-700/95 via-brand-700 to-brand-600 text-white">
+              <h2 className="text-base font-semibold tracking-wide">
+                Edit Visit
+              </h2>
+              <p className="mt-1 text-xs text-brand-50/90">
+                Adjust household size, county, ZIP, or USDA status for this visit.
+              </p>
+            </div>
 
-            <div className="space-y-4">
+            {/* Modal content */}
+            <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
               {/* Household size */}
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-xs font-semibold tracking-wide text-gray-700 mb-1.5 uppercase">
                   Household Size
                 </label>
                 <input
                   type="number"
                   min="0"
-                  className="w-full rounded-lg border px-4 py-2.5 text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   value={editVisit.visitHousehold}
                   onChange={(e) =>
                     setEditVisit((prev) => ({
@@ -3068,12 +3136,12 @@ const removeDay = useCallback(
 
               {/* County (visit-level only) */}
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-xs font-semibold tracking-wide text-gray-700 mb-1.5 uppercase">
                   County (this visit only)
                 </label>
                 <input
                   type="text"
-                  className="w-full rounded-lg border px-4 py-2.5 text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   value={editVisit.county || ""}
                   onChange={(e) =>
                     setEditVisit((prev) => ({
@@ -3087,12 +3155,12 @@ const removeDay = useCallback(
 
               {/* Zip (visit-level only) */}
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-xs font-semibold tracking-wide text-gray-700 mb-1.5 uppercase">
                   Zip (this visit only)
                 </label>
                 <input
                   type="text"
-                  className="w-full rounded-lg border px-4 py-2.5 text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   value={editVisit.zip || ""}
                   onChange={(e) =>
                     setEditVisit((prev) => ({
@@ -3106,11 +3174,11 @@ const removeDay = useCallback(
 
               {/* USDA flag */}
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-xs font-semibold tracking-wide text-gray-700 mb-1.5 uppercase">
                   USDA First Time This Month
                 </label>
                 <select
-                  className="w-full rounded-lg border px-4 py-2.5 text-sm bg-white"
+                  className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                   value={
                     editVisit.usdaFirstTimeThisMonth === true
                       ? "yes"
@@ -3134,17 +3202,18 @@ const removeDay = useCallback(
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            {/* Modal footer */}
+            <div className="px-5 pb-4 pt-3 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
               <button
                 type="button"
-                className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200"
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 transition"
                 onClick={() => setEditVisit(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="px-4 py-2 text-sm rounded-lg bg-brand-700 text-white hover:bg-brand-800"
+                className="px-4 py-2 text-sm rounded-lg bg-brand-700 text-white hover:bg-brand-800 shadow-sm transition"
                 onClick={async () => {
                   try {
                     // write ONLY to visits collection (snapshot fields)
@@ -3186,18 +3255,19 @@ const removeDay = useCallback(
         </div>
       )}
 
-
       {/* Toast */}
       {toast.open && (
         <div
-          className={`fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-xl shadow-lg text-sm text-white ${
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-full shadow-lg text-sm text-white flex items-center gap-2 ${
             toast.type === "warn" ? "bg-amber-600" : "bg-gray-900"
           }`}
           role="status"
         >
-          {toast.msg}
+          <span className="inline-block h-2 w-2 rounded-full bg-white/80" />
+          <span>{toast.msg}</span>
         </div>
       )}
+
 
       {/* Print & small helpers */}
       <style>{`
@@ -3255,17 +3325,17 @@ const BTN = {
   secondary:
     "inline-flex items-center justify-center gap-2 rounded-xl border border-brand-200 " +
     "bg-white px-3.5 py-2.5 text-brand-900 shadow-sm " +
-    "transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 active:scale-[0.995] " +
+    "transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 " +
     "hover:bg-brand-50 active:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-300",
 
   icon:
     "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-brand-200 " +
-    "bg-white text-brand-900 transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 active:scale-[0.995] " +
+    "bg-white text-brand-900 transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 " +
     "hover:bg-brand-50 active:bg-brand-100",
 
   smallIcon:
     "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 " +
-    "bg-white text-brand-900 transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 active:scale-[0.995] " +
+    "bg-white text-brand-900 transition transform hover:scale-[1.01] hover:shadow-md hover:border-brand-300 " +
     "hover:bg-brand-50 active:bg-brand-100",
 };
 
@@ -3273,14 +3343,14 @@ function Card({ title, children }) {
   return (
     <div
       className={
-        "group relative rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 sm:p-4 " +
+        "group relative overflow-hidden rounded-2xl border border-brand-200 ring-1 ring-brand-100 bg-white shadow-sm p-3 sm:p-4 " +
         "hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] hover:ring-brand-200 hover:border-brand-300 " +
-        "transition will-change-transform hover:scale-[1.01] active:scale-[.995]"
+        "transition will-change-transform hover:scale-[1.01]"
       }
     >
       {title ? (
         <div className="-mx-4 sm:-mx-4 -mt-4 mb-2 rounded-t-2xl overflow-hidden">
-          <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 px-4 sm:px-5 py-2 text-white text-sm font-semibold flex items-center gap-3 border-b border-white/20 shadow-inner">
+          <div className="bg-gradient-to-br from-brand-800 via-brand-700 to-brand-500 px-4 sm:px-5 py-2 text-white text-sm font-semibold flex items-center gap-3 border-b border-white/20 shadow-inner">
             <span className="h-2.5 w-2.5 rounded-full bg-white/30 ring-1 ring-white/20" aria-hidden />
             <span className="truncate">{title}</span>
           </div>
@@ -3305,7 +3375,7 @@ function KpiModern({ title, value, sub }) {
         "rounded-2xl border ring-1 bg-white shadow-soft p-3 sm:p-4 md:p-3 " +
         "border-brand-200 ring-brand-100 hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.18)] " +
         "hover:ring-brand-200 hover:border-brand-300 transition will-change-transform " +
-        "hover:scale-[1.01] active:scale-[.995] flex flex-col justify-center md:h-24"
+        "hover:scale-[1.01] flex flex-col justify-center md:h-24"
       }
       role="status"
       aria-live="polite"

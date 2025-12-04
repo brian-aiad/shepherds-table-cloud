@@ -83,7 +83,7 @@ export default function LogVisitForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Manual USDA toggle — default No; setting Yes will upsert a monthly marker (never deletes)
+  // Manual USDA toggle
   const [usdaFirstThisMonth, setUsdaFirstThisMonth] = useState(false);
 
   // USDA monthly eligibility state
@@ -152,25 +152,38 @@ export default function LogVisitForm({
     return () => formEl.removeEventListener("focusin", onFocusIn);
   }, [open]);
 
-  // Pre-check USDA marker existence for this month; disable toggle if already counted
+  // Pre-check USDA marker existence for this month
+  // If no marker exists => auto-select "Yes"
+  // If marker exists => disable "Yes" and auto-select "No"
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!open || !client?.id) return;
       const mk = monthKeyFor(new Date());
-      // If org isn't resolved yet, keep it allowed so user isn't blocked incorrectly
+
+      // If org isn't resolved yet, keep allowed and leave toggle off by default
       if (!orgId) {
         setUsdaAllowed(true);
         return;
       }
+
       try {
         setUsdaChecking(true);
         const markerId = `${orgId}_${client.id}_${mk}`;
         const snap = await getDoc(doc(db, "usda_first", markerId));
         if (cancelled) return;
-        const allowed = !snap.exists();
+
+        const exists = snap.exists();
+        const allowed = !exists;
         setUsdaAllowed(allowed);
-        if (!allowed) setUsdaFirstThisMonth(false); // force OFF if already counted
+
+        if (exists) {
+          // Already counted this month: force "No" and keep Yes disabled
+          setUsdaFirstThisMonth(false);
+        } else {
+          // First USDA visit this month: default "Yes"
+          setUsdaFirstThisMonth(true);
+        }
       } finally {
         if (!cancelled) setUsdaChecking(false);
       }
@@ -710,11 +723,7 @@ function SectionHeader({ icon, label }) {
   return (
     <div className="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3">
       <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 shadow-[0_4px_10px_rgba(148,27,21,0.3)]">
-        {icon && (
-          <span className="flex items-center text-white">
-            {icon}
-          </span>
-        )}
+        {icon && <span className="flex items-center text-white">{icon}</span>}
         <div className="flex-1 text-xs sm:text-sm font-semibold leading-tight text-white [&_*]:text-white">
           {label}
         </div>
