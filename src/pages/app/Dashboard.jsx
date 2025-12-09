@@ -648,12 +648,12 @@ export default function Dashboard() {
                               key={c.id}
                               onClick={() => setSelected(c)}
                               className={[
-                                "group w-full flex items-center flex-nowrap gap-3 py-2.5 px-3 rounded-2xl transition",
-                                "border",
-                                isSelected
-                                  ? "bg-white shadow-md border-brand-200 ring-1 ring-brand-200"
-                                  : "bg-white/90 hover:bg-white border-brand-100 shadow-[0_4px_10px_rgba(148,27,21,0.06)]",
-                              ].join(" ")}
+                                  "group w-full flex items-center flex-nowrap gap-3 py-2.5 px-3 rounded-2xl transition",
+                                  "border",
+                                  isSelected
+                                    ? "bg-white ring-2 ring-brand-300 border-brand-300 shadow-[0_8px_20px_rgba(148,27,21,0.08)]"
+                                    : "bg-white/90 hover:bg-white border-brand-100 shadow-[0_4px_10px_rgba(148,27,21,0.06)]",
+                                ].join(" ")}
                             >
                               <div className="flex items-center w-full gap-3">
                                 <div className="flex-1 min-w-0">

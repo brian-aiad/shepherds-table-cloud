@@ -604,7 +604,7 @@ export default function LogVisitForm({
             <div className="rounded-2xl border border-brand-200 bg-white shadow-sm p-3 sm:p-4 space-y-2">
               <SectionHeader icon={ICONS.hh} label="Household size" />
 
-              <div className="mt-3 flex items-stretch gap-2">
+              <div className="mt-3 flex items-center gap-3 w-full">
                 {/* Decrease */}
                 <button
                   type="button"
@@ -612,7 +612,7 @@ export default function LogVisitForm({
                   onClick={() =>
                     setHH((n) => Math.max(MIN_HH, (Number(n) || MIN_HH) - 1))
                   }
-                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
+                  className="h-12 sm:h-11 w-28 sm:w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                 >
                   −
                 </button>
@@ -641,7 +641,7 @@ export default function LogVisitForm({
                     );
                     setHH(clamped);
                   }}
-                  className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
+                  className="flex-1 h-12 sm:h-11 px-2 rounded-2xl border border-brand-300 bg-white text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
                   aria-describedby="hh-help"
                 />
 
@@ -657,7 +657,7 @@ export default function LogVisitForm({
                       )
                     )
                   }
-                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95"
+                  className="h-12 sm:h-11 w-28 sm:w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                 >
                   +
                 </button>

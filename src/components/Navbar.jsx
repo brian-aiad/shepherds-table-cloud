@@ -1,5 +1,5 @@
 // src/components/Navbar.jsx
-// Shepherd’s Table Cloud — Navbar (responsive, capability-aware, Nov 2025)
+// Shepherd’s Table Cloud — Navbar (responsive, capability-aware, Dec 2025)
 
 import {
   useEffect,
@@ -83,6 +83,9 @@ export default function Navbar() {
   const locBtnRef = useRef(null);
   const locMenuRef = useRef(null);
 
+  // whole navbar wrapper (for outside-click detection)
+  const navbarRef = useRef(null);
+
   const orgId = org?.id || "";
   const locId = location?.id ?? null;
 
@@ -120,6 +123,17 @@ export default function Navbar() {
       </span>
     );
   }, [role]);
+
+  /* ─────────────────────────────────────────────────────────────
+   * Tiny toast
+   * ──────────────────────────────────────────────────────────── */
+
+  const [toast, setToast] = useState(null);
+  function showToast(msg, ms = 1800) {
+    setToast(msg);
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(null), ms);
+  }
 
   /* ─────────────────────────────────────────────────────────────
    * Handlers
@@ -175,7 +189,6 @@ export default function Navbar() {
     nav("/login", { replace: true });
   };
 
-
   /* ─────────────────────────────────────────────────────────────
    * Dismiss popovers on click/esc
    * ──────────────────────────────────────────────────────────── */
@@ -198,7 +211,17 @@ export default function Navbar() {
           setLocOpen(false);
         }
       }
+
+      // Close the desktop context strip when clicking outside the navbar
+      if (
+        contextOpen &&
+        navbarRef.current &&
+        !navbarRef.current.contains(e.target)
+      ) {
+        setContextOpen(false);
+      }
     };
+
     const onEsc = (e) => {
       if (e.key === "Escape") {
         setOrgOpen(false);
@@ -206,13 +229,14 @@ export default function Navbar() {
         setContextOpen(false);
       }
     };
+
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onEsc);
     return () => {
       document.removeEventListener("click", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [orgOpen, locOpen]);
+  }, [orgOpen, locOpen, contextOpen]);
 
   // Auto-pick first location after org change
   useEffect(() => {
@@ -259,22 +283,14 @@ export default function Navbar() {
     : "Shepherd’s Table Cloud logo";
 
   /* ─────────────────────────────────────────────────────────────
-   * Tiny toast
-   * ──────────────────────────────────────────────────────────── */
-
-  const [toast, setToast] = useState(null);
-  function showToast(msg, ms = 1800) {
-    setToast(msg);
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => setToast(null), ms);
-  }
-
-  /* ─────────────────────────────────────────────────────────────
    * Render
    * ──────────────────────────────────────────────────────────── */
 
   return (
-    <header className="sticky top-0 z-50 relative isolate">
+    <header
+      ref={navbarRef}
+      className="sticky top-0 z-50 relative isolate"
+    >
       {/* Seam killer for iOS top safe area */}
       <div
         aria-hidden
@@ -331,15 +347,13 @@ export default function Navbar() {
             aria-label="Go to Dashboard"
           >
             <div className="relative shrink-0">
-            <img
-            src={brandLogoSrc}
-            alt={brandAlt}
-            className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-white p-[1px] object-contain shadow-md ring-1 ring-black/10"
-            referrerPolicy="no-referrer"
-            loading="eager"
-          />
-
-
+              <img
+                src={brandLogoSrc}
+                alt={brandAlt}
+                className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl bg-white p-[1px] object-contain shadow-md ring-1 ring-black/10"
+                referrerPolicy="no-referrer"
+                loading="eager"
+              />
             </div>
 
             <div className="flex flex-col leading-tight">
@@ -355,7 +369,6 @@ export default function Navbar() {
             </div>
           </NavLink>
 
-
           {/* Compact Sign out when nav is collapsed (< xl) */}
           <button
             onClick={onSignOut}
@@ -367,7 +380,7 @@ export default function Navbar() {
           {/* Primary links (desktop / xl+ only) */}
           <nav
             aria-label="Primary"
-            className="hidden xl:flex items-center flex-1 justify-center gap-4 2xl:gap-5 px-2"
+            className="hidden xl:flex items-center flex-1 justify-center gap-3 2xl:gap-5 px-1 sm:px-2"
           >
             <TopLink
               to="/"
@@ -411,11 +424,19 @@ export default function Navbar() {
                 </TopLink>
               </>
             )}
+
+            {canAccessVolunteers && (
+              <TopLink
+                to="/volunteer"
+                className="text-[15px] 2xl:text-[17px] font-semibold"
+              >
+                Volunteers
+              </TopLink>
+            )}
           </nav>
 
           {/* Right group (desktop xl+) */}
-          <div className="hidden xl:flex items-center gap-2.5 2xl:gap-3 ml-3">
-            
+          <div className="hidden xl:flex items-center gap-2.5 2xl:gap-3 ml-2">
             <button
               type="button"
               onClick={() => setContextOpen((v) => !v)}
@@ -611,7 +632,6 @@ export default function Navbar() {
               >
                 Sign out
               </button>
-              
             </section>
           </div>
         </div>
@@ -668,7 +688,7 @@ function DesktopContextStrip({
             "linear-gradient(180deg, var(--brand-650, var(--brand-700)) 0%, var(--brand-600) 100%)",
         }}
       >
-        <div className="rounded-2xl bg-white/10 p-3 md:p-4 lg:p-5">
+        <div className="rounded-2xl bg-white/10 p-3 md:p-4 lg:px-5 lg:py-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             <SelectorCard
               id="org-d"
@@ -979,12 +999,14 @@ function MobileSelectPopover({
       </div>
 
       {open && (
-        <div
-          ref={menuRef}
-          role="listbox"
-          tabIndex={-1}
-          className="absolute left-24 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
-        >
+  <div
+    ref={menuRef}
+    role="listbox"
+    tabIndex={-1}
+    // Absolute so it drops directly under this field/section
+    className="absolute left-24 right-0 top-full z-[70] mt-1 rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/10 overflow-hidden max-h-[60vh]"
+  >
+
           <div className="px-3 py-2 text-[11px] font-medium text-gray-500 border-b">
             {label}
           </div>

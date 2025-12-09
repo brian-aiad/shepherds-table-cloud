@@ -1,21 +1,17 @@
 // src/components/AddVisitButton.jsx
-// Shepherds Table Cloud — Add Visit (collapsible row • pro UI, Nov 2025)
-// - Row expands into a compact control bar: HH (− / number / +), USDA Yes/No, Add
-// - Persisted “Auto-close after save” (localStorage) — closes modal on successful add
-// - Sticky defaults: ZIP 90813 + County “Los Angeles County” used when missing (also persisted for intake to reuse)
-// - Homeless-friendly search: typing “homeless” matches clients with blank/“homeless” addresses
-// - Capability guard (admin or 'logVisits'), requires specific location, active clients only
-// - Stable Firestore txn (visit + counters + USDA monthly marker). onAdded gets real id
-// - USDA-first parity with LogVisitForm: monthly marker pre-check + in-tx recheck
-// - Confirmation banner: “Added <Name> for <YYYY-MM-DD>”.
-// - Reports integration: can always open NewClientForm and create + log visit for selected day.
+// Shepherds Table Cloud — Add Visit (collapsible row • pro UI, updated Dec 2025)
+// - Header matches NewClient / LogVisit / EditClient style (avatar chip + org/loc, date in title).
+// - Desktop panel height capped so roughly 10 clients are visible before scroll.
+// - Mobile layout fills width and footer is compact: auto-close + Done on one line.
+// - All previous behavior preserved: USDA marker, auto-close, sticky defaults, etc.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   collection,
   doc,
   getDocs,
-  getDoc, // ⬅️ monthly marker pre-check
+  getDoc,
   increment,
   limit as qLimit,
   orderBy,
@@ -34,7 +30,6 @@ import {
   Soup,
   Check,
   CheckCircle2,
-  X,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -118,10 +113,6 @@ export default function AddVisitButton({
   // Map<clientId, { allowed: boolean, checking: boolean }>
   const [usdaElig, setUsdaElig] = useState({});
 
-  // add confirmation (legacy two-step removed; immediate add)
-  const [confirmForId, setConfirmForId] = useState(null);
-  const confirmTimerRef = useRef(null);
-
   // confirmation banner (top of modal)
   const [confirmMsg, setConfirmMsg] = useState("");
 
@@ -147,6 +138,7 @@ export default function AddVisitButton({
 
   // New client bottom-sheet from Reports (“add new client for this date”)
   const [showNewClient, setShowNewClient] = useState(false);
+  const [newClientVisitDate, setNewClientVisitDate] = useState(null);
 
   /* ---------- Load active candidates for org + (optional) location ---------- */
   const loadCandidates = useCallback(async () => {
@@ -229,8 +221,6 @@ export default function AddVisitButton({
     setRowHH(1);
     setRowUsdaYes(true);
     setUsdaElig({}); // clear month-scoped cache when re-opening
-    setConfirmForId(null);
-    clearTimeout(confirmTimerRef.current);
     setOpen(true);
   }, [selectedDate, allowLogVisits, isAll]);
 
@@ -251,15 +241,10 @@ export default function AddVisitButton({
     };
   }, [open]);
 
-  useEffect(() => {
-    return () => clearTimeout(confirmTimerRef.current);
-  }, []);
-
   // Reset USDA cache when the selected month changes
   useEffect(() => {
     setUsdaElig({});
     if (expandedId) {
-      // Re-check the expanded one for the new month
       checkUsdaEligibility(expandedId);
     }
   }, [monthKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -294,8 +279,6 @@ export default function AddVisitButton({
       if (!client) return;
       const next = expandedId === client.id ? null : client.id;
       setExpandedId(next);
-      setConfirmForId(null);
-      clearTimeout(confirmTimerRef.current);
 
       if (next) {
         const baseHH = Math.max(
@@ -351,7 +334,7 @@ export default function AddVisitButton({
           now.getMilliseconds()
         );
 
-        const mk = monthKey;
+        const mk = monthKeyFor(when);
         const dKey = selectedDate;
         const wKey = isoWeekKey(when);
         const weekday = when.getDay();
@@ -475,7 +458,6 @@ export default function AddVisitButton({
 
         setConfirmMsg(`Added ${fullName} for ${dKey}.`);
         setExpandedId(null);
-        setConfirmForId(null);
 
         // Auto-close after save (persisted)
         if (autoClose) setOpen(false);
@@ -492,7 +474,6 @@ export default function AddVisitButton({
       org?.id,
       location?.id,
       selectedDate,
-      monthKey,
       onAdded,
       autoClose,
       usdaElig,
@@ -502,6 +483,8 @@ export default function AddVisitButton({
   /* =========================
      Render
   ========================== */
+  const titleDatePart = selectedDate ? ` – ${selectedDate}` : "";
+
   return (
     <>
       {/* Entry button – default white pill; parent can override via className */}
@@ -531,476 +514,133 @@ export default function AddVisitButton({
       </button>
 
       {/* Modal */}
-      {open && (
-        <div className="fixed inset-0 z-[1000]">
-          {/* Backdrop */}
-          <button
-            className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
-            onClick={() => setOpen(false)}
-            aria-label="Close add modal"
-          />
+      {open &&
+        createPortal(
+          <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center sm:px-4">
+            {/* Backdrop */}
+            <button
+              className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+              onClick={() => setOpen(false)}
+              aria-label="Close add modal"
+            />
 
-          {/* Panel */}
-          <div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-visit-title"
-            className="
-              absolute left-1/2 -translate-x-1/2 w-full sm:w-[min(780px,94vw)]
-              bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2
-              bg-white shadow-2xl ring-1 ring-brand-200/70 overflow-hidden
-              rounded-t-3xl sm:rounded-3xl
-              flex flex-col
-            "
-            style={{
-              maxHeight: "calc(100vh - 28px)",
-              marginTop: "env(safe-area-inset-top, 8px)",
-            }}
-          >
-            {/* Header */}
-            <div className="sticky top-0 z-10">
-              <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
-                <div className="px-4 sm:px-6 py-3 sm:py-4">
-                  <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-6">
-                    <div className="min-w-0 flex-1">
-                      <h2
-                        id="add-visit-title"
-                        className="text-base sm:text-xl font-semibold truncate"
-                      >
-                        Add Visit
-                      </h2>
-                      <p className="text-[11px] sm:text-xs opacity-90 truncate">
-                        {selectedDate ? `for ${selectedDate}` : "Choose a date"}
-                      </p>
-                    </div>
-
-                    <div className="hidden sm:flex flex-col text-[12px] leading-4 text-white/90">
-                      <span>
-                        Org: <b>{org?.name ?? org?.id ?? "—"}</b>
-                      </span>
-                      <span>
-                        Loc: <b>{location?.name ?? location?.id ?? "—"}</b>
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => setOpen(false)}
-                      className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
-                      aria-label="Close"
-                      title="Close"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Controls strip (search + count + banners) */}
-              <div className="sticky top-[--header-bottom] px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-b z-10">
-                {confirmMsg && (
-                  <div
-                    role="status"
-                    className="mb-3 flex items-center justify-between rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900"
-                  >
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>{confirmMsg}</span>
-                    </div>
-                    <button
-                      className="text-green-800/80 hover:text-green-900"
-                      onClick={() => setConfirmMsg("")}
-                      aria-label="Dismiss"
-                      title="Dismiss"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-
-                {error && (
-                  <div
-                    role="alert"
-                    className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
-                  >
-                    {error}
-                  </div>
-                )}
-
-                <div className="grid gap-3 lg:grid-cols-[1fr,auto] items-center">
-                  {/* Search */}
-                  <div className="relative">
-                    <input
-                      ref={inputRef}
-                      className="w-full rounded-2xl border border-brand-200 px-4 pl-11 py-3 h-12 text-[15px] shadow-sm bg-white placeholder:text-gray-400 focus:outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-200"
-                      placeholder='Search name, address or ZIP… (tip: try "homeless")'
-                      value={search}
-                      onChange={(e) => {
-                        setSearch(e.target.value);
-                        if (expandedId) setExpandedId(null);
-                        setConfirmForId(null);
-                      }}
-                      aria-label="Find client"
-                    />
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  </div>
-
-                  {/* Client count + Add New Client CTA */}
-                  <div className="flex items-center justify-end gap-3 flex-wrap">
-                    <button
-                      type="button"
-                      className="
-                        inline-flex items-center gap-2 rounded-xl px-3.5 py-2
-                        text-xs sm:text-sm font-semibold text-white
-                        shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]
-                        hover:brightness-105 hover:contrast-110
-                      "
-                      style={{
-                        background:
-                          "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-                      }}
-                      onClick={() => {
-                        setOpen(false);
-                        setShowNewClient(true);
-                      }}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add New Client for This Day
-                    </button>
-
-                    <span
-                      className="inline-flex items-center gap-2 rounded-full border border-brand-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-900 shadow-sm"
-                      aria-live="polite"
-                    >
-                      Clients
-                      <span className="inline-flex h-6 min-w-[1.75rem] items-center justify-center rounded-full bg-brand-700 px-2 text-white">
-                        {clientCount}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Results */}
+            {/* Panel */}
             <div
-              className="flex-1 overflow-auto pretty-scroll"
-              style={{ WebkitOverflowScrolling: "touch" }}
-              aria-label="Client search results"
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-visit-title"
+              className="
+                relative w-full max-w-[640px] sm:max-w-[780px]
+                bg-white shadow-2xl ring-1 ring-brand-200/70 overflow-hidden
+                rounded-t-3xl sm:rounded-3xl
+                flex flex-col
+              "
+              style={{
+                // cap height on desktop ~ so list is ~10 rows tall then scrolls
+                maxHeight: "min(calc(100vh - 32px), 720px)",
+                marginTop: "env(safe-area-inset-top, 8px)",
+              }}
             >
-              {busy ? (
-                <div className="p-6 space-y-2">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-14 rounded-xl bg-gray-100 animate-pulse"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <>
-                  {filtered.length > 0 && (
-                    <ul className="divide-y">
-                      {filtered.slice(0, 800).map((c) => {
-                        const initials =
-                          `${(c.firstName || "").slice(0, 1)}${(
-                            c.lastName || ""
-                          ).slice(0, 1)}`.toUpperCase() || "👤";
-                        const fullName =
-                          `${c.firstName || ""} ${c.lastName || ""}`.trim() ||
-                          c.id;
-                        const sub = [c.address || "", c.zip || ""]
-                          .filter(Boolean)
-                          .join(" • ");
-                        const isOpen = expandedId === c.id;
+              {/* Header + search strip (sticky) */}
+              <div className="sticky top-0 z-10">
+                {/* Gradient header — matches other forms */}
+                <div className="bg-gradient-to-br from-brand-700 via-brand-600 to-brand-500 text-white border-b shadow-[inset_0_-1px_0_rgba(255,255,255,0.25)] rounded-t-3xl">
+                  <div className="px-3.5 sm:px-6 py-2.5 sm:py-4">
+                    <div className="flex items-center justify-between gap-3 sm:gap-6">
+                      {/* Avatar + title + org/loc */}
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                        <div className="shrink-0 h-10 w-10 rounded-2xl bg-white/15 text-white grid place-items-center font-semibold ring-1 ring-white/20">
+                          <Users className="h-5 w-5 text-white/95" aria-hidden="true" />
+                        </div>
 
-                        const elig = usdaElig[c.id] || {
-                          allowed: true,
-                          checking: false,
-                        };
-                        const usdaYesDisabled = elig.checking || !elig.allowed;
-
-                        return (
-                          <li key={c.id} className="p-0">
-                            {/* Row (click to expand) */}
-                            <button
-                              type="button"
-                              className={cx(
-                                "w-full text-left p-3 sm:p-4 transition-colors",
-                                "hover:bg-brand-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300",
-                                isOpen ? "bg-brand-50/70" : ""
-                              )}
-                              onClick={() => expandRow(c)}
-                              aria-expanded={isOpen}
-                              aria-controls={`visit-row-${c.id}`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] grid place-items-center text-sm font-semibold shrink-0">
-                                    {initials}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="font-medium truncate text-[15px] text-gray-900">
-                                      {fullName}
-                                    </div>
-                                    <div className="text-xs text-gray-600 truncate">
-                                      {sub || "—"}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="shrink-0 text-gray-400">
-                                  {isOpen ? (
-                                    <ChevronDown className="h-5 w-5" />
-                                  ) : (
-                                    <ChevronRight className="h-5 w-5" />
-                                  )}
-                                </div>
-                              </div>
-                            </button>
-
-                            {/* Inline controls (accordion) */}
-                            <div
-                              id={`visit-row-${c.id}`}
-                              className={cx(
-                                "transition-[grid-template-rows] duration-300 ease-out grid",
-                                isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                              )}
-                            >
-                              <div className="overflow-hidden">
-                                <div className="px-3 sm:px-4 pb-3 sm:pb-4">
-                                  <div className="rounded-2xl border border-brand-200 bg-white shadow-sm">
-                                    {/* New mini gradient header (matches other forms) */}
-                                    <SectionHeader
-                                      icon={<Users className="h-3.5 w-3.5" />}
-                                      label="Log visit details"
-                                    />
-
-                                    <div className="grid items-center gap-3 sm:gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:grid-cols-[1fr,auto,auto]">
-                                      {/* HH (− / input / +) */}
-                                      <div className="flex items-center gap-3">
-                                        <label className="text-xs font-medium text-gray-700 whitespace-nowrap select-none">
-                                          <Users
-                                            size={16}
-                                            className="text-brand-600 inline mr-1"
-                                          />
-                                          Household size
-                                        </label>
-
-                                        <div
-                                          className="
-                                            inline-flex items-center overflow-hidden rounded-2xl bg-white
-                                            border border-brand-300 ring-1 ring-brand-100 shadow-soft
-                                            focus-within:ring-2 focus-within:ring-brand-200
-                                          "
-                                          aria-label="Adjust household size"
-                                        >
-                                          <button
-                                            type="button"
-                                            className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setRowHH((n) =>
-                                                Math.max(
-                                                  MIN_HH,
-                                                  Number(n || MIN_HH) - 1
-                                                )
-                                              );
-                                            }}
-                                            aria-label="Decrease household size"
-                                          >
-                                            <Minus className="h-4 w-4" />
-                                          </button>
-
-                                          <input
-                                            type="number"
-                                            min={MIN_HH}
-                                            max={MAX_HH}
-                                            value={rowHH}
-                                            onChange={(e) => {
-                                              const v = Number(
-                                                e.target.value || MIN_HH
-                                              );
-                                              setRowHH(
-                                                Math.max(
-                                                  MIN_HH,
-                                                  Math.min(MAX_HH, v)
-                                                )
-                                              );
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            onWheel={(e) =>
-                                              e.currentTarget.blur()
-                                            }
-                                            className="
-                                              h-10 w-[84px] border-x border-brand-200 bg-white text-center
-                                              text-sm font-semibold tabular-nums tracking-tight
-                                              focus:outline-none
-                                            "
-                                            aria-live="polite"
-                                            inputMode="numeric"
-                                            pattern="[0-9]*"
-                                          />
-
-                                          <button
-                                            type="button"
-                                            className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setRowHH((n) =>
-                                                Math.min(
-                                                  MAX_HH,
-                                                  Number(n || MIN_HH) + 1
-                                                )
-                                              );
-                                            }}
-                                            aria-label="Increase household size"
-                                          >
-                                            <Plus className="h-4 w-4" />
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* USDA toggle (with monthly eligibility) */}
-                                      <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 justify-start lg:justify-center">
-                                        <label className="text-xs font-medium text-gray-700 select-none leading-none">
-                                          USDA
-                                        </label>
-
-                                        <div
-                                          className="
-                                            inline-flex w-auto shrink-0 self-start sm:self-auto
-                                            rounded-2xl overflow-hidden bg-white
-                                            border border-brand-300 ring-1 ring-brand-100 shadow-soft
-                                          "
-                                          role="group"
-                                          aria-label="USDA first visit this month"
-                                          title={
-                                            usdaElig[c.id]?.checking
-                                              ? "Checking eligibility…"
-                                              : usdaElig[c.id]?.allowed === false
-                                              ? `Already counted for ${monthKey}`
-                                              : "Mark this as first USDA visit this month"
-                                          }
-                                        >
-                                          <button
-                                            type="button"
-                                            className={cx(
-                                              "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
-                                              usdaYesDisabled
-                                                ? "opacity-60 cursor-not-allowed"
-                                                : "hover:bg-brand-50",
-                                              rowUsdaYes && !usdaYesDisabled
-                                                ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
-                                                : "text-brand-900"
-                                            )}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (!usdaYesDisabled)
-                                                setRowUsdaYes(true);
-                                            }}
-                                            aria-pressed={
-                                              rowUsdaYes && !usdaYesDisabled
-                                            }
-                                          >
-                                            <Soup
-                                              size={16}
-                                              className="inline mr-1"
-                                            />
-                                            Yes
-                                          </button>
-
-                                          <div
-                                            className="w-px bg-brand-200/70"
-                                            aria-hidden="true"
-                                          />
-
-                                          <button
-                                            type="button"
-                                            className={cx(
-                                              "h-9 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none",
-                                              "hover:bg-brand-50",
-                                              !rowUsdaYes || usdaYesDisabled
-                                                ? "bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow"
-                                                : "text-brand-900"
-                                            )}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setRowUsdaYes(false);
-                                            }}
-                                            aria-pressed={
-                                              !rowUsdaYes || usdaYesDisabled
-                                            }
-                                          >
-                                            No
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* Actions */}
-                                      <div className="flex items-center justify-end gap-2 sm:gap-3">
-                                        <button
-                                          className="
-                                            h-9 px-3 rounded-xl border border-brand-300 text-brand-800
-                                            bg-white hover:bg-brand-50 hover:border-brand-400
-                                            active:scale-[.99] focus:outline-none
-                                          "
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setExpandedId(null);
-                                            setConfirmForId(null);
-                                          }}
-                                          title="Cancel"
-                                        >
-                                          Cancel
-                                        </button>
-
-                                        <button
-                                          className={cx(
-                                            "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white",
-                                            "shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]",
-                                            "hover:brightness-105 hover:contrast-110"
-                                          )}
-                                          style={{
-                                            background:
-                                              "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
-                                          }}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            addVisit(c, rowHH, rowUsdaYes);
-                                          }}
-                                          disabled={
-                                            busy || !allowLogVisits || isAll
-                                          }
-                                          title="Add visit"
-                                        >
-                                          <Check className="h-4 w-4" />
-                                          Add
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
+                        <div className="min-w-0">
+                          <h2
+                            id="add-visit-title"
+                            className="text-base sm:text-xl font-semibold truncate"
+                          >
+                            {`Add Visit${titleDatePart}`}
+                          </h2>
+                          <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight space-y-0.5">
+                            <div className="truncate">
+                              Org: <b>{org?.id ?? "—"}</b>
                             </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                            <div className="truncate">
+                              Loc:{" "}
+                              <b>{location?.name ?? location?.id ?? "—"}</b>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Close button */}
+                      <button
+                        onClick={() => setOpen(false)}
+                        className="rounded-xl px-4 sm:px-5 h-11 sm:h-12 text-xl sm:text-2xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 shrink-0"
+                        aria-label="Close"
+                        title="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Controls strip (search + count + banners) */}
+                <div className="px-4 sm:px-6 py-3 bg-white/95 backdrop-blur border-b">
+                  {confirmMsg && (
+                    <div
+                      role="status"
+                      className="mb-3 flex items-center justify-between rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>{confirmMsg}</span>
+                      </div>
+                      <button
+                        className="text-green-800/80 hover:text-green-900"
+                        onClick={() => setConfirmMsg("")}
+                        aria-label="Dismiss"
+                        title="Dismiss"
+                      >
+                        ×
+                      </button>
+                    </div>
                   )}
 
-                  {/* Always-visible CTA to add a new client for this date */}
-                  <div className="border-t border-dashed border-brand-100 bg-brand-50/40 px-4 py-4 sm:px-6 sm:py-5 text-sm text-center text-gray-700 space-y-2">
-                    <div>
-                      {filtered.length === 0
-                        ? "No clients found for this location."
-                        : "Can’t find the person you’re looking for?"}
+                  {error && (
+                    <div
+                      role="alert"
+                      className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                    >
+                      {error}
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                  )}
+
+                  <div className="grid gap-3 lg:grid-cols-[1fr,auto] items-center">
+                    {/* Search */}
+                    <div className="relative">
+                      <input
+                        ref={inputRef}
+                        className="w-full rounded-2xl border border-brand-200 px-4 pl-11 py-3 h-12 text-[15px] shadow-sm bg-white placeholder:text-gray-400 focus:outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-200"
+                        placeholder='Search name, address or ZIP… (tip: try "homeless")'
+                        value={search}
+                        onChange={(e) => {
+                          setSearch(e.target.value);
+                          if (expandedId) setExpandedId(null);
+                        }}
+                        aria-label="Find client"
+                      />
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    </div>
+
+                    {/* Client count + Add New Client CTA */}
+                    <div className="flex items-center justify-end gap-3 flex-wrap">
                       <button
                         type="button"
                         className="
                           inline-flex items-center gap-2 rounded-xl px-3.5 py-2
-                          text-sm font-semibold text-white
+                          text-xs sm:text-sm font-semibold text-white
                           shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]
                           hover:brightness-105 hover:contrast-110
                         "
@@ -1010,6 +650,7 @@ export default function AddVisitButton({
                         }}
                         onClick={() => {
                           setOpen(false);
+                          setNewClientVisitDate(selectedDate || null);
                           setShowNewClient(true);
                         }}
                       >
@@ -1017,72 +658,389 @@ export default function AddVisitButton({
                         Add New Client for This Day
                       </button>
 
-                      <span className="text-[11px] text-gray-500 max-w-xs">
-                        This will create a new client for the current org/location
-                        and log a visit on <b>{selectedDate || "this date"}</b>.
+                      <span
+                        className="inline-flex items-center gap-2 rounded-full border border-brand-300 bg-white px-3 py-1.5 text-xs font-semibold text-brand-900 shadow-sm"
+                        aria-live="polite"
+                      >
+                        Clients
+                        <span className="inline-flex h-6 min-w-[1.75rem] items-center justify-center rounded-full bg-brand-700 px-2 text-white">
+                          {clientCount}
+                        </span>
                       </span>
                     </div>
                   </div>
-                </>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-4 sm:px-6 py-3 border-t bg-white">
-              <div className="flex items-center justify-between gap-3">
-                {/* Auto-close preference (persisted) */}
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300"
-                    checked={!!autoClose}
-                    onChange={(e) => setAutoClose(e.target.checked)}
-                  />
-                  Auto-close after save
-                </label>
-
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <span>Default ZIP</span>
-                  <span className="inline-flex items-center rounded-full border px-2 py-0.5">
-                    {getLS(DEFAULT_ZIP_KEY, FALLBACK_ZIP)}
-                  </span>
-                  <span>County</span>
-                  <span className="inline-flex items-center rounded-full border px-2 py-0.5">
-                    {getLS(DEFAULT_COUNTY_KEY, FALLBACK_COUNTY)}
-                  </span>
                 </div>
-
-                <button
-                  className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
-                  onClick={() => setOpen(false)}
-                >
-                  Done
-                </button>
               </div>
-            </div>
 
-            {/* Component-scoped styles */}
-            <style>{`
-              .pretty-scroll {
-                scrollbar-color: rgba(0,0,0,.35) transparent;
-                scrollbar-width: thin;
-              }
-              .pretty-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
-              .pretty-scroll::-webkit-scrollbar-track {
-                background: #fff;
-                border-left: 6px solid transparent;
-                background-clip: padding-box;
-              }
-              .pretty-scroll::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.35));
-                border-radius: 999px;
-                border-left: 6px solid transparent;
-                background-clip: padding-box;
-              }
-            `}</style>
-          </div>
-        </div>
-      )}
+              {/* Results */}
+              <div className="flex-1 overflow-hidden">
+                <div
+                  className="h-full overflow-auto pretty-scroll"
+                  style={{
+                    WebkitOverflowScrolling: "touch",
+                    // cap visible list height so roughly 10 rows show before scroll
+                    maxHeight: "min(calc(100vh - 260px), 560px)",
+                  }}
+                  aria-label="Client search results"
+                >
+                  {busy ? (
+                    <div className="p-6 space-y-2">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="h-14 rounded-xl bg-gray-100 animate-pulse"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      {filtered.length > 0 && (
+                        <ul className="divide-y">
+                          {filtered.slice(0, 800).map((c) => {
+                            const initials =
+                              `${(c.firstName || "").slice(0, 1)}${(
+                                c.lastName || ""
+                              ).slice(0, 1)}`.toUpperCase() || "👤";
+                            const fullName =
+                              `${c.firstName || ""} ${c.lastName || ""}`.trim() ||
+                              c.id;
+                            const sub = [c.address || "", c.zip || ""]
+                              .filter(Boolean)
+                              .join(" • ");
+                            const isOpen = expandedId === c.id;
+
+                            const elig = usdaElig[c.id] || {
+                              allowed: true,
+                              checking: false,
+                            };
+                            const usdaYesDisabled = elig.checking || !elig.allowed;
+
+                            return (
+                              <li key={c.id} className="p-0">
+                                {/* Row (click to expand) */}
+                                <button
+                                  type="button"
+                                  className={cx(
+                                    "w-full text-left p-3 sm:p-4 transition-colors",
+                                    "hover:bg-brand-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300",
+                                    isOpen ? "bg-brand-50/70" : ""
+                                  )}
+                                  onClick={() => expandRow(c)}
+                                  aria-expanded={isOpen}
+                                  aria-controls={`visit-row-${c.id}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="h-10 w-10 rounded-2xl bg-[color:var(--brand-50)] text-[color:var(--brand-900)] ring-1 ring-[color:var(--brand-200)] grid place-items-center text-sm font-semibold shrink-0">
+                                        {initials}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="font-medium truncate text-[15px] text-gray-900">
+                                          {fullName}
+                                        </div>
+                                        <div className="text-xs text-gray-600 truncate">
+                                          {sub || "—"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="shrink-0 text-gray-400">
+                                      {isOpen ? (
+                                        <ChevronDown className="h-5 w-5" />
+                                      ) : (
+                                        <ChevronRight className="h-5 w-5" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </button>
+                                
+                                      {/* Inline controls (accordion) */}
+                                      <div
+                                        id={`visit-row-${c.id}`}
+                                        className={cx(
+                                          "overflow-hidden transition-[max-height] duration-150 ease-out",
+                                          isOpen ? "max-h-[520px]" : "max-h-0"
+                                        )}
+                                      >
+                                        <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+                                          <div className="rounded-2xl border border-brand-200 bg-white shadow-sm">
+                                            {/* Mini header */}
+                                            <SectionHeader
+                                              icon={<Users className="h-3.5 w-3.5" />}
+                                              label="Log visit details"
+                                            />
+
+                                      <div className="px-3 py-3 sm:px-4 sm:py-4">
+                                        <div className="flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_auto] md:items-end md:gap-5">
+                                          {/* HH (− / input / +) */}
+                                          <div className="flex-1 space-y-1.5">
+                                            <label className="flex items-center text-xs font-medium text-gray-700 select-none">
+                                              <Users size={14} className="text-brand-600 mr-1" />
+                                              Household size
+                                            </label>
+
+                                            <div
+                                              className="
+                                                inline-flex items-center overflow-hidden rounded-2xl bg-white
+                                                border border-brand-300 ring-1 ring-brand-100 shadow-soft
+                                                focus-within:ring-2 focus-within:ring-brand-200
+                                              "
+                                              aria-label="Adjust household size"
+                                            >
+                                              <button
+                                                type="button"
+                                                className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setRowHH((n) => Math.max(MIN_HH, Number(n || MIN_HH) - 1));
+                                                }}
+                                                aria-label="Decrease household size"
+                                              >
+                                                <Minus className="h-4 w-4" />
+                                              </button>
+
+                                              <input
+                                                type="number"
+                                                min={MIN_HH}
+                                                max={MAX_HH}
+                                                value={rowHH}
+                                                onChange={(e) => {
+                                                  const v = Number(e.target.value || MIN_HH);
+                                                  setRowHH(Math.max(MIN_HH, Math.min(MAX_HH, v)));
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                onWheel={(e) => e.currentTarget.blur()}
+                                                className="
+                                                  h-10 w-[84px] border-x border-brand-200 bg-white text-center
+                                                  text-sm font-semibold tabular-nums tracking-tight
+                                                  focus:outline-none
+                                                "
+                                                aria-live="polite"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                              />
+
+                                              <button
+                                                type="button"
+                                                className="h-10 w-10 grid place-items-center text-lg font-semibold hover:bg-brand-50 active:scale-[.98] focus:outline-none"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setRowHH((n) => Math.min(MAX_HH, Number(n || MIN_HH) + 1));
+                                                }}
+                                                aria-label="Increase household size"
+                                              >
+                                                <Plus className="h-4 w-4" />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* USDA toggle (with monthly eligibility) */}
+                                          <div className="flex-1 space-y-1.5">
+                                            <label className="flex items-center text-xs font-medium text-gray-700 select-none">
+                                              <Soup size={14} className="text-brand-600 mr-1" />
+                                              USDA
+                                            </label>
+
+                                            <div
+                                              className="
+                                                inline-flex w-full md:w-auto max-w-[260px]
+                                                rounded-2xl overflow-hidden bg-white
+                                                border border-brand-300 ring-1 ring-brand-100 shadow-soft
+                                              "
+                                              role="group"
+                                              aria-label="USDA first visit this month"
+                                              title={
+                                                usdaElig[c.id]?.checking
+                                                  ? 'Checking eligibility…'
+                                                  : usdaElig[c.id]?.allowed === false
+                                                  ? `Already counted for ${monthKey}`
+                                                  : 'Mark this as first USDA visit this month'
+                                              }
+                                            >
+                                              <button
+                                                type="button"
+                                                className={cx(
+                                                  'h-9 flex-1 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none',
+                                                  usdaYesDisabled
+                                                    ? 'opacity-60 cursor-not-allowed'
+                                                    : 'hover:bg-brand-50',
+                                                  rowUsdaYes && !usdaYesDisabled
+                                                    ? 'bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow'
+                                                    : 'text-brand-900'
+                                                )}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (!usdaYesDisabled) setRowUsdaYes(true);
+                                                }}
+                                                aria-pressed={rowUsdaYes && !usdaYesDisabled}
+                                              >
+                                                <span className="inline-flex items-center gap-1">
+                                                  <Soup size={16} />
+                                                  <span>Yes</span>
+                                                </span>
+                                              </button>
+
+                                              <div className="w-px bg-brand-200/70" aria-hidden="true" />
+
+                                              <button
+                                                type="button"
+                                                className={cx(
+                                                  'h-9 flex-1 px-3 sm:px-4 text-sm font-semibold transition-colors focus:outline-none',
+                                                  'hover:bg-brand-50',
+                                                  !rowUsdaYes || usdaYesDisabled
+                                                    ? 'bg-gradient-to-b from-[color:var(--brand-600)] to-[color:var(--brand-700)] text-white shadow'
+                                                    : 'text-brand-900'
+                                                )}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setRowUsdaYes(false);
+                                                }}
+                                                aria-pressed={!rowUsdaYes || usdaYesDisabled}
+                                              >
+                                                No
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Actions */}
+                                          <div className="flex w-full gap-3 pt-1 md:w-auto md:pt-0 md:flex-col md:items-end">
+                                            <button
+                                              className="
+                                                flex-1 md:flex-none
+                                                h-10 px-3 rounded-xl border border-brand-300 text-brand-800
+                                                bg-white hover:bg-brand-50 hover:border-brand-400
+                                                active:scale-[.99] focus:outline-none
+                                              "
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setExpandedId(null);
+                                              }}
+                                              title="Cancel"
+                                            >
+                                              Cancel
+                                            </button>
+
+                                            <button
+                                              className={cx(
+                                                'flex-1 md:flex-none inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white',
+                                                'shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]',
+                                                'hover:brightness-105 hover:contrast-110'
+                                              )}
+                                              style={{
+                                                background:
+                                                  'linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)',
+                                              }}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                addVisit(c, rowHH, rowUsdaYes);
+                                              }}
+                                              disabled={busy || !allowLogVisits || isAll}
+                                              title="Add visit"
+                                            >
+                                              <Check className="h-4 w-4" />
+                                              Add
+                                            </button>
+                                          </div>
+                                        </div>
+
+
+
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+
+                      {/* Always-visible CTA to add a new client for this date */}
+                      <div className="border-t border-dashed border-brand-100 bg-brand-50/40 px-4 py-4 sm:px-6 sm:py-5 text-sm text-center text-gray-700 space-y-2">
+                        <div>
+                          {filtered.length === 0
+                            ? "No clients found for this location."
+                            : "Can’t find the person you’re looking for?"}
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+                          <button
+                            type="button"
+                            className="
+                              inline-flex items-center gap-2 rounded-xl px-3.5 py-2
+                              text-sm font-semibold text-white
+                              shadow-sm transition focus:outline-none focus-visible:ring-4 active:scale-[.98]
+                              hover:brightness-105 hover:contrast-110
+                            "
+                            style={{
+                              background:
+                                "linear-gradient(160deg, var(--brand-700) 0%, var(--brand-600) 55%, var(--brand-500) 100%)",
+                            }}
+                            onClick={() => {
+                              setOpen(false);
+                              setNewClientVisitDate(selectedDate || null);
+                              setShowNewClient(true);
+                            }}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Add New Client for This Day
+                          </button>
+
+                          <span className="text-[11px] text-gray-500 max-w-xs">
+                            This will create a new client for the current org/location
+                            and log a visit on <b>{selectedDate || "this date"}</b>.
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 sm:px-6 py-3 border-t bg-white">
+                <div className="flex items-center justify-between gap-3">
+                  {/* Auto-close preference (persisted) */}
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={!!autoClose}
+                      onChange={(e) => setAutoClose(e.target.checked)}
+                    />
+                    Auto-close after save
+                  </label>
+
+                  <button
+                    className="h-11 px-5 rounded-2xl border border-brand-300 text-brand-800 bg-white hover:bg-brand-50 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                    onClick={() => setOpen(false)}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+
+              {/* Component-scoped styles */}
+              <style>{`
+                .pretty-scroll {
+                  scrollbar-color: rgba(0,0,0,.35) transparent;
+                  scrollbar-width: thin;
+                }
+                .pretty-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+                .pretty-scroll::-webkit-scrollbar-track {
+                  background: #fff;
+                  border-left: 6px solid transparent;
+                  background-clip: padding-box;
+                }
+                .pretty-scroll::-webkit-scrollbar-thumb {
+                  background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.35));
+                  border-radius: 999px;
+                  border-left: 6px solid transparent;
+                  background-clip: padding-box;
+                }
+              `}</style>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* New client intake in “reports mode” (org+location+selectedDate) */}
       {showNewClient && (
@@ -1092,7 +1050,7 @@ export default function AddVisitButton({
           onSaved={() => setShowNewClient(false)}
           defaultOrgId={org?.id || null}
           defaultLocationId={location?.id || null}
-          visitDateOverride={selectedDate || null}
+          visitDateOverride={newClientVisitDate || selectedDate || null}
           addedByReports
         />
       )}

@@ -2,6 +2,7 @@
 // Shepherds Table Cloud — New Client Intake (bottom sheet on mobile, Nov 2025)
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   collection,
   doc,
@@ -199,11 +200,7 @@ function SectionHeader({ icon, label }) {
   return (
     <div className="-mx-3 sm:-mx-4 -mt-3 sm:-mt-4 mb-3">
       <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-t-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 shadow-[0_4px_10px_rgba(148,27,21,0.3)]">
-        {icon && (
-          <span className="flex items-center text-white">
-            {icon}
-          </span>
-        )}
+        {icon && <span className="flex items-center text-white">{icon}</span>}
         <div className="flex-1 text-xs sm:text-sm font-semibold leading-tight text-white [&_*]:text-white">
           {label}
         </div>
@@ -1165,8 +1162,25 @@ export default function NewClientForm({
 
   const quickMode = !form.address || !form.address.trim();
 
-  return (
-    <div className="fixed inset-0 z-[1000]">
+  // Title text with date when opened from AddVisit for a specific date
+  const dateLabel =
+    !editing &&
+    addedByReports &&
+    typeof visitDateOverride === "string" &&
+    visitDateOverride.length >= 10
+      ? visitDateOverride.slice(0, 10)
+      : null;
+
+  const titleText = !editing
+    ? dateLabel
+      ? lang === "es"
+        ? `${t(lang, "titleNew")} para ${dateLabel}`
+        : `${t(lang, "titleNew")} for ${dateLabel}`
+      : t(lang, "titleNew")
+    : t(lang, "titleEdit");
+
+  return createPortal(
+    <div className="fixed inset-0 z-[2100]">
       {/* Backdrop */}
       <button
         aria-label="Close"
@@ -1223,12 +1237,13 @@ export default function NewClientForm({
                   </div>
 
                   <div className="min-w-0">
-                    <h2
+                   <h2
                       id="new-client-title"
-                      className="text-base sm:text-xl font-semibold truncate"
+                      className="text-base sm:text-xl font-semibold whitespace-normal"
                     >
-                      {editing ? t(lang, "titleEdit") : t(lang, "titleNew")}
+                      {titleText}
                     </h2>
+
                     <div className="mt-0.5 text-[11px] sm:text-xs opacity-90 leading-tight">
                       <div className="truncate">
                         {t(lang, "org")}: <b>{orgId ?? "—"}</b>
@@ -1596,11 +1611,11 @@ export default function NewClientForm({
                   "Number of people in household"
                 )}
               />
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-3 flex items-center gap-3 w-full">
                 <button
                   type="button"
                   aria-label="Decrease household size"
-                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  className="h-12 sm:h-11 w-28 sm:w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
@@ -1626,17 +1641,20 @@ export default function NewClientForm({
                   }}
                   onBlur={(e) => {
                     const raw = Number(e.target.value);
-                    const clamped = Math.max(1, Math.min(20, Number.isFinite(raw) ? raw : 1));
+                    const clamped = Math.max(
+                      1,
+                      Math.min(20, Number.isFinite(raw) ? raw : 1)
+                    );
                     setForm((f) => ({ ...f, householdSize: clamped }));
                   }}
-                  className="flex-1 h-12 rounded-2xl border border-brand-300 bg-white px-3 text-lg font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
+                  className="flex-1 h-12 sm:h-11 px-2 rounded-2xl border border-brand-300 bg-white text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-brand-200 text-center tabular-nums"
                   aria-describedby="hh-help"
                 />
 
                 <button
                   type="button"
                   aria-label="Increase household size"
-                  className="h-12 w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                  className="h-12 sm:h-11 w-28 sm:w-12 rounded-2xl border border-brand-300 bg-white text-xl leading-none font-semibold hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
@@ -1853,6 +1871,7 @@ export default function NewClientForm({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

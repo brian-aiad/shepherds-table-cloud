@@ -587,7 +587,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
 
                 {/* Name Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label className="flex flex-col gap-1">
+                  <label className="flex flex-col gap-1 sm:col-span-2">
                     <span className="text-[11px] font-medium text-gray-700">
                       {ICONS.firstName}
                       First name
@@ -663,11 +663,11 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                       {ICONS.hh}
                       Household size
                     </span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 w-full">
                       <button
                         type="button"
                         aria-label="Decrease household size"
-                        className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                        className="h-12 sm:h-11 w-28 sm:w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                         onClick={() =>
                           setForm((f) => ({
                             ...f,
@@ -679,15 +679,15 @@ export default function EditForm({ open, client, onClose, onSaved }) {
                       >
                         –
                       </button>
-                      <div className="h-11 min-w-[88px] px-4 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
-                        <span className="text-lg font-semibold tabular-nums">
+                      <div className="h-12 sm:h-11 flex-1 px-2 rounded-2xl border border-brand-400 bg-brand-50 text-brand-900 grid place-items-center shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-brand-200/70">
+                        <span className="text-sm font-semibold tabular-nums">
                           {form.householdSize || 1}
                         </span>
                       </div>
                       <button
                         type="button"
                         aria-label="Increase household size"
-                        className="h-11 w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
+                        className="h-12 sm:h-11 w-28 sm:w-11 rounded-2xl border border-brand-300 text-brand-800 bg-white grid place-items-center text-xl font-semibold shadow-sm hover:bg-brand-50 hover:border-brand-400 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-200"
                         onClick={() =>
                           setForm((f) => ({
                             ...f,
@@ -856,55 +856,73 @@ export default function EditForm({ open, client, onClose, onSaved }) {
         </div>
 
         {/* Footer (sticky) */}
-        <div
+                <div
           className="sticky bottom-0 z-10 border-t bg-white/95 backdrop-blur px-4 sm:px-6 py-3 sm:py-4"
           style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)" }}
         >
           <div className="w-full h-px bg-gray-200 mb-2" />
 
           <div className="w-full max-w-xl mx-auto">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-              {/* Left: Danger / Reactivation */}
-              <div className="w-full sm:w-auto">
+            <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+              {/* Left: Danger / Reactivation (compact, same line) */}
+              <div className="flex-shrink-0">
                 {canDeleteClients && (
-                  <div>
-                    {!client?.inactive ? (
-                      <button
-                        type="button"
-                        onClick={deactivateClient}
-                        disabled={deactivating}
-                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-60"
-                      >
-                        {deactivating ? (
-                          "Working…"
-                        ) : (
-                          <>
-                            <ShieldAlert className="h-4 w-4" /> Deactivate client
-                          </>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={reactivateClient}
-                        disabled={reactivating}
-                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto h-11 px-4 rounded-2xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 active:bg-green-800 disabled:opacity-60"
-                      >
-                        {reactivating ? (
-                          "Working…"
-                        ) : (
-                          <>
-                            <RotateCcw className="h-4 w-4" /> Reactivate client
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
+                  !client?.inactive ? (
+                    <button
+                      type="button"
+                      onClick={deactivateClient}
+                      disabled={deactivating}
+                      className="
+                        inline-flex items-center justify-center gap-1.5
+                        h-9 sm:h-10 px-3 sm:px-4
+                        rounded-xl
+                        text-xs sm:text-sm font-medium
+                        bg-red-600 text-white
+                        shadow-sm
+                        hover:bg-red-700 active:bg-red-800
+                        disabled:opacity-60
+                      "
+                    >
+                      {deactivating ? (
+                        "Working…"
+                      ) : (
+                        <>
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          <span>Deactivate</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={reactivateClient}
+                      disabled={reactivating}
+                      className="
+                        inline-flex items-center justify-center gap-1.5
+                        h-9 sm:h-10 px-3 sm:px-4
+                        rounded-xl
+                        text-xs sm:text-sm font-medium
+                        bg-green-600 text-white
+                        shadow-sm
+                        hover:bg-green-700 active:bg-green-800
+                        disabled:opacity-60
+                      "
+                    >
+                      {reactivating ? (
+                        "Working…"
+                      ) : (
+                        <>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>Reactivate</span>
+                        </>
+                      )}
+                    </button>
+                  )
                 )}
               </div>
 
               {/* Right: Cancel + Save */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   type="button"
                   onClick={onClose}
@@ -934,6 +952,7 @@ export default function EditForm({ open, client, onClose, onSaved }) {
             </div>
           </div>
         </div>
+
 
       </div>
     </div>
